@@ -203,29 +203,73 @@ fn bind_address(config: &Config) -> Result<String> {
                 .find(|i| i.name == *iface_name)
                 .with_context(|| format!("Network interface '{}' not found", iface_name))?;
 
-            let addr = iface
+            // Prefer IPv4; skip loopback and link-local IPv6 (fe80::).
+            let ip = iface
                 .addr
-                .first()
-                .with_context(|| format!("Interface '{}' has no addresses", iface_name))?;
+                .iter()
+                .map(|a| a.ip().to_string())
+                .filter(|s| is_usable_ip(s))
+                .find(|s| s.contains('.'))          // IPv4 first
+                .or_else(|| {
+                    iface.addr.iter()
+                        .map(|a| a.ip().to_string())
+                        .filter(|s| is_usable_ip(s))
+                        .next()                     // any usable IPv6 fallback
+                })
+                .with_context(|| format!("Interface '{}' has no usable address", iface_name))?;
 
-            Ok(format!("{}:{}", addr.ip(), config.osc_port))
+            Ok(format!("{}:{}", ip, config.osc_port))
         }
     }
 }
 
+// Name prefixes of macOS/Linux virtual or system interfaces that are never
+// useful for OSC binding and should be hidden from the UI selector.
+const SKIP_PREFIXES: &[&str] = &[
+    "utun", "awdl", "llw", "stf", "gif", "p2p",
+    "XHC", "anpi", "bridge", "vmnet", "veth", "docker",
+];
+
+/// Returns true for IPs that are usable as OSC bind addresses.
+/// Rejects loopback, link-local IPv6 (fe80::...), and the IPv6 loopback (::1).
+fn is_usable_ip(s: &str) -> bool {
+    !s.starts_with("127.")
+        && s != "::1"
+        && !s.to_lowercase().starts_with("fe80")
+}
+
 /// Returns a list of available network interfaces for the UI selector.
+/// Filters out virtual/system interfaces and link-local addresses.
+/// Prefers IPv4 over IPv6 when an interface has both.
 pub fn list_interfaces() -> Result<Vec<InterfaceInfo>> {
     let interfaces = NetworkInterface::show().context("Failed to enumerate network interfaces")?;
-    Ok(interfaces
-        .iter()
-        .filter_map(|i| {
-            let ip = i.addr.first().map(|a| a.ip().to_string())?;
-            Some(InterfaceInfo {
-                name: i.name.clone(),
-                ip,
-            })
-        })
-        .collect())
+    let mut result = Vec::new();
+
+    for iface in &interfaces {
+        // Skip virtual/system interface name prefixes.
+        if SKIP_PREFIXES.iter().any(|p| iface.name.starts_with(p)) {
+            continue;
+        }
+
+        // Collect all usable IPs for this interface.
+        let addrs: Vec<String> = iface
+            .addr
+            .iter()
+            .map(|a| a.ip().to_string())
+            .filter(|s| is_usable_ip(s))
+            .collect();
+
+        // Prefer IPv4 (contains '.'); fall back to first IPv6 if no IPv4.
+        let ip = addrs.iter().find(|s| s.contains('.'))
+            .or_else(|| addrs.first())
+            .cloned();
+
+        if let Some(ip) = ip {
+            result.push(InterfaceInfo { name: iface.name.clone(), ip });
+        }
+    }
+
+    Ok(result)
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]

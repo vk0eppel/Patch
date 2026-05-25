@@ -275,6 +275,7 @@ The engine must be running before the Flutter app launches. The app retries the 
 - All OSC encoding/decoding lives in `patch-core/src/osc/codec.rs`. Add and test new packet types there first.
 - The bridge protocol is the contract between the two halves. Both sides must agree on field names and event types — update both `bridge/commands.rs` and `bridge_client.dart` together.
 - Adding a new command: (1) add `cmd_*` handler in `commands.rs`, (2) add a method to `BridgeClient`, (3) add a case to `_handleEvent` in `home_screen.dart` or the relevant screen.
+- Network interface filtering: `list_interfaces()` and `bind_address()` in `transport/mod.rs` both use `is_usable_ip()` to skip loopback (`127.x`, `::1`), link-local IPv6 (`fe80::`), and virtual interface prefixes (`utun`, `awdl`, `llw`, `stf`, `gif`, `p2p`, `XHC`, `anpi`, `bridge`, `vmnet`, `veth`, `docker`). Both prefer IPv4 over IPv6. This prevents bind errors when a saved interface has a `fe80::` address as its first entry.
 - `Priority` uses manual `Serialize`/`Deserialize` impls to emit integers (not variant name strings). Always use `(j['priority'] as num).toInt()` on the Dart side.
 - Flash fires `AppEvent::ChannelFlash` locally after sending, so the sender always sees their own flash without needing to receive it back over the network.
 - Flash animation uses timer-based `setState` + `Future.delayed` (not `AnimationController`/`TweenSequence`) in `_FlashLayer` — the `TweenSequence` approach proved visually unreliable on macOS. Don't revert to it.
@@ -322,7 +323,7 @@ Patch UI is designed for live environments:
 - touch-first on iPad
 - **multi-channel view**: tap to select exclusively, long-press to toggle into multi-select; combined feed sorted by timestamp; channel colour dot on each message row
 - **flash**: channel tab pulses (3× scale animation); message box border + background tint pulses 3× in the channel colour (`_FlashLayer` inside `_ChannelView` Stack); fires automatically on priority-3 messages when enabled
-- **NIC picker**: Settings → Network Interface; dropdown shows all interfaces with name + IP; "Auto" binds all; change persists to `patch.toml`, takes effect on next restart
+- **NIC picker**: Settings → Network Interface; dropdown shows only real NICs (loopback, virtual/tunnel, and link-local IPv6 interfaces filtered out); "Auto" binds all; change persists to `patch.toml`, takes effect on next restart
 - **Behavior settings**: Settings → Behavior; currently: "Flash on critical messages" toggle (default on)
 
 ---

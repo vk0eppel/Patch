@@ -25,7 +25,7 @@ Inspired by [Shure Wireless Workbench](https://www.shure.com/en-US/products/soft
 - **Shortcut messages** — per-channel one-tap buttons for common callouts (HOLD, CLEAR, BATTERY LOW…), optionally bound to F-keys
 - **Session presets** — save and restore named channel layouts; portable across machines
 - **Hybrid discovery** — mDNS/Bonjour auto-discovery + OSC beacon + manual static IP for locked-down show networks
-- **Configurable identity** — set your display name and network interface from the settings screen; changes persist immediately
+- **Configurable identity** — set your display name and network interface from the settings screen; NIC picker filters out virtual/tunnel interfaces and shows only real NICs with IPv4 addresses; changes persist immediately
 - **Priority levels** — info / warning / critical; critical messages are visually distinct and require ACK
 - **Message deduplication** — UUID per message; never see the same message twice
 - **Dark, high-contrast UI** — readable from a stage desk at 2m
