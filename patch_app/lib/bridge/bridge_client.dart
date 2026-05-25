@@ -134,6 +134,18 @@ class BridgeClient {
   void setFlashOnCritical(bool enabled) =>
       send({'cmd': 'set_flash_on_critical', 'enabled': enabled});
 
+  void setFlashOnMessage(bool enabled) =>
+      send({'cmd': 'set_flash_on_message', 'enabled': enabled});
+
+  void setChannelFlash(String channelId,
+      {bool? flashOnCritical, bool? flashOnMessage}) =>
+      send({
+        'cmd': 'set_channel_flash',
+        'channel_id': channelId,
+        if (flashOnCritical != null) 'flash_on_critical': flashOnCritical,
+        if (flashOnMessage  != null) 'flash_on_message':  flashOnMessage,
+      });
+
   void dispose() {
     _disposed = true;
     _socket?.destroy();

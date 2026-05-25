@@ -105,6 +105,8 @@ All IPC between Flutter and Rust is newline-delimited JSON over `127.0.0.1:9001`
 { "cmd": "set_client_name", "name": "FOH Engineer" }
 { "cmd": "set_interface", "name": "en0" }
 { "cmd": "set_flash_on_critical", "enabled": true }
+{ "cmd": "set_flash_on_message", "enabled": false }
+{ "cmd": "set_channel_flash", "channel_id": "rf", "flash_on_critical": true, "flash_on_message": true }
 { "cmd": "add_static_peer", "address": "192.168.1.50", "port": 9000, "label": "FOH Desk" }
 { "cmd": "upsert_channel", "id": "rf", "display_name": "RF", "color": "#1E88E5" }
 { "cmd": "delete_channel", "id": "rf" }
@@ -279,7 +281,7 @@ The engine must be running before the Flutter app launches. The app retries the 
 - `Priority` uses manual `Serialize`/`Deserialize` impls to emit integers (not variant name strings). Always use `(j['priority'] as num).toInt()` on the Dart side.
 - Flash fires `AppEvent::ChannelFlash` locally after sending, so the sender always sees their own flash without needing to receive it back over the network.
 - Flash animation uses timer-based `setState` + `Future.delayed` (not `AnimationController`/`TweenSequence`) in `_FlashLayer` — the `TweenSequence` approach proved visually unreliable on macOS. Don't revert to it.
-- Auto-flash on critical: when a `message` event with `priority == 3` arrives, `_dispatch` calls `_triggerFlash` if `_flashOnCritical` is true. The flag is read from `get_config` on startup and persisted to `patch.toml` via `set_flash_on_critical`. Toggle is in Settings → Behavior.
+- Auto-flash on message/critical: `_dispatch` ORs global flags (`_flashOnMessage`, `_flashOnCritical`) with per-channel flags (`ch.flashOnMessage`, `ch.flashOnCritical`). Global flags are read via `get_config` on startup; `config_updated` events trigger a `getConfig()` refresh so changes in Settings take effect immediately without restart. Per-channel flags are stored on `Channel` (serde defaults: `flash_on_critical=true`, `flash_on_message=false`) and updated via `set_channel_flash` command.
 - F-key bindings: `HardwareKeyboard.instance.addHandler` is registered in `_HomeScreenState.initState` and removed in `dispose`. It intercepts `KeyDownEvent` before the `TextField` sees it, maps `LogicalKeyboardKey.f1`–`f12` → `"F1"`–`"F12"`, and fires the first matching shortcut across all selected channels. Keys not bound to a shortcut are not consumed.
 - Multi-channel selection: tap = exclusive select, long press = toggle into multi-select. The combined message feed and `_FlashLayer` both scope to the `_ChannelView` area.
 
@@ -322,9 +324,9 @@ Patch UI is designed for live environments:
 - keyboard-first on desktop (Enter to send, F1–F12 fire bound shortcuts from any focus state)
 - touch-first on iPad
 - **multi-channel view**: tap to select exclusively, long-press to toggle into multi-select; combined feed sorted by timestamp; channel colour dot on each message row
-- **flash**: channel tab pulses (3× scale animation); message box border + background tint pulses 3× in the channel colour (`_FlashLayer` inside `_ChannelView` Stack); fires automatically on priority-3 messages when enabled
+- **flash**: channel tab pulses (3× scale animation); message box border + background tint pulses 3× in the channel colour (`_FlashLayer` inside `_ChannelView` Stack); triggers determined by OR of global + per-channel flags
 - **NIC picker**: Settings → Network Interface; dropdown shows only real NICs (loopback, virtual/tunnel, and link-local IPv6 interfaces filtered out); "Auto" binds all; change persists to `patch.toml`, takes effect on next restart
-- **Behavior settings**: Settings → Behavior; currently: "Flash on critical messages" toggle (default on)
+- **Behavior settings**: Settings → Behavior — global flash defaults ("Flash on every message", "Flash on critical messages"); Settings → channel editor footer — per-channel overrides for the same two flags (either global or channel flag being on is sufficient to trigger)
 
 ---
 

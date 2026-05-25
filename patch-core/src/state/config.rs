@@ -28,6 +28,9 @@ pub struct Config {
     /// Automatically flash the channel when a critical (priority 3) message is received.
     #[serde(default = "default_true")]
     pub flash_on_critical: bool,
+    /// Flash the channel on every incoming message, regardless of priority.
+    #[serde(default)]  // default = false
+    pub flash_on_message: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,6 +53,7 @@ impl Default for Config {
             heartbeat_interval_secs: 7,
             peer_timeout_secs: 30,
             flash_on_critical: true,
+            flash_on_message: false,
         }
     }
 }

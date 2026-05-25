@@ -21,7 +21,7 @@ Inspired by [Shure Wireless Workbench](https://www.shure.com/en-US/products/soft
 - **OSC-native transport** — messages travel as OSC packets; unicast to known peers, broadcast only for presence/discovery
 - **Logical channels** — FOH, MON, RF, LIGHTING, VIDEO, STAGE, PRODUCTION — create and delete at runtime
 - **Multi-channel view** — tap to focus a channel, long-press to add it to the view; combined feed sorted by timestamp with per-message channel colour dots
-- **Flash / page** — one-button high-priority alert per channel; channel tab pulses + message box border lights up in the channel colour × 3; fires automatically on critical (priority 3) messages (toggleable in Settings)
+- **Flash / page** — one-button high-priority alert per channel; channel tab pulses + message box border lights up in the channel colour × 3; auto-flash configurable globally (Settings → Behavior) and per-channel (Settings → channel editor)
 - **Shortcut messages** — per-channel one-tap buttons for common callouts (HOLD, CLEAR, BATTERY LOW…), optionally bound to F-keys
 - **Session presets** — save and restore named channel layouts; portable across machines
 - **Hybrid discovery** — mDNS/Bonjour auto-discovery + OSC beacon + manual static IP for locked-down show networks
@@ -147,7 +147,8 @@ label = "Monitor World"
 - [x] Session presets — save / load / delete named channel layouts
 - [x] Multi-channel view — combined feed, long-press to add channels
 - [x] Flash animation — channel tab pulse + message box border/tint × 3
-- [x] Auto-flash on critical messages — toggleable in Settings → Behavior
+- [x] Auto-flash on critical messages — global default in Settings → Behavior
+- [x] Per-channel flash settings — override "flash on message" and "flash on critical" per channel in the channel editor; global and per-channel flags are OR'd
 - [ ] Settings screen — static peer management via UI
 - [x] F-key bindings for shortcuts (F1–F12, fires from any focus state)
 - [ ] Reliability layer wired for critical messages (ACK + retransmit)

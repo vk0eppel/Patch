@@ -37,6 +37,8 @@ async fn dispatch(cmd: Value, state: &AppState, transport: &Transport) -> Value 
         "get_config"       => cmd_get_config(state).await,
         "set_interface"           => cmd_set_interface(cmd, state).await,
         "set_flash_on_critical"   => cmd_set_flash_on_critical(cmd, state).await,
+        "set_flash_on_message"    => cmd_set_flash_on_message(cmd, state).await,
+        "set_channel_flash"       => cmd_set_channel_flash(cmd, state).await,
         "set_client_name"  => cmd_set_client_name(cmd, state).await,
         "add_static_peer"  => cmd_add_static_peer(cmd, state).await,
         "upsert_channel"   => cmd_upsert_channel(cmd, state).await,
@@ -132,8 +134,17 @@ async fn cmd_get_config(state: &AppState) -> Value {
             "network_interface": config.network_interface,
             "static_peers": config.static_peers,
             "flash_on_critical": config.flash_on_critical,
+            "flash_on_message": config.flash_on_message,
         }
     })
+}
+
+async fn cmd_set_flash_on_message(cmd: Value, state: &AppState) -> Value {
+    let enabled = cmd["enabled"].as_bool().unwrap_or(false);
+    match state.set_flash_on_message(enabled).await {
+        Ok(()) => json!({ "event": "config_updated", "flash_on_message": enabled }),
+        Err(e) => json!({ "event": "error", "message": e.to_string() }),
+    }
 }
 
 async fn cmd_set_flash_on_critical(cmd: Value, state: &AppState) -> Value {
@@ -186,9 +197,26 @@ async fn cmd_upsert_channel(cmd: Value, state: &AppState) -> Value {
     };
     let display_name = cmd["display_name"].as_str().unwrap_or(&id).to_string();
     let color = cmd["color"].as_str().unwrap_or("#607D8B").to_string();
-    let channel = Channel::new(id, display_name, color);
+    // Seed new channel flash settings from global config defaults.
+    let config = state.config().await;
+    let mut channel = Channel::new(id, display_name, color);
+    channel.flash_on_critical = config.flash_on_critical;
+    channel.flash_on_message  = config.flash_on_message;
     state.upsert_channel(channel).await;
     json!({ "event": "ok" })
+}
+
+async fn cmd_set_channel_flash(cmd: Value, state: &AppState) -> Value {
+    let channel_id = match cmd["channel_id"].as_str() {
+        Some(s) => s.to_string(),
+        None => return json!({ "event": "error", "message": "missing channel_id" }),
+    };
+    let flash_on_critical = cmd["flash_on_critical"].as_bool();
+    let flash_on_message  = cmd["flash_on_message"].as_bool();
+    match state.set_channel_flash(&channel_id, flash_on_critical, flash_on_message).await {
+        Ok(()) => json!({ "event": "ok" }),
+        Err(e) => json!({ "event": "error", "message": e.to_string() }),
+    }
 }
 
 async fn cmd_upsert_shortcut(cmd: Value, state: &AppState) -> Value {

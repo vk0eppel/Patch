@@ -31,6 +31,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // Behavior
   bool _flashOnCritical = true;
+  bool _flashOnMessage = false;
 
   // Network interfaces
   List<Map<String, String>> _interfaces = [];
@@ -63,6 +64,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _nameCtrl.text = data['client_name'] as String? ?? '';
           _selectedInterface = data['network_interface'] as String?;
           _flashOnCritical = (data['flash_on_critical'] as bool?) ?? true;
+          _flashOnMessage = (data['flash_on_message'] as bool?) ?? false;
         });
       case 'interfaces':
         final data = event['data'] as List<dynamic>;
@@ -199,11 +201,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 4),
           SwitchListTile(
             title: const Text(
+              'Flash on every message',
+              style: TextStyle(color: PatchTheme.textPrimary, fontSize: PatchTheme.fontSizeSmall),
+            ),
+            subtitle: const Text(
+              'Flash the channel border on any incoming message',
+              style: TextStyle(color: PatchTheme.textSecondary, fontSize: 11),
+            ),
+            value: _flashOnMessage,
+            activeThumbColor: PatchTheme.accent,
+            contentPadding: EdgeInsets.zero,
+            onChanged: (val) {
+              setState(() => _flashOnMessage = val);
+              widget.bridge.setFlashOnMessage(val);
+            },
+          ),
+          SwitchListTile(
+            title: const Text(
               'Flash on critical messages',
               style: TextStyle(color: PatchTheme.textPrimary, fontSize: PatchTheme.fontSizeSmall),
             ),
             subtitle: const Text(
-              'Automatically flash the channel when a priority-3 message arrives',
+              'Flash the channel border when a priority-3 message arrives',
               style: TextStyle(color: PatchTheme.textSecondary, fontSize: 11),
             ),
             value: _flashOnCritical,
@@ -620,6 +639,47 @@ class _ChannelShortcutEditor extends StatelessWidget {
                   bridge: bridge,
                   onEdit: () => _showShortcutDialog(context, channel, bridge, existing: s),
                 )),
+          // Per-channel flash settings
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: PatchTheme.border)),
+            ),
+            child: Column(
+              children: [
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Flash on every message',
+                    style: TextStyle(
+                      color: PatchTheme.textSecondary,
+                      fontSize: PatchTheme.fontSizeSmall,
+                    ),
+                  ),
+                  value: channel.flashOnMessage,
+                  activeThumbColor: PatchTheme.accent,
+                  onChanged: (val) =>
+                      bridge.setChannelFlash(channel.id, flashOnMessage: val),
+                ),
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Flash on critical messages',
+                    style: TextStyle(
+                      color: PatchTheme.textSecondary,
+                      fontSize: PatchTheme.fontSizeSmall,
+                    ),
+                  ),
+                  value: channel.flashOnCritical,
+                  activeThumbColor: PatchTheme.accent,
+                  onChanged: (val) =>
+                      bridge.setChannelFlash(channel.id, flashOnCritical: val),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

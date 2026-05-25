@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+fn default_true() -> bool { true }
+
 /// A logical communication channel.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Channel {
@@ -11,6 +13,12 @@ pub struct Channel {
     pub color: String,
     /// Pre-configured shortcut messages for this channel.
     pub shortcuts: Vec<ShortcutMessage>,
+    /// Flash this channel's message box when a critical (priority 3) message arrives.
+    #[serde(default = "default_true")]
+    pub flash_on_critical: bool,
+    /// Flash this channel's message box on every incoming message.
+    #[serde(default)]
+    pub flash_on_message: bool,
 }
 
 impl Channel {
@@ -20,6 +28,8 @@ impl Channel {
             display_name: display_name.into(),
             color: color.into(),
             shortcuts: Vec::new(),
+            flash_on_critical: true,
+            flash_on_message: false,
         }
     }
 }

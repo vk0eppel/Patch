@@ -105,6 +105,33 @@ impl AppState {
         cfg.save()
     }
 
+    /// Persist the flash-on-every-message setting.
+    pub async fn set_flash_on_message(&self, enabled: bool) -> anyhow::Result<()> {
+        let mut cfg = self.0.config.write().await;
+        cfg.flash_on_message = enabled;
+        cfg.save()
+    }
+
+    /// Update per-channel flash flags. `None` means "leave unchanged".
+    pub async fn set_channel_flash(
+        &self,
+        channel_id: &str,
+        flash_on_critical: Option<bool>,
+        flash_on_message: Option<bool>,
+    ) -> anyhow::Result<()> {
+        {
+            let mut channels = self.0.channels.write().await;
+            let ch = channels
+                .get_mut(channel_id)
+                .ok_or_else(|| anyhow::anyhow!("Channel '{}' not found", channel_id))?;
+            if let Some(v) = flash_on_critical { ch.flash_on_critical = v; }
+            if let Some(v) = flash_on_message  { ch.flash_on_message  = v; }
+        }
+        self.persist_channels().await?;
+        self.publish(AppEvent::ChannelListUpdated).await;
+        Ok(())
+    }
+
     // ── Messages ──────────────────────────────────────────────────────────────
 
     pub async fn store_message(&self, msg: PatchMessage) {

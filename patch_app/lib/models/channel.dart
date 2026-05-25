@@ -26,12 +26,16 @@ class PatchChannel {
   final String displayName;
   final Color color;
   final List<ShortcutMessage> shortcuts;
+  final bool flashOnCritical;
+  final bool flashOnMessage;
 
   const PatchChannel({
     required this.id,
     required this.displayName,
     required this.color,
     this.shortcuts = const [],
+    this.flashOnCritical = true,
+    this.flashOnMessage = false,
   });
 
   factory PatchChannel.fromJson(Map<String, dynamic> j) {
@@ -43,6 +47,8 @@ class PatchChannel {
       shortcuts: (j['shortcuts'] as List<dynamic>? ?? [])
           .map((s) => ShortcutMessage.fromJson(s as Map<String, dynamic>))
           .toList(),
+      flashOnCritical: (j['flash_on_critical'] as bool?) ?? true,
+      flashOnMessage:  (j['flash_on_message']  as bool?) ?? false,
     );
   }
 }

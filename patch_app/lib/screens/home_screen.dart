@@ -40,6 +40,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Color _flashColor = Colors.white;
 
   bool _flashOnCritical = true;
+  bool _flashOnMessage = false;
 
   // ── F-key map ───────────────────────────────────────────────────────────────
   static final _fKeyLabels = <LogicalKeyboardKey, String>{
@@ -183,7 +184,15 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _messages.putIfAbsent(msg.channelId, () => []).add(msg);
         });
-        if (msg.isCritical && _flashOnCritical) _triggerFlash(msg.channelId);
+        // Flash if global OR per-channel flag is set.
+        final ch = _channels.cast<PatchChannel?>()
+            .firstWhere((c) => c?.id == msg.channelId, orElse: () => null);
+        if (ch != null) {
+          final shouldFlash =
+              (_flashOnMessage || ch.flashOnMessage) ||
+              ((_flashOnCritical || ch.flashOnCritical) && msg.isCritical);
+          if (shouldFlash) _triggerFlash(msg.channelId);
+        }
 
       case 'ack_send':
         break;
@@ -222,13 +231,18 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _flashOnCritical =
               (event['data']['flash_on_critical'] as bool?) ?? true;
+          _flashOnMessage =
+              (event['data']['flash_on_message'] as bool?) ?? false;
         });
 
       case 'session_saved':
       case 'client_name_changed':
-      case 'config_updated':
       case 'interface_changed':
         break;
+
+      case 'config_updated':
+        // Re-fetch full config so global flash flags stay in sync.
+        widget.bridge.getConfig();
 
       case 'error':
         debugPrint('Bridge error: ${event['message']}');
