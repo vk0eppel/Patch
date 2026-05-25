@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
@@ -39,6 +40,22 @@ class _HomeScreenState extends State<HomeScreen> {
   Color _flashColor = Colors.white;
 
   bool _flashOnCritical = true;
+
+  // ── F-key map ───────────────────────────────────────────────────────────────
+  static final _fKeyLabels = <LogicalKeyboardKey, String>{
+    LogicalKeyboardKey.f1:  'F1',
+    LogicalKeyboardKey.f2:  'F2',
+    LogicalKeyboardKey.f3:  'F3',
+    LogicalKeyboardKey.f4:  'F4',
+    LogicalKeyboardKey.f5:  'F5',
+    LogicalKeyboardKey.f6:  'F6',
+    LogicalKeyboardKey.f7:  'F7',
+    LogicalKeyboardKey.f8:  'F8',
+    LogicalKeyboardKey.f9:  'F9',
+    LogicalKeyboardKey.f10: 'F10',
+    LogicalKeyboardKey.f11: 'F11',
+    LogicalKeyboardKey.f12: 'F12',
+  };
 
   List<PeerInfo> _peers = [];
   bool _showPeers = false;
@@ -85,12 +102,33 @@ class _HomeScreenState extends State<HomeScreen> {
     widget.bridge.getChannels();
     widget.bridge.getPeers();
     widget.bridge.getConfig();
+    HardwareKeyboard.instance.addHandler(_handleHardwareKey);
   }
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     _eventSub?.cancel();
     super.dispose();
+  }
+
+  /// Global F-key handler — fires the first shortcut whose keyBinding matches.
+  /// Returns true to consume the event (prevents the key reaching other widgets).
+  bool _handleHardwareKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    final label = _fKeyLabels[event.logicalKey];
+    if (label == null) return false;
+    for (final cs in _aggregatedShortcuts) {
+      if (cs.shortcut.keyBinding == label) {
+        widget.bridge.sendMessage(
+          channelId: cs.channelId,
+          payload: cs.shortcut.payload,
+          priority: cs.shortcut.priority,
+        );
+        return true; // consumed
+      }
+    }
+    return false;
   }
 
   // ── Event dispatch ──────────────────────────────────────────────────────────

@@ -279,6 +279,7 @@ The engine must be running before the Flutter app launches. The app retries the 
 - Flash fires `AppEvent::ChannelFlash` locally after sending, so the sender always sees their own flash without needing to receive it back over the network.
 - Flash animation uses timer-based `setState` + `Future.delayed` (not `AnimationController`/`TweenSequence`) in `_FlashLayer` — the `TweenSequence` approach proved visually unreliable on macOS. Don't revert to it.
 - Auto-flash on critical: when a `message` event with `priority == 3` arrives, `_dispatch` calls `_triggerFlash` if `_flashOnCritical` is true. The flag is read from `get_config` on startup and persisted to `patch.toml` via `set_flash_on_critical`. Toggle is in Settings → Behavior.
+- F-key bindings: `HardwareKeyboard.instance.addHandler` is registered in `_HomeScreenState.initState` and removed in `dispose`. It intercepts `KeyDownEvent` before the `TextField` sees it, maps `LogicalKeyboardKey.f1`–`f12` → `"F1"`–`"F12"`, and fires the first matching shortcut across all selected channels. Keys not bound to a shortcut are not consumed.
 - Multi-channel selection: tap = exclusive select, long press = toggle into multi-select. The combined message feed and `_FlashLayer` both scope to the `_ChannelView` area.
 
 ---
@@ -286,7 +287,7 @@ The engine must be running before the Flutter app launches. The app retries the 
 ## Known Incomplete (next tasks)
 
 - [ ] Settings screen — add static peer via UI
-- [ ] Keyboard shortcut binding in Flutter (F1–F8 wired to shortcut bar)
+- [x] Keyboard shortcut binding in Flutter (F1–F12 wired to shortcut bar)
 - [ ] Reliability manager wired into the send path for critical messages
 - [ ] Wire heartbeat send through transport (discovery module encodes presence but needs the send handle)
 
@@ -317,7 +318,7 @@ Patch UI is designed for live environments:
 - large `HH:MM:SS` timestamps on every message
 - channel color-coded throughout
 - critical messages visually distinct (red left border + background tint)
-- keyboard-first on desktop (Enter to send, F-keys for shortcuts)
+- keyboard-first on desktop (Enter to send, F1–F12 fire bound shortcuts from any focus state)
 - touch-first on iPad
 - **multi-channel view**: tap to select exclusively, long-press to toggle into multi-select; combined feed sorted by timestamp; channel colour dot on each message row
 - **flash**: channel tab pulses (3× scale animation); message box border + background tint pulses 3× in the channel colour (`_FlashLayer` inside `_ChannelView` Stack); fires automatically on priority-3 messages when enabled

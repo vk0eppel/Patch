@@ -29,7 +29,7 @@ Inspired by [Shure Wireless Workbench](https://www.shure.com/en-US/products/soft
 - **Priority levels** — info / warning / critical; critical messages are visually distinct and require ACK
 - **Message deduplication** — UUID per message; never see the same message twice
 - **Dark, high-contrast UI** — readable from a stage desk at 2m
-- **Keyboard-first** — Enter to send, F1–F8 for shortcuts (bindings configurable per shortcut)
+- **Keyboard-first** — Enter to send, F1–F12 for shortcuts (binding configurable per shortcut; fires from any focus state)
 - **Cross-platform** — macOS, Windows, iOS/iPad (Flutter + Rust)
 
 ---
@@ -149,7 +149,7 @@ label = "Monitor World"
 - [x] Flash animation — channel tab pulse + message box border/tint × 3
 - [x] Auto-flash on critical messages — toggleable in Settings → Behavior
 - [ ] Settings screen — static peer management via UI
-- [ ] F-key bindings for shortcuts
+- [x] F-key bindings for shortcuts (F1–F12, fires from any focus state)
 - [ ] Reliability layer wired for critical messages (ACK + retransmit)
 - [ ] External OSC trigger → Patch message mapping
 - [ ] OSCQuery support for zero-config integration
