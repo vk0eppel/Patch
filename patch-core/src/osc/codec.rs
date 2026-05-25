@@ -1,0 +1,211 @@
+//! Encode/decode PATCH OSC packets using the `rosc` crate.
+
+use anyhow::{bail, Context, Result};
+use chrono::{TimeZone, Utc};
+use rosc::{OscMessage, OscPacket, OscType};
+use uuid::Uuid;
+
+use super::{
+    addresses,
+    types::{ChannelFlash, PatchMessage, PeerPresence, Priority},
+};
+
+// ── Encode ────────────────────────────────────────────────────────────────────
+
+/// Encode a [`PatchMessage`] into raw OSC bytes.
+///
+/// Address: `/patch/channel/{channel_id}/message`
+/// The channel is encoded in the OSC address (not just the args) so that
+/// OSC routers, Companion, and QLab can filter by channel without parsing args.
+pub fn encode_message(msg: &PatchMessage) -> Result<Vec<u8>> {
+    let osc = OscMessage {
+        addr: addresses::channel_message(&msg.channel_id),
+        args: vec![
+            OscType::String(msg.sender_id.to_string()),
+            OscType::String(msg.sender_name.clone()),
+            OscType::String(msg.channel_id.clone()),
+            OscType::String(msg.message_id.to_string()),
+            OscType::Long(msg.timestamp.timestamp_millis()),
+            OscType::Int(msg.priority as i32),
+            OscType::String(msg.payload.clone()),
+        ],
+    };
+    rosc::encoder::encode(&OscPacket::Message(osc))
+        .context("Failed to encode channel message")
+}
+
+/// Encode a presence/heartbeat packet.
+pub fn encode_presence(p: &PeerPresence) -> Result<Vec<u8>> {
+    let channels_json = serde_json::to_string(&p.channels)?;
+    let osc = OscMessage {
+        addr: addresses::PRESENCE.to_string(),
+        args: vec![
+            OscType::String(p.peer_id.to_string()),
+            OscType::String(p.peer_name.clone()),
+            OscType::String(channels_json),
+            OscType::Long(p.timestamp.timestamp_millis()),
+        ],
+    };
+    rosc::encoder::encode(&OscPacket::Message(osc)).context("Failed to encode /patch/presence")
+}
+
+/// Encode a channel flash packet.
+pub fn encode_flash(flash: &ChannelFlash) -> Result<Vec<u8>> {
+    let osc = OscMessage {
+        addr: addresses::channel_flash(&flash.channel_id),
+        args: vec![
+            OscType::String(flash.sender_id.to_string()),
+            OscType::String(flash.sender_name.clone()),
+        ],
+    };
+    rosc::encoder::encode(&OscPacket::Message(osc)).context("Failed to encode flash")
+}
+
+/// Encode an ACK for a given message_id.
+pub fn encode_ack(message_id: Uuid, peer_id: Uuid) -> Result<Vec<u8>> {
+    let osc = OscMessage {
+        addr: addresses::ACK.to_string(),
+        args: vec![
+            OscType::String(message_id.to_string()),
+            OscType::String(peer_id.to_string()),
+        ],
+    };
+    rosc::encoder::encode(&OscPacket::Message(osc)).context("Failed to encode /patch/ack")
+}
+
+// ── Decode ────────────────────────────────────────────────────────────────────
+
+/// Top-level decoded PATCH event.
+#[derive(Debug)]
+pub enum PatchEvent {
+    Message(PatchMessage),
+    Ack { message_id: Uuid, peer_id: Uuid },
+    Presence(PeerPresence),
+    Flash(ChannelFlash),
+    Heartbeat { peer_id: Uuid },
+    Discovery { peer_id: Uuid, peer_name: String, osc_port: u16 },
+    Unknown(OscMessage),
+}
+
+/// Decode raw UDP bytes into a [`PatchEvent`].
+pub fn decode_packet(buf: &[u8]) -> Result<PatchEvent> {
+    let (_, packet) = rosc::decoder::decode_udp(buf).context("OSC decode failed")?;
+    match packet {
+        OscPacket::Message(msg) => decode_message(msg),
+        OscPacket::Bundle(_) => bail!("OSC bundles not yet supported"),
+    }
+}
+
+fn decode_message(msg: OscMessage) -> Result<PatchEvent> {
+    match msg.addr.as_str() {
+        // New channel-scoped address: /patch/channel/{id}/message
+        addr if addr.starts_with("/patch/channel/") && addr.ends_with("/message") => {
+            decode_patch_message(msg)
+        }
+        // Legacy flat address — kept for interop with external OSC tools
+        addresses::MESSAGE => decode_patch_message(msg),
+        addresses::ACK => decode_ack(msg),
+        addresses::PRESENCE => decode_presence(msg),
+        addresses::SYSTEM_HEARTBEAT => decode_heartbeat(msg),
+        addresses::DISCOVERY => decode_discovery(msg),
+        addr if addr.ends_with("/flash") => decode_flash(msg),
+        _ => Ok(PatchEvent::Unknown(msg)),
+    }
+}
+
+fn decode_patch_message(msg: OscMessage) -> Result<PatchEvent> {
+    let args = msg.args;
+    if args.len() < 7 {
+        bail!("Expected 7 args for /patch/message, got {}", args.len());
+    }
+    let sender_id = parse_uuid(&args[0])?;
+    let sender_name = parse_string(&args[1])?;
+    let channel_id = parse_string(&args[2])?;
+    let message_id = parse_uuid(&args[3])?;
+    let ts_ms = parse_long(&args[4])?;
+    let priority = Priority::try_from(parse_int(&args[5])?)?;
+    let payload = parse_string(&args[6])?;
+
+    Ok(PatchEvent::Message(PatchMessage {
+        message_id,
+        sender_id,
+        sender_name,
+        channel_id,
+        timestamp: Utc.timestamp_millis_opt(ts_ms).single()
+            .context("Invalid timestamp")?,
+        priority,
+        payload,
+    }))
+}
+
+fn decode_ack(msg: OscMessage) -> Result<PatchEvent> {
+    let args = msg.args;
+    Ok(PatchEvent::Ack {
+        message_id: parse_uuid(&args[0])?,
+        peer_id: parse_uuid(&args[1])?,
+    })
+}
+
+fn decode_presence(msg: OscMessage) -> Result<PatchEvent> {
+    let args = msg.args;
+    let peer_id = parse_uuid(&args[0])?;
+    let peer_name = parse_string(&args[1])?;
+    let channels: Vec<String> = serde_json::from_str(&parse_string(&args[2])?)?;
+    let ts_ms = parse_long(&args[3])?;
+    Ok(PatchEvent::Presence(PeerPresence {
+        peer_id,
+        peer_name,
+        channels,
+        timestamp: Utc.timestamp_millis_opt(ts_ms).single()
+            .context("Invalid timestamp")?,
+    }))
+}
+
+fn decode_heartbeat(msg: OscMessage) -> Result<PatchEvent> {
+    Ok(PatchEvent::Heartbeat {
+        peer_id: parse_uuid(&msg.args[0])?,
+    })
+}
+
+fn decode_discovery(msg: OscMessage) -> Result<PatchEvent> {
+    let args = msg.args;
+    Ok(PatchEvent::Discovery {
+        peer_id: parse_uuid(&args[0])?,
+        peer_name: parse_string(&args[1])?,
+        osc_port: parse_int(&args[2])? as u16,
+    })
+}
+
+fn decode_flash(msg: OscMessage) -> Result<PatchEvent> {
+    // addr is /patch/channel/{id}/flash
+    let parts: Vec<&str> = msg.addr.split('/').collect();
+    let channel_id = parts.get(3).copied().unwrap_or("unknown").to_string();
+    let args = msg.args;
+    Ok(PatchEvent::Flash(ChannelFlash {
+        channel_id,
+        sender_id: parse_uuid(&args[0])?,
+        sender_name: parse_string(&args[1])?,
+    }))
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+fn parse_string(t: &OscType) -> Result<String> {
+    if let OscType::String(s) = t { Ok(s.clone()) }
+    else { bail!("Expected OSC String, got {:?}", t) }
+}
+
+fn parse_int(t: &OscType) -> Result<i32> {
+    if let OscType::Int(i) = t { Ok(*i) }
+    else { bail!("Expected OSC Int, got {:?}", t) }
+}
+
+fn parse_long(t: &OscType) -> Result<i64> {
+    if let OscType::Long(l) = t { Ok(*l) }
+    else { bail!("Expected OSC Long, got {:?}", t) }
+}
+
+fn parse_uuid(t: &OscType) -> Result<Uuid> {
+    let s = parse_string(t)?;
+    Uuid::parse_str(&s).context("Invalid UUID")
+}

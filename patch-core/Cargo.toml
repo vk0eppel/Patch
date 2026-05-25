@@ -1,0 +1,46 @@
+[package]
+name = "patch-core"
+version = "0.1.0"
+edition = "2021"
+description = "PATCH core engine — OSC transport, discovery, reliability, bridge"
+
+[[bin]]
+name = "patch-core"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# OSC encoding/decoding
+rosc = "0.10"
+
+# mDNS / Bonjour discovery
+mdns-sd = "0.11"
+
+# Network interface enumeration
+network-interface = "2"
+
+# Serialization (bridge protocol + config)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Unique IDs
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Timestamps
+chrono = { version = "0.4", features = ["serde"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Config file (TOML)
+toml = "0.8"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+[dev-dependencies]
+tokio-test = "0.4"
