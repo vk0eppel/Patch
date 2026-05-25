@@ -76,8 +76,8 @@ patch/
         ├── theme/
         │   └── patch_theme.dart    # Dark palette, typography, component themes
         ├── screens/
-        │   ├── home_screen.dart    # Channel strip + message area + peers panel
-        │   └── settings_screen.dart # Identity, sessions, channels & shortcuts
+        │   ├── home_screen.dart    # Channel strip + multi-channel view + peers panel + flash layer
+        │   └── settings_screen.dart # Identity, NIC picker, sessions, channels & shortcuts
         └── widgets/
             ├── channel_tab.dart    # Sidebar tab with color dot
             ├── flash_button.dart   # Animated FLASH/page button
@@ -275,16 +275,16 @@ The engine must be running before the Flutter app launches. The app retries the 
 - Adding a new command: (1) add `cmd_*` handler in `commands.rs`, (2) add a method to `BridgeClient`, (3) add a case to `_handleEvent` in `home_screen.dart` or the relevant screen.
 - `Priority` uses manual `Serialize`/`Deserialize` impls to emit integers (not variant name strings). Always use `(j['priority'] as num).toInt()` on the Dart side.
 - Flash fires `AppEvent::ChannelFlash` locally after sending, so the sender always sees their own flash without needing to receive it back over the network.
+- Flash animation uses timer-based `setState` + `Future.delayed` (not `AnimationController`/`TweenSequence`) in `_FlashLayer` — the `TweenSequence` approach proved visually unreliable on macOS. Don't revert to it.
+- Multi-channel selection: tap = exclusive select, long press = toggle into multi-select. The combined message feed and `_FlashLayer` both scope to the `_ChannelView` area.
 
 ---
 
 ## Known Incomplete (next tasks)
 
-- [ ] Settings screen — NIC picker, add static peer via UI
-- [ ] Flash animation on channel tab strip (currently shows a SnackBar)
+- [ ] Settings screen — add static peer via UI
 - [ ] Keyboard shortcut binding in Flutter (F1–F8 wired to shortcut bar)
 - [ ] Reliability manager wired into the send path for critical messages
-- [ ] Config save on `set_interface` command (currently prompts restart only)
 - [ ] Wire heartbeat send through transport (discovery module encodes presence but needs the send handle)
 
 ---
@@ -316,6 +316,9 @@ Patch UI is designed for live environments:
 - critical messages visually distinct (red left border + background tint)
 - keyboard-first on desktop (Enter to send, F-keys for shortcuts)
 - touch-first on iPad
+- **multi-channel view**: tap to select exclusively, long-press to toggle into multi-select; combined feed sorted by timestamp; channel colour dot on each message row
+- **flash**: channel tab pulses (3× scale animation); message box border + background tint pulses 3× in the channel colour (`_FlashLayer` inside `_ChannelView` Stack)
+- **NIC picker**: Settings → Network Interface; dropdown shows all interfaces with name + IP; "Auto" binds all; change persists to `patch.toml`, takes effect on next restart
 
 ---
 

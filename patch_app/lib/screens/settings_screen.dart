@@ -29,6 +29,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   List<SessionMeta> _sessions = [];
   late List<PatchChannel> _channels;
 
+  // Network interfaces
+  List<Map<String, String>> _interfaces = [];
+  String? _selectedInterface; // null = auto
+  bool _interfaceChangedPending = false;
+
   @override
   void initState() {
     super.initState();
@@ -36,6 +41,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _sub = widget.bridge.events.listen(_handleEvent);
     widget.bridge.getConfig();
     widget.bridge.listSessions();
+    widget.bridge.getInterfaces();
   }
 
   @override
@@ -50,7 +56,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     switch (type) {
       case 'config':
         final data = event['data'] as Map<String, dynamic>;
-        setState(() => _nameCtrl.text = data['client_name'] as String? ?? '');
+        setState(() {
+          _nameCtrl.text = data['client_name'] as String? ?? '';
+          _selectedInterface = data['network_interface'] as String?;
+        });
+      case 'interfaces':
+        final data = event['data'] as List<dynamic>;
+        setState(() {
+          _interfaces = data
+              .map((i) => {
+                    'name': (i as Map<String, dynamic>)['name'] as String,
+                    'ip': i['ip'] as String,
+                  })
+              .toList();
+        });
+      case 'interface_changed':
+        setState(() => _interfaceChangedPending = true);
       case 'client_name_changed':
         setState(() => _nameSaved = true);
         Future.delayed(const Duration(seconds: 2), () {
@@ -169,6 +190,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 32),
 
+          // ── Network Interface ────────────────────────────────────────────
+          _SectionHeader('Network Interface'),
+          const SizedBox(height: 4),
+          const Text(
+            'Bind OSC to a specific NIC. Use Auto on single-homed machines. Takes effect after restart.',
+            style: TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeSmall),
+          ),
+          const SizedBox(height: 12),
+          _InterfacePicker(
+            interfaces: _interfaces,
+            selected: _selectedInterface,
+            restartPending: _interfaceChangedPending,
+            onSelect: (name) {
+              setState(() {
+                _selectedInterface = name;
+                _interfaceChangedPending = false;
+              });
+              widget.bridge.setInterface(name ?? 'auto');
+            },
+          ),
+
+          const SizedBox(height: 32),
+
           // ── Sessions ────────────────────────────────────────────────────
           _SectionHeader('Sessions'),
           const SizedBox(height: 4),
@@ -267,6 +311,76 @@ class _UsernameField extends StatelessWidget {
                   child: const Text('Save'),
                 ),
         ),
+      ],
+    );
+  }
+}
+
+// ── Network interface picker ──────────────────────────────────────────────────
+
+class _InterfacePicker extends StatelessWidget {
+  final List<Map<String, String>> interfaces;
+  final String? selected; // null = auto
+  final bool restartPending;
+  final ValueChanged<String?> onSelect;
+
+  const _InterfacePicker({
+    required this.interfaces,
+    required this.selected,
+    required this.restartPending,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Build dropdown items: Auto + each interface
+    final items = <DropdownMenuItem<String?>>[
+      const DropdownMenuItem(
+        value: null,
+        child: Text('Auto (all interfaces)'),
+      ),
+      ...interfaces.map((iface) => DropdownMenuItem(
+            value: iface['name'],
+            child: Text('${iface['name']}  •  ${iface['ip']}'),
+          )),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+          decoration: BoxDecoration(
+            color: PatchTheme.surface,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: PatchTheme.border),
+          ),
+          child: DropdownButton<String?>(
+            value: selected,
+            isExpanded: true,
+            underline: const SizedBox.shrink(),
+            dropdownColor: PatchTheme.surface,
+            style: const TextStyle(
+              color: PatchTheme.textPrimary,
+              fontSize: PatchTheme.fontSizeSmall,
+            ),
+            items: items,
+            onChanged: onSelect,
+          ),
+        ),
+        if (restartPending) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: const [
+              Icon(Icons.info_outline, size: 14, color: PatchTheme.warning),
+              SizedBox(width: 6),
+              Text(
+                'Restart patch-core for the new interface to take effect.',
+                style: TextStyle(color: PatchTheme.warning, fontSize: 11),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }

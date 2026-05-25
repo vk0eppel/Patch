@@ -35,7 +35,7 @@ async fn dispatch(cmd: Value, state: &AppState, transport: &Transport) -> Value 
         "get_messages"     => cmd_get_messages(cmd, state).await,
         "get_interfaces"   => cmd_get_interfaces(),
         "get_config"       => cmd_get_config(state).await,
-        "set_interface"    => cmd_set_interface(cmd),
+        "set_interface"    => cmd_set_interface(cmd, state).await,
         "set_client_name"  => cmd_set_client_name(cmd, state).await,
         "add_static_peer"  => cmd_add_static_peer(cmd, state).await,
         "upsert_channel"   => cmd_upsert_channel(cmd, state).await,
@@ -145,9 +145,21 @@ async fn cmd_set_client_name(cmd: Value, state: &AppState) -> Value {
     }
 }
 
-fn cmd_set_interface(cmd: Value) -> Value {
-    let name = cmd["name"].as_str().unwrap_or("").to_string();
-    json!({ "event": "ok", "message": format!("Interface set to {} — restart required", name) })
+async fn cmd_set_interface(cmd: Value, state: &AppState) -> Value {
+    // "auto" (or null) means bind all interfaces; any other string = specific NIC name.
+    let iface: Option<String> = match cmd["name"].as_str() {
+        None | Some("") | Some("auto") => None,
+        Some(s) => Some(s.to_string()),
+    };
+    let label = iface.clone().unwrap_or_else(|| "auto".to_string());
+    match state.set_network_interface(iface).await {
+        Ok(()) => json!({
+            "event": "interface_changed",
+            "name": label,
+            "restart_required": true
+        }),
+        Err(e) => json!({ "event": "error", "message": e.to_string() }),
+    }
 }
 
 async fn cmd_add_static_peer(cmd: Value, state: &AppState) -> Value {

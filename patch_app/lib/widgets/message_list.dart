@@ -4,7 +4,16 @@ import '../theme/patch_theme.dart';
 
 class MessageList extends StatefulWidget {
   final List<PatchMessage> messages;
-  const MessageList({super.key, required this.messages});
+
+  /// When provided (multi-channel mode), each message row shows a coloured dot
+  /// for its channel. Key = channel_id, value = channel colour.
+  final Map<String, Color>? channelColors;
+
+  const MessageList({
+    super.key,
+    required this.messages,
+    this.channelColors,
+  });
 
   @override
   State<MessageList> createState() => _MessageListState();
@@ -50,14 +59,21 @@ class _MessageListState extends State<MessageList> {
       controller: _scrollCtrl,
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: widget.messages.length,
-      itemBuilder: (ctx, i) => _MessageTile(message: widget.messages[i]),
+      itemBuilder: (ctx, i) => _MessageTile(
+        message: widget.messages[i],
+        channelColor: widget.channelColors?[widget.messages[i].channelId],
+      ),
     );
   }
 }
 
 class _MessageTile extends StatelessWidget {
   final PatchMessage message;
-  const _MessageTile({required this.message});
+
+  /// When non-null, a coloured dot is shown to the left of the timestamp.
+  final Color? channelColor;
+
+  const _MessageTile({required this.message, this.channelColor});
 
   Color get _priorityColor {
     return switch (message.priority) {
@@ -90,7 +106,21 @@ class _MessageTile extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Timestamp — large and readable
+            // Channel dot — only shown in multi-channel mode
+            if (channelColor != null) ...[
+              Padding(
+                padding: const EdgeInsets.only(top: 4, right: 6),
+                child: Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: channelColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ],
+            // Timestamp
             Text(
               _formatTime(message.timestamp),
               style: const TextStyle(
@@ -110,7 +140,7 @@ class _MessageTile extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            // Message payload
+            // Payload
             Expanded(
               child: Text(
                 message.payload,

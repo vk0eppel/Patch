@@ -90,6 +90,14 @@ impl AppState {
         Ok(())
     }
 
+    /// Persist a new network interface selection (None = bind all).
+    /// Takes effect on next restart — transport is already bound.
+    pub async fn set_network_interface(&self, iface: Option<String>) -> anyhow::Result<()> {
+        let mut cfg = self.0.config.write().await;
+        cfg.network_interface = iface;
+        cfg.save()
+    }
+
     // ── Messages ──────────────────────────────────────────────────────────────
 
     pub async fn store_message(&self, msg: PatchMessage) {

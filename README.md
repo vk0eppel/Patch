@@ -20,11 +20,12 @@ Inspired by [Shure Wireless Workbench](https://www.shure.com/en-US/products/soft
 
 - **OSC-native transport** — messages travel as OSC packets; unicast to known peers, broadcast only for presence/discovery
 - **Logical channels** — FOH, MON, RF, LIGHTING, VIDEO, STAGE, PRODUCTION — create and delete at runtime
-- **Flash / page** — one-button high-priority alert per channel, visible to all peers on that channel
+- **Multi-channel view** — tap to focus a channel, long-press to add it to the view; combined feed sorted by timestamp with per-message channel colour dots
+- **Flash / page** — one-button high-priority alert per channel; channel tab pulses + message box border lights up in the channel colour × 3
 - **Shortcut messages** — per-channel one-tap buttons for common callouts (HOLD, CLEAR, BATTERY LOW…), optionally bound to F-keys
 - **Session presets** — save and restore named channel layouts; portable across machines
 - **Hybrid discovery** — mDNS/Bonjour auto-discovery + OSC beacon + manual static IP for locked-down show networks
-- **Configurable identity** — set your display name from the settings screen; persisted immediately to `patch.toml`
+- **Configurable identity** — set your display name and network interface from the settings screen; changes persist immediately
 - **Priority levels** — info / warning / critical; critical messages are visually distinct and require ACK
 - **Message deduplication** — UUID per message; never see the same message twice
 - **Dark, high-contrast UI** — readable from a stage desk at 2m
@@ -141,10 +142,11 @@ label = "Monitor World"
 - [x] Priority levels with visual differentiation
 - [x] Message deduplication by UUID
 - [x] Flutter bridge protocol
-- [x] Settings screen — display name, shortcuts, channel management
+- [x] Settings screen — display name, NIC picker, shortcuts, channel management
 - [x] Session presets — save / load / delete named channel layouts
-- [ ] Settings screen — NIC picker, static peer management via UI
-- [ ] Flash animation on channel tab strip (currently shows a banner)
+- [x] Multi-channel view — combined feed, long-press to add channels
+- [x] Flash animation — channel tab pulse + message box border/tint × 3
+- [ ] Settings screen — static peer management via UI
 - [ ] F-key bindings for shortcuts
 - [ ] Reliability layer wired for critical messages (ACK + retransmit)
 - [ ] External OSC trigger → Patch message mapping

@@ -1,18 +1,36 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../models/channel.dart';
 import '../theme/patch_theme.dart';
 
-/// Horizontal strip of one-tap shortcut message buttons.
-/// Keyboard bindings (F1–F8 etc.) fire when the channel is focused.
+/// A shortcut paired with its channel — used when aggregating shortcuts
+/// from multiple selected channels.
+class ChannelShortcut {
+  final String channelId;
+  final Color channelColor;
+  final ShortcutMessage shortcut;
+
+  const ChannelShortcut({
+    required this.channelId,
+    required this.channelColor,
+    required this.shortcut,
+  });
+}
+
+/// Horizontal strip of one-tap shortcut buttons.
+///
+/// [shortcuts] carries channel context so each chip can show its channel's
+/// colour dot when multiple channels are active.
+/// [showChannelDots] should be true when more than one channel is selected.
 class ShortcutBar extends StatelessWidget {
-  final List<ShortcutMessage> shortcuts;
-  final ValueChanged<ShortcutMessage> onShortcut;
+  final List<ChannelShortcut> shortcuts;
+  final ValueChanged<ChannelShortcut> onShortcut;
+  final bool showChannelDots;
 
   const ShortcutBar({
     super.key,
     required this.shortcuts,
     required this.onShortcut,
+    this.showChannelDots = false,
   });
 
   @override
@@ -23,10 +41,13 @@ class ShortcutBar extends StatelessWidget {
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
-          children: shortcuts.map((s) => _ShortcutChip(
-            shortcut: s,
-            onTap: () => onShortcut(s),
-          )).toList(),
+          children: shortcuts
+              .map((cs) => _ShortcutChip(
+                    cs: cs,
+                    showChannelDot: showChannelDots,
+                    onTap: () => onShortcut(cs),
+                  ))
+              .toList(),
         ),
       ),
     );
@@ -34,13 +55,18 @@ class ShortcutBar extends StatelessWidget {
 }
 
 class _ShortcutChip extends StatelessWidget {
-  final ShortcutMessage shortcut;
+  final ChannelShortcut cs;
+  final bool showChannelDot;
   final VoidCallback onTap;
 
-  const _ShortcutChip({required this.shortcut, required this.onTap});
+  const _ShortcutChip({
+    required this.cs,
+    required this.showChannelDot,
+    required this.onTap,
+  });
 
   Color get _chipColor {
-    return switch (shortcut.priority) {
+    return switch (cs.shortcut.priority) {
       3 => PatchTheme.critical.withAlpha(30),
       2 => PatchTheme.warning.withAlpha(30),
       _ => PatchTheme.surfaceHigh,
@@ -48,7 +74,7 @@ class _ShortcutChip extends StatelessWidget {
   }
 
   Color get _borderColor {
-    return switch (shortcut.priority) {
+    return switch (cs.shortcut.priority) {
       3 => PatchTheme.critical,
       2 => PatchTheme.warning,
       _ => PatchTheme.border,
@@ -72,8 +98,20 @@ class _ShortcutChip extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Channel dot — only when viewing multiple channels
+              if (showChannelDot) ...[
+                Container(
+                  width: 6,
+                  height: 6,
+                  margin: const EdgeInsets.only(bottom: 3),
+                  decoration: BoxDecoration(
+                    color: cs.channelColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ],
               Text(
-                shortcut.label,
+                cs.shortcut.label,
                 style: const TextStyle(
                   color: PatchTheme.textPrimary,
                   fontSize: PatchTheme.fontSizeSmall,
@@ -81,9 +119,9 @@ class _ShortcutChip extends StatelessWidget {
                   letterSpacing: 0.8,
                 ),
               ),
-              if (shortcut.keyBinding != null)
+              if (cs.shortcut.keyBinding != null)
                 Text(
-                  shortcut.keyBinding!,
+                  cs.shortcut.keyBinding!,
                   style: const TextStyle(
                     color: PatchTheme.textMuted,
                     fontSize: 9,
