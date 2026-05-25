@@ -6,7 +6,6 @@ target/
 patch_app/.dart_tool/
 patch_app/build/
 build/
-patch_app/.flutter-plugins
 patch_app/.flutter-plugins-dependencies
 patch_app/.packages
 
@@ -14,7 +13,9 @@ patch_app/.packages
 .DS_Store
 *.swp
 
-# Config (machine-specific — check in patch.toml.example instead)
+# Stray patch.toml left in CWD by the pre-FFI dev binary.
+# The runtime config now lives under dirs::data_dir() (e.g.
+# ~/Library/Application Support/Patch/patch.toml on macOS).
 patch.toml
 
 # IDE
