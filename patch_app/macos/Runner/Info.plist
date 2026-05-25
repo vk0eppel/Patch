@@ -28,5 +28,17 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<!--
+	  Required for OSC/UDP traffic and Bonjour discovery on macOS 15+
+	  (Sequoia introduced a Local Network privacy prompt mirroring iOS).
+	  The matching mDNS service type is registered in
+	  patch-core/src/discovery/mod.rs.
+	-->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Patch uses your local network to discover and exchange operational messages with other Patch devices on the show LAN (FOH, monitors, RF, lighting, video, stage).</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_patch._udp</string>
+	</array>
 </dict>
 </plist>

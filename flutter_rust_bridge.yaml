@@ -1,0 +1,11 @@
+# flutter_rust_bridge codegen config — run from the repo root:
+#   flutter_rust_bridge_codegen generate
+#
+# Scans `crate::api` for `pub` items and emits:
+#   - patch-core/src/frb_generated.rs   (Rust FFI glue, included from lib.rs)
+#   - patch_app/lib/src/rust/           (typed Dart bindings)
+
+rust_input: crate::api
+rust_root: patch-core/
+dart_output: patch_app/lib/src/rust
+rust_output: patch-core/src/frb_generated.rs

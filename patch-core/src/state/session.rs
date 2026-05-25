@@ -9,12 +9,10 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use super::channel::Channel;
-use super::config::StaticPeer;
-
-const SESSIONS_DIR: &str = "sessions";
+use super::config::{data_dir, StaticPeer};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionConfig {
@@ -39,7 +37,7 @@ impl SessionConfig {
 // ── File helpers ──────────────────────────────────────────────────────────────
 
 fn sessions_dir() -> PathBuf {
-    Path::new(SESSIONS_DIR).to_path_buf()
+    data_dir().join("sessions")
 }
 
 fn session_path(slug: &str) -> PathBuf {

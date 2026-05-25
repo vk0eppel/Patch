@@ -1,154 +1,422 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 
-/// Connects to the patch-core TCP bridge server and provides
-/// a simple command/event interface for the rest of the Flutter app.
+import '../src/rust/api.dart' as rust;
+import '../src/rust/frb_generated.dart';
+import '../src/rust/osc/types.dart' as rust_osc;
+import '../src/rust/state/channel.dart' as rust_channel;
+import '../src/rust/state/config.dart' as rust_config;
+import '../src/rust/state/peer.dart' as rust_peer;
+import '../src/rust/state/session.dart' as rust_session;
+import '../src/rust/transport.dart' as rust_transport;
+
+/// Façade over the `flutter_rust_bridge`-generated engine API.
 ///
-/// All commands are fire-and-forget JSON lines.
-/// Events arrive as a [Stream<Map<String, dynamic>>].
+/// The Flutter app used to talk to `patch-core` over a local TCP socket and
+/// consume newline-JSON events. Now `patch-core` is linked directly into the
+/// app as a Rust library (see `patch-core/src/api.rs`). This class preserves
+/// the legacy method surface + `Stream<Map<String, dynamic>>` event shape so
+/// `home_screen.dart` and `settings_screen.dart` don't need to change.
+///
+/// Lifecycle: construct → `await connect()` → use. `dispose()` to clean up.
 class BridgeClient {
-  static const _host = '127.0.0.1';
-  static const _port = 9001;
-  static const _reconnectDelay = Duration(seconds: 2);
-
-  Socket? _socket;
   final _eventController = StreamController<Map<String, dynamic>>.broadcast();
-  bool _disposed = false;
+  StreamSubscription<rust.PatchAppEvent>? _engineSub;
+  bool _connected = false;
 
+  /// Stream of legacy-shaped events: `{"event": "<type>", ...}`.
   Stream<Map<String, dynamic>> get events => _eventController.stream;
 
-  /// Connect (and auto-reconnect on disconnect).
+  /// Boot the Rust engine and start forwarding events into [events].
   Future<void> connect() async {
-    while (!_disposed) {
-      try {
-        _socket = await Socket.connect(_host, _port);
-        _socket!
-            .cast<List<int>>()
-            .transform(utf8.decoder)
-            .transform(const LineSplitter())
-            .listen(
-              _onLine,
-              onDone: _onDisconnect,
-              onError: (_) => _onDisconnect(),
-            );
-        return; // Connected — exit the loop
-      } catch (_) {
-        await Future.delayed(_reconnectDelay);
-      }
-    }
+    if (_connected) return;
+    await RustLib.init();
+    await rust.init();
+    _engineSub = rust.subscribeEvents().listen(_forwardEngineEvent);
+    _connected = true;
   }
 
-  void _onLine(String line) {
-    try {
-      final map = jsonDecode(line) as Map<String, dynamic>;
-      _eventController.add(map);
-    } catch (_) {
-      // Ignore malformed lines
-    }
+  void _forwardEngineEvent(rust.PatchAppEvent event) {
+    final map = switch (event) {
+      rust.PatchAppEvent_Message(:final field0) => {
+        'event': 'message',
+        'data': _messageToMap(field0),
+      },
+      rust.PatchAppEvent_MessageAcked(:final messageId, :final peerId) => {
+        'event': 'message_acked',
+        'message_id': messageId,
+        'peer_id': peerId,
+      },
+      rust.PatchAppEvent_PeerUpdated(:final field0) => {
+        'event': 'peer_updated',
+        'data': _presenceToPeerMap(field0),
+      },
+      rust.PatchAppEvent_PeerExpired(:final peerId) => {
+        'event': 'peer_expired',
+        'data': {'peer_id': peerId},
+      },
+      rust.PatchAppEvent_ChannelFlash(:final field0) => {
+        'event': 'channel_flash',
+        'data': {
+          'channel_id': field0.channelId,
+          'sender_id': field0.senderId.toString(),
+          'sender_name': field0.senderName,
+        },
+      },
+      rust.PatchAppEvent_ChannelListUpdated() => {
+        'event': 'channel_list_updated',
+      },
+      rust.PatchAppEvent_ClientNameChanged(:final name) => {
+        'event': 'client_name_changed',
+        'name': name,
+      },
+    };
+    _eventController.add(map);
   }
 
-  void _onDisconnect() {
-    _socket = null;
-    if (!_disposed) {
-      // Reconnect after a short delay
-      Future.delayed(_reconnectDelay, connect);
-    }
-  }
+  void _emit(Map<String, dynamic> event) => _eventController.add(event);
 
-  /// Send a raw command map to the engine.
-  void send(Map<String, dynamic> cmd) {
-    final line = jsonEncode(cmd) + '\n';
-    _socket?.write(line);
-  }
+  void _emitError(Object e) =>
+      _emit({'event': 'error', 'message': e.toString()});
 
-  // ── Convenience methods ───────────────────────────────────────────────────
+  // ── Commands (legacy fire-and-forget shape) ──────────────────────────────
 
-  void sendMessage({
+  Future<void> sendMessage({
     required String channelId,
     required String payload,
     int priority = 1,
-  }) =>
-      send({'cmd': 'send_message', 'channel_id': channelId, 'payload': payload, 'priority': priority});
+  }) async {
+    try {
+      final id = await rust.sendMessage(
+        channelId: channelId,
+        payload: payload,
+        priority: priority,
+      );
+      _emit({'event': 'ack_send', 'message_id': id});
+    } catch (e) {
+      _emitError(e);
+    }
+  }
 
-  void sendFlash(String channelId) =>
-      send({'cmd': 'send_flash', 'channel_id': channelId});
+  Future<void> sendFlash(String channelId) async {
+    try {
+      await rust.sendFlash(channelId: channelId);
+    } catch (e) {
+      _emitError(e);
+    }
+  }
 
-  void getChannels() => send({'cmd': 'get_channels'});
+  Future<void> getChannels() async {
+    try {
+      final channels = await rust.getChannels();
+      _emit({
+        'event': 'channels',
+        'data': channels.map(_channelToMap).toList(),
+      });
+    } catch (e) {
+      _emitError(e);
+    }
+  }
 
-  void getPeers() => send({'cmd': 'get_peers'});
+  Future<void> getPeers() async {
+    try {
+      final peers = await rust.getPeers();
+      _emit({'event': 'peers', 'data': peers.map(_peerToMap).toList()});
+    } catch (e) {
+      _emitError(e);
+    }
+  }
 
-  void getMessages(String channelId, {int limit = 50}) =>
-      send({'cmd': 'get_messages', 'channel_id': channelId, 'limit': limit});
+  Future<void> getMessages(String channelId, {int limit = 50}) async {
+    try {
+      final messages = await rust.getMessages(
+        channelId: channelId,
+        limit: limit,
+      );
+      _emit({
+        'event': 'messages',
+        'channel_id': channelId,
+        'data': messages.map(_messageToMap).toList(),
+      });
+    } catch (e) {
+      _emitError(e);
+    }
+  }
 
-  void getInterfaces() => send({'cmd': 'get_interfaces'});
+  Future<void> getInterfaces() async {
+    try {
+      final ifaces = await rust.getInterfaces();
+      _emit({
+        'event': 'interfaces',
+        'data': ifaces.map((i) => {'name': i.name, 'ip': i.ip}).toList(),
+      });
+    } catch (e) {
+      _emitError(e);
+    }
+  }
 
-  void getConfig() => send({'cmd': 'get_config'});
+  Future<void> getConfig() async {
+    try {
+      final cfg = await rust.getConfig();
+      _emit({
+        'event': 'config',
+        'data': {
+          'client_name': cfg.clientName,
+          'osc_port': cfg.oscPort,
+          'network_interface': cfg.networkInterface,
+          'static_peers': cfg.staticPeers.map(_staticPeerToMap).toList(),
+          'flash_on_critical': cfg.flashOnCritical,
+          'flash_on_message': cfg.flashOnMessage,
+        },
+      });
+    } catch (e) {
+      _emitError(e);
+    }
+  }
 
-  void setInterface(String name) =>
-      send({'cmd': 'set_interface', 'name': name});
+  Future<void> setInterface(String name) async {
+    try {
+      await rust.setInterface(name: name.isEmpty ? null : name);
+      _emit({
+        'event': 'interface_changed',
+        'name': name.isEmpty ? 'auto' : name,
+        'restart_required': true,
+      });
+    } catch (e) {
+      _emitError(e);
+    }
+  }
 
-  void setClientName(String name) =>
-      send({'cmd': 'set_client_name', 'name': name});
+  Future<void> setClientName(String name) async {
+    try {
+      await rust.setClientName(name: name);
+      // `client_name_changed` is also emitted by the engine event bus.
+    } catch (e) {
+      _emitError(e);
+    }
+  }
 
-  void addStaticPeer(String address, int port, {String? label}) =>
-      send({'cmd': 'add_static_peer', 'address': address, 'port': port, 'label': label});
+  Future<void> addStaticPeer(String address, int port, {String? label}) async {
+    try {
+      await rust.addStaticPeer(address: address, port: port, label: label);
+    } catch (e) {
+      _emitError(e);
+    }
+  }
 
-  void upsertChannel(String id, String displayName, String color) =>
-      send({'cmd': 'upsert_channel', 'id': id, 'display_name': displayName, 'color': color});
+  Future<void> upsertChannel(
+    String id,
+    String displayName,
+    String color,
+  ) async {
+    try {
+      await rust.upsertChannel(
+        id: id,
+        displayName: displayName,
+        color: color,
+      );
+    } catch (e) {
+      _emitError(e);
+    }
+  }
 
-  void upsertShortcut({
+  Future<void> upsertShortcut({
     required String channelId,
     required String label,
     required String payload,
     String? keyBinding,
     int priority = 1,
-  }) =>
-      send({
-        'cmd': 'upsert_shortcut',
-        'channel_id': channelId,
-        'label': label,
-        'payload': payload,
-        if (keyBinding != null) 'key_binding': keyBinding,
-        'priority': priority,
+  }) async {
+    try {
+      await rust.upsertShortcut(
+        channelId: channelId,
+        label: label,
+        payload: payload,
+        priority: priority,
+        keyBinding: keyBinding,
+      );
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
+  Future<void> deleteShortcut({
+    required String channelId,
+    required String label,
+  }) async {
+    try {
+      await rust.deleteShortcut(channelId: channelId, label: label);
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
+  Future<void> deleteChannel(String id) async {
+    try {
+      await rust.deleteChannel(id: id);
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
+  Future<void> saveSession(String name) async {
+    try {
+      final s = await rust.saveSession(name: name);
+      _emit({'event': 'session_saved', 'slug': s.slug, 'name': s.name});
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
+  Future<void> loadSession(String slug) async {
+    try {
+      final s = await rust.loadSession(slug: slug);
+      _emit({
+        'event': 'session_loaded',
+        'slug': s.slug,
+        'name': s.name,
+        'channel_count': s.channelCount,
       });
+    } catch (e) {
+      _emitError(e);
+    }
+  }
 
-  void deleteShortcut({required String channelId, required String label}) =>
-      send({'cmd': 'delete_shortcut', 'channel_id': channelId, 'label': label});
-
-  void deleteChannel(String id) =>
-      send({'cmd': 'delete_channel', 'id': id});
-
-  void saveSession(String name) =>
-      send({'cmd': 'save_session', 'name': name});
-
-  void loadSession(String slug) =>
-      send({'cmd': 'load_session', 'slug': slug});
-
-  void listSessions() =>
-      send({'cmd': 'list_sessions'});
-
-  void deleteSession(String slug) =>
-      send({'cmd': 'delete_session', 'slug': slug});
-
-  void setFlashOnCritical(bool enabled) =>
-      send({'cmd': 'set_flash_on_critical', 'enabled': enabled});
-
-  void setFlashOnMessage(bool enabled) =>
-      send({'cmd': 'set_flash_on_message', 'enabled': enabled});
-
-  void setChannelFlash(String channelId,
-      {bool? flashOnCritical, bool? flashOnMessage}) =>
-      send({
-        'cmd': 'set_channel_flash',
-        'channel_id': channelId,
-        if (flashOnCritical != null) 'flash_on_critical': flashOnCritical,
-        if (flashOnMessage  != null) 'flash_on_message':  flashOnMessage,
+  Future<void> listSessions() async {
+    try {
+      final list = await rust.listSessions();
+      _emit({
+        'event': 'sessions',
+        'data': list.map(_sessionMetaToMap).toList(),
       });
+    } catch (e) {
+      _emitError(e);
+    }
+  }
 
-  void dispose() {
-    _disposed = true;
-    _socket?.destroy();
-    _eventController.close();
+  Future<void> deleteSession(String slug) async {
+    try {
+      await rust.deleteSession(slug: slug);
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
+  Future<void> setFlashOnCritical(bool enabled) async {
+    try {
+      await rust.setFlashOnCritical(enabled: enabled);
+      _emit({'event': 'config_updated', 'flash_on_critical': enabled});
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
+  Future<void> setFlashOnMessage(bool enabled) async {
+    try {
+      await rust.setFlashOnMessage(enabled: enabled);
+      _emit({'event': 'config_updated', 'flash_on_message': enabled});
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
+  Future<void> setChannelFlash(
+    String channelId, {
+    bool? flashOnCritical,
+    bool? flashOnMessage,
+  }) async {
+    try {
+      await rust.setChannelFlash(
+        channelId: channelId,
+        flashOnCritical: flashOnCritical,
+        flashOnMessage: flashOnMessage,
+      );
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
+  Future<void> dispose() async {
+    await _engineSub?.cancel();
+    await _eventController.close();
   }
 }
+
+// ── Conversion helpers ──────────────────────────────────────────────────────
+//
+// The Dart models (PatchMessage.fromJson, PatchChannel.fromJson, ...) expect
+// snake_case keys, ISO-8601 timestamp strings, UUIDs-as-strings, and integer
+// priorities. The FRB-generated types are strongly-typed Dart classes with
+// DateTime/UuidValue/enum fields — we re-emit them in the legacy JSON shape
+// so the screens keep working unchanged.
+
+Map<String, dynamic> _channelToMap(rust_channel.Channel c) => {
+      'id': c.id,
+      'display_name': c.displayName,
+      'color': c.color,
+      'shortcuts': c.shortcuts.map(_shortcutToMap).toList(),
+      'flash_on_critical': c.flashOnCritical,
+      'flash_on_message': c.flashOnMessage,
+    };
+
+Map<String, dynamic> _shortcutToMap(rust_channel.ShortcutMessage s) => {
+      'label': s.label,
+      'payload': s.payload,
+      'key_binding': s.keyBinding,
+      'priority': s.priority,
+    };
+
+Map<String, dynamic> _messageToMap(rust_osc.PatchMessage m) => {
+      'message_id': m.messageId.toString(),
+      'sender_id': m.senderId.toString(),
+      'sender_name': m.senderName,
+      'channel_id': m.channelId,
+      'timestamp': m.timestamp.toIso8601String(),
+      'priority': m.priority.index,
+      'payload': m.payload,
+    };
+
+Map<String, dynamic> _peerToMap(rust_peer.Peer p) => {
+      'peer_id': p.peerId.toString(),
+      'peer_name': p.peerName,
+      'channels': p.channels,
+      'address': p.address,
+      'osc_port': p.oscPort,
+      'last_seen': p.lastSeen.toIso8601String(),
+      'discovery_mode': switch (p.discoveryMode) {
+        rust_peer.DiscoveryMode.mdns => 'mdns',
+        rust_peer.DiscoveryMode.oscBeacon => 'osc_beacon',
+        rust_peer.DiscoveryMode.manualIp => 'manual_ip',
+      },
+    };
+
+/// Map a `PeerPresence` event (broadcast on update) to the legacy `Peer` shape
+/// the UI expects. Address/port/last_seen aren't on the presence packet itself;
+/// the UI also receives a full `peers` snapshot via `getPeers()` so this is
+/// mostly used for the "new peer joined" indicator.
+Map<String, dynamic> _presenceToPeerMap(rust_osc.PeerPresence p) => {
+      'peer_id': p.peerId.toString(),
+      'peer_name': p.peerName,
+      'channels': p.channels,
+      'address': '',
+      'osc_port': 0,
+      'last_seen': p.timestamp.toIso8601String(),
+      'discovery_mode': 'osc_beacon',
+    };
+
+Map<String, dynamic> _staticPeerToMap(rust_config.StaticPeer s) => {
+      'address': s.address,
+      'port': s.port,
+      'label': s.label,
+    };
+
+Map<String, dynamic> _sessionMetaToMap(rust_session.SessionMeta s) => {
+      'slug': s.slug,
+      'name': s.name,
+      'created_at': s.createdAt.toIso8601String(),
+      'channel_count': s.channelCount.toInt(),
+    };
+
+// Keep this import alive — `InterfaceInfo` is referenced only via `rust.`,
+// not via the prefix, but the unused-import lint would still trip without it.
+// ignore: unused_element
+final _keepTransportImport = rust_transport.InterfaceInfo;

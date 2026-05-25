@@ -1,14 +1,28 @@
 [package]
-name = "patch-core"
+# Underscore-form package name so the static library file (libpatch_core.a)
+# matches what cargokit's build_pod.dart resolves from `crateInfo.packageName`.
+# The workspace continues to find the crate at the `patch-core/` directory.
+name = "patch_core"
 version = "0.1.0"
 edition = "2021"
-description = "PATCH core engine — OSC transport, discovery, reliability, bridge"
+description = "PATCH core engine — OSC transport, discovery, reliability."
 
-[[bin]]
-name = "patch-core"
-path = "src/main.rs"
+[lib]
+name = "patch_core"
+path = "src/lib.rs"
+# cdylib + staticlib: required for linking into the Flutter app (FFI).
+# rlib: keeps the crate usable from tests and other Rust consumers.
+crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
+# Platform-correct data directory (config + sessions live here when bundled).
+dirs = "5"
+
+# Flutter ↔ Rust FFI bridge. Pinned to match the Dart-side `flutter_rust_bridge`
+# package version in patch_app/pubspec.yaml — codegen produces glue that
+# references symbols specific to this version.
+flutter_rust_bridge = { version = "=2.12.0", features = ["chrono", "uuid", "rust-async"] }
+
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 
@@ -21,8 +35,10 @@ mdns-sd = "0.11"
 # Network interface enumeration
 network-interface = "2"
 
-# Serialization (bridge protocol + config)
+# Serialization (config + sessions on disk, FRB types for Dart)
 serde = { version = "1", features = ["derive"] }
+# Used by osc/codec.rs to pack the channel-subscription list as a JSON
+# string inside a single OSC argument.
 serde_json = "1"
 
 # Unique IDs
@@ -33,7 +49,6 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # Logging
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Config file (TOML)
 toml = "0.8"
