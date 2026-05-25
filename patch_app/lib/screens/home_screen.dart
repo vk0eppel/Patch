@@ -38,6 +38,8 @@ class _HomeScreenState extends State<HomeScreen> {
   int _flashNotify = 0;
   Color _flashColor = Colors.white;
 
+  bool _flashOnCritical = true;
+
   List<PeerInfo> _peers = [];
   bool _showPeers = false;
   StreamSubscription<Map<String, dynamic>>? _eventSub;
@@ -82,6 +84,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _eventSub = widget.bridge.events.listen(_handleEvent);
     widget.bridge.getChannels();
     widget.bridge.getPeers();
+    widget.bridge.getConfig();
   }
 
   @override
@@ -142,6 +145,7 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _messages.putIfAbsent(msg.channelId, () => []).add(msg);
         });
+        if (msg.isCritical && _flashOnCritical) _triggerFlash(msg.channelId);
 
       case 'ack_send':
         break;
@@ -176,8 +180,13 @@ class _HomeScreenState extends State<HomeScreen> {
         widget.bridge.getChannels();
         setState(() => _selectedIds = {});
 
-      case 'session_saved':
       case 'config':
+        setState(() {
+          _flashOnCritical =
+              (event['data']['flash_on_critical'] as bool?) ?? true;
+        });
+
+      case 'session_saved':
       case 'client_name_changed':
       case 'config_updated':
       case 'interface_changed':

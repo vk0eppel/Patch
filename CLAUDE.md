@@ -104,6 +104,7 @@ All IPC between Flutter and Rust is newline-delimited JSON over `127.0.0.1:9001`
 { "cmd": "get_config" }
 { "cmd": "set_client_name", "name": "FOH Engineer" }
 { "cmd": "set_interface", "name": "en0" }
+{ "cmd": "set_flash_on_critical", "enabled": true }
 { "cmd": "add_static_peer", "address": "192.168.1.50", "port": 9000, "label": "FOH Desk" }
 { "cmd": "upsert_channel", "id": "rf", "display_name": "RF", "color": "#1E88E5" }
 { "cmd": "delete_channel", "id": "rf" }
@@ -128,7 +129,7 @@ All IPC between Flutter and Rust is newline-delimited JSON over `127.0.0.1:9001`
 { "event": "peers",               "data": [ ...Peer ] }
 { "event": "messages",            "channel_id": "rf", "data": [ ...PatchMessage ] }
 { "event": "interfaces",          "data": [ { "name": "en0", "ip": "..." } ] }
-{ "event": "config",              "data": { "client_name": "...", "osc_port": 9000, ... } }
+{ "event": "config",              "data": { "client_name": "...", "osc_port": 9000, "flash_on_critical": true, ... } }
 { "event": "client_name_changed", "name": "..." }
 { "event": "sessions",            "data": [ ...SessionMeta ] }
 { "event": "session_saved",       "slug": "...", "name": "..." }
@@ -238,6 +239,7 @@ bridge_port = 9001          # TCP port for Flutter bridge
 network_interface = "en0"   # Optional — bind to specific NIC
 heartbeat_interval_secs = 7
 peer_timeout_secs = 30
+flash_on_critical = true    # Auto-flash channel when priority-3 message arrives
 
 [[static_peers]]
 address = "192.168.1.50"
@@ -276,6 +278,7 @@ The engine must be running before the Flutter app launches. The app retries the 
 - `Priority` uses manual `Serialize`/`Deserialize` impls to emit integers (not variant name strings). Always use `(j['priority'] as num).toInt()` on the Dart side.
 - Flash fires `AppEvent::ChannelFlash` locally after sending, so the sender always sees their own flash without needing to receive it back over the network.
 - Flash animation uses timer-based `setState` + `Future.delayed` (not `AnimationController`/`TweenSequence`) in `_FlashLayer` — the `TweenSequence` approach proved visually unreliable on macOS. Don't revert to it.
+- Auto-flash on critical: when a `message` event with `priority == 3` arrives, `_dispatch` calls `_triggerFlash` if `_flashOnCritical` is true. The flag is read from `get_config` on startup and persisted to `patch.toml` via `set_flash_on_critical`. Toggle is in Settings → Behavior.
 - Multi-channel selection: tap = exclusive select, long press = toggle into multi-select. The combined message feed and `_FlashLayer` both scope to the `_ChannelView` area.
 
 ---
@@ -317,8 +320,9 @@ Patch UI is designed for live environments:
 - keyboard-first on desktop (Enter to send, F-keys for shortcuts)
 - touch-first on iPad
 - **multi-channel view**: tap to select exclusively, long-press to toggle into multi-select; combined feed sorted by timestamp; channel colour dot on each message row
-- **flash**: channel tab pulses (3× scale animation); message box border + background tint pulses 3× in the channel colour (`_FlashLayer` inside `_ChannelView` Stack)
+- **flash**: channel tab pulses (3× scale animation); message box border + background tint pulses 3× in the channel colour (`_FlashLayer` inside `_ChannelView` Stack); fires automatically on priority-3 messages when enabled
 - **NIC picker**: Settings → Network Interface; dropdown shows all interfaces with name + IP; "Auto" binds all; change persists to `patch.toml`, takes effect on next restart
+- **Behavior settings**: Settings → Behavior; currently: "Flash on critical messages" toggle (default on)
 
 ---
 

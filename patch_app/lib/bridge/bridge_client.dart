@@ -131,6 +131,9 @@ class BridgeClient {
   void deleteSession(String slug) =>
       send({'cmd': 'delete_session', 'slug': slug});
 
+  void setFlashOnCritical(bool enabled) =>
+      send({'cmd': 'set_flash_on_critical', 'enabled': enabled});
+
   void dispose() {
     _disposed = true;
     _socket?.destroy();

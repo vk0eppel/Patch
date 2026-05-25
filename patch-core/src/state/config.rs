@@ -25,6 +25,9 @@ pub struct Config {
     pub heartbeat_interval_secs: u64,
     /// Peer expiry timeout in seconds (missed heartbeats).
     pub peer_timeout_secs: i64,
+    /// Automatically flash the channel when a critical (priority 3) message is received.
+    #[serde(default = "default_true")]
+    pub flash_on_critical: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,9 +49,12 @@ impl Default for Config {
             default_channels: default_channels(),
             heartbeat_interval_secs: 7,
             peer_timeout_secs: 30,
+            flash_on_critical: true,
         }
     }
 }
+
+fn default_true() -> bool { true }
 
 impl Config {
     /// Load from `patch.toml` in the current directory, or create defaults.

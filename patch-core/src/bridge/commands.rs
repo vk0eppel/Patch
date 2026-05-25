@@ -35,7 +35,8 @@ async fn dispatch(cmd: Value, state: &AppState, transport: &Transport) -> Value 
         "get_messages"     => cmd_get_messages(cmd, state).await,
         "get_interfaces"   => cmd_get_interfaces(),
         "get_config"       => cmd_get_config(state).await,
-        "set_interface"    => cmd_set_interface(cmd, state).await,
+        "set_interface"           => cmd_set_interface(cmd, state).await,
+        "set_flash_on_critical"   => cmd_set_flash_on_critical(cmd, state).await,
         "set_client_name"  => cmd_set_client_name(cmd, state).await,
         "add_static_peer"  => cmd_add_static_peer(cmd, state).await,
         "upsert_channel"   => cmd_upsert_channel(cmd, state).await,
@@ -130,8 +131,17 @@ async fn cmd_get_config(state: &AppState) -> Value {
             "osc_port": config.osc_port,
             "network_interface": config.network_interface,
             "static_peers": config.static_peers,
+            "flash_on_critical": config.flash_on_critical,
         }
     })
+}
+
+async fn cmd_set_flash_on_critical(cmd: Value, state: &AppState) -> Value {
+    let enabled = cmd["enabled"].as_bool().unwrap_or(true);
+    match state.set_flash_on_critical(enabled).await {
+        Ok(()) => json!({ "event": "config_updated", "flash_on_critical": enabled }),
+        Err(e) => json!({ "event": "error", "message": e.to_string() }),
+    }
 }
 
 async fn cmd_set_client_name(cmd: Value, state: &AppState) -> Value {

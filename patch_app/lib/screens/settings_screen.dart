@@ -29,6 +29,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   List<SessionMeta> _sessions = [];
   late List<PatchChannel> _channels;
 
+  // Behavior
+  bool _flashOnCritical = true;
+
   // Network interfaces
   List<Map<String, String>> _interfaces = [];
   String? _selectedInterface; // null = auto
@@ -59,6 +62,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         setState(() {
           _nameCtrl.text = data['client_name'] as String? ?? '';
           _selectedInterface = data['network_interface'] as String?;
+          _flashOnCritical = (data['flash_on_critical'] as bool?) ?? true;
         });
       case 'interfaces':
         final data = event['data'] as List<dynamic>;
@@ -186,6 +190,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
             controller: _nameCtrl,
             saved: _nameSaved,
             onSave: _saveName,
+          ),
+
+          const SizedBox(height: 32),
+
+          // ── Behavior ─────────────────────────────────────────────────────
+          _SectionHeader('Behavior'),
+          const SizedBox(height: 4),
+          SwitchListTile(
+            title: const Text(
+              'Flash on critical messages',
+              style: TextStyle(color: PatchTheme.textPrimary, fontSize: PatchTheme.fontSizeSmall),
+            ),
+            subtitle: const Text(
+              'Automatically flash the channel when a priority-3 message arrives',
+              style: TextStyle(color: PatchTheme.textSecondary, fontSize: 11),
+            ),
+            value: _flashOnCritical,
+            activeThumbColor: PatchTheme.accent,
+            contentPadding: EdgeInsets.zero,
+            onChanged: (val) {
+              setState(() => _flashOnCritical = val);
+              widget.bridge.setFlashOnCritical(val);
+            },
           ),
 
           const SizedBox(height: 32),

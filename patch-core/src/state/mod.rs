@@ -98,6 +98,13 @@ impl AppState {
         cfg.save()
     }
 
+    /// Persist the flash-on-critical setting.
+    pub async fn set_flash_on_critical(&self, enabled: bool) -> anyhow::Result<()> {
+        let mut cfg = self.0.config.write().await;
+        cfg.flash_on_critical = enabled;
+        cfg.save()
+    }
+
     // ── Messages ──────────────────────────────────────────────────────────────
 
     pub async fn store_message(&self, msg: PatchMessage) {

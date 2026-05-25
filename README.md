@@ -21,7 +21,7 @@ Inspired by [Shure Wireless Workbench](https://www.shure.com/en-US/products/soft
 - **OSC-native transport** — messages travel as OSC packets; unicast to known peers, broadcast only for presence/discovery
 - **Logical channels** — FOH, MON, RF, LIGHTING, VIDEO, STAGE, PRODUCTION — create and delete at runtime
 - **Multi-channel view** — tap to focus a channel, long-press to add it to the view; combined feed sorted by timestamp with per-message channel colour dots
-- **Flash / page** — one-button high-priority alert per channel; channel tab pulses + message box border lights up in the channel colour × 3
+- **Flash / page** — one-button high-priority alert per channel; channel tab pulses + message box border lights up in the channel colour × 3; fires automatically on critical (priority 3) messages (toggleable in Settings)
 - **Shortcut messages** — per-channel one-tap buttons for common callouts (HOLD, CLEAR, BATTERY LOW…), optionally bound to F-keys
 - **Session presets** — save and restore named channel layouts; portable across machines
 - **Hybrid discovery** — mDNS/Bonjour auto-discovery + OSC beacon + manual static IP for locked-down show networks
@@ -120,6 +120,7 @@ client_name = "FOH Engineer"   # Editable from the Settings screen
 osc_port = 9000
 bridge_port = 9001
 network_interface = "en0"      # Omit to bind all interfaces
+flash_on_critical = true       # Auto-flash on priority-3 messages (Settings → Behavior)
 
 heartbeat_interval_secs = 7
 peer_timeout_secs = 30
@@ -146,6 +147,7 @@ label = "Monitor World"
 - [x] Session presets — save / load / delete named channel layouts
 - [x] Multi-channel view — combined feed, long-press to add channels
 - [x] Flash animation — channel tab pulse + message box border/tint × 3
+- [x] Auto-flash on critical messages — toggleable in Settings → Behavior
 - [ ] Settings screen — static peer management via UI
 - [ ] F-key bindings for shortcuts
 - [ ] Reliability layer wired for critical messages (ACK + retransmit)
