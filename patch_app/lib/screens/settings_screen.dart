@@ -276,10 +276,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 32),
 
           // ── Channels & shortcuts ─────────────────────────────────────────
-          _SectionHeader('Channels & Shortcuts'),
+          Row(
+            children: [
+              Expanded(child: _SectionHeader('Channels & Shortcuts')),
+              TextButton.icon(
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('New channel'),
+                style: TextButton.styleFrom(foregroundColor: PatchTheme.accent),
+                onPressed: () => _showChannelDialog(
+                  context,
+                  widget.bridge,
+                  existingIds: _channels.map((c) => c.id).toSet(),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 4),
           const Text(
-            'Per-channel one-tap buttons shown above the message input.',
+            'Edit a channel\'s name and colour, manage its one-tap shortcuts, or create a new channel.',
             style: TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeSmall),
           ),
           const SizedBox(height: 16),
@@ -287,6 +301,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 channel: ch,
                 bridge: widget.bridge,
                 onDelete: () => _confirmDeleteChannel(ch),
+                onEdit: () => _showChannelDialog(
+                  context,
+                  widget.bridge,
+                  existing: ch,
+                  existingIds: _channels.map((c) => c.id).toSet(),
+                ),
               )),
         ],
       ),
@@ -561,11 +581,13 @@ class _ChannelShortcutEditor extends StatelessWidget {
   final PatchChannel channel;
   final BridgeClient bridge;
   final VoidCallback onDelete;
+  final VoidCallback onEdit;
 
   const _ChannelShortcutEditor({
     required this.channel,
     required this.bridge,
     required this.onDelete,
+    required this.onEdit,
   });
 
   @override
@@ -612,6 +634,13 @@ class _ChannelShortcutEditor extends StatelessWidget {
                   label: const Text('Add'),
                   style: TextButton.styleFrom(foregroundColor: PatchTheme.accent),
                   onPressed: () => _showShortcutDialog(context, channel, bridge),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined, size: 16, color: PatchTheme.textMuted),
+                  tooltip: 'Edit channel',
+                  onPressed: onEdit,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline, size: 16, color: PatchTheme.textMuted),
@@ -876,4 +905,190 @@ class _ShortcutRow extends StatelessWidget {
       ),
     );
   }
+}
+
+// ── Channel create / edit dialog ──────────────────────────────────────────────
+//
+// Used both for "+ New channel" and the per-channel "Edit" button. On create
+// the user picks the slug (channel id) — it can't change later because peers
+// address messages by id over OSC. On edit the slug is shown read-only.
+
+// Default channel palette — matches `default_channels()` in patch-core's
+// state/config.rs, plus a few extras for variety.
+const List<Color> _channelPalette = [
+  Color(0xFFE53935), // red       (FOH default)
+  Color(0xFFF4511E), // deep-orange (LIGHTING default)
+  Color(0xFFFFB300), // amber     (PRODUCTION default)
+  Color(0xFF43A047), // green     (STAGE default)
+  Color(0xFF00897B), // teal      (VIDEO default)
+  Color(0xFF1E88E5), // blue      (RF default)
+  Color(0xFF3949AB), // indigo
+  Color(0xFF8E24AA), // purple    (MON default)
+  Color(0xFFD81B60), // pink
+  Color(0xFF607D8B), // blue-grey (fallback for new channels)
+];
+
+String _slugify(String input) => input
+    .toLowerCase()
+    .trim()
+    .replaceAll(RegExp(r'[^a-z0-9-]+'), '-')
+    .replaceAll(RegExp(r'-+'), '-')
+    .replaceAll(RegExp(r'^-|-$'), '');
+
+String _colorToHex(Color c) =>
+    '#${c.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
+
+Color? _hexToColor(String hex) {
+  final s = hex.replaceFirst('#', '').trim();
+  if (!RegExp(r'^[0-9a-fA-F]{6}$').hasMatch(s)) return null;
+  return Color(int.parse('FF$s', radix: 16));
+}
+
+void _showChannelDialog(
+  BuildContext context,
+  BridgeClient bridge, {
+  PatchChannel? existing,
+  required Set<String> existingIds,
+}) {
+  final idCtrl = TextEditingController(text: existing?.id ?? '');
+  final nameCtrl = TextEditingController(text: existing?.displayName ?? '');
+  final hexCtrl = TextEditingController(
+    text: _colorToHex(existing?.color ?? _channelPalette.last),
+  );
+  Color color = existing?.color ?? _channelPalette.last;
+  // Auto-slugify the id from the display name as the user types — only when
+  // creating, and only if the user hasn't manually edited the id field.
+  bool idAutoSync = existing == null;
+  String? error;
+
+  showDialog(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setDialogState) {
+        void setColor(Color c) {
+          color = c;
+          hexCtrl.text = _colorToHex(c);
+        }
+
+        return AlertDialog(
+          title: Text(existing == null ? 'New Channel' : 'Edit Channel'),
+          content: SizedBox(
+            width: 380,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Display name',
+                    hintText: 'e.g. RF, Front of House',
+                  ),
+                  textCapitalization: TextCapitalization.characters,
+                  autofocus: true,
+                  onChanged: (v) {
+                    if (idAutoSync) {
+                      setDialogState(() => idCtrl.text = _slugify(v));
+                    }
+                  },
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: idCtrl,
+                  enabled: existing == null,
+                  decoration: InputDecoration(
+                    labelText: 'Channel ID (slug)',
+                    helperText: existing == null
+                        ? 'Used in OSC addresses (/patch/channel/<id>/…). Lowercase, no spaces.'
+                        : 'Cannot be changed — peers address messages by ID.',
+                    helperMaxLines: 2,
+                  ),
+                  onChanged: (_) => idAutoSync = false,
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'Colour',
+                  style: TextStyle(
+                    color: PatchTheme.textSecondary,
+                    fontSize: PatchTheme.fontSizeSmall,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final p in _channelPalette)
+                      GestureDetector(
+                        onTap: () => setDialogState(() => setColor(p)),
+                        child: Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: p,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: p.toARGB32() == color.toARGB32()
+                                  ? PatchTheme.textPrimary
+                                  : Colors.transparent,
+                              width: 2,
+                            ),
+                          ),
+                          child: p.toARGB32() == color.toARGB32()
+                              ? const Icon(Icons.check, size: 16, color: Colors.white)
+                              : null,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: hexCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Hex (custom)',
+                    hintText: '#RRGGBB',
+                  ),
+                  onChanged: (v) {
+                    final parsed = _hexToColor(v);
+                    if (parsed != null) {
+                      setDialogState(() => color = parsed);
+                    }
+                  },
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(error!, style: const TextStyle(color: PatchTheme.critical)),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () {
+                final id = idCtrl.text.trim();
+                final name = nameCtrl.text.trim();
+                if (id.isEmpty || name.isEmpty) {
+                  setDialogState(() => error = 'Name and ID are required');
+                  return;
+                }
+                if (!RegExp(r'^[a-z0-9][a-z0-9-]*$').hasMatch(id)) {
+                  setDialogState(() => error =
+                      'ID must be lowercase letters, digits, or hyphens, and start with a letter or digit.');
+                  return;
+                }
+                if (existing == null && existingIds.contains(id)) {
+                  setDialogState(() => error = 'A channel with ID "$id" already exists.');
+                  return;
+                }
+                bridge.upsertChannel(id, name, _colorToHex(color));
+                Navigator.pop(ctx);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    ),
+  );
 }

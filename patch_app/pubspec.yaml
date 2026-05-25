@@ -1,4 +1,4 @@
-name: patch_app
+name: patch
 description: "PATCH — OSC-native operational communication for live production teams."
 publish_to: 'none'
 
@@ -53,6 +53,24 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   freezed: ^3.2.5
   build_runner: ^2.15.0
+
+  # App-icon generator. Reads assets/icon/icon_master.png and writes platform-
+  # specific PNGs/ICOs into the appiconset folders and Windows resources.
+  # Re-run with: `dart run flutter_launcher_icons` after editing the master.
+  flutter_launcher_icons: ^0.14.0
+
+# Icon generation config (consumed by `dart run flutter_launcher_icons`).
+flutter_launcher_icons:
+  image_path: "assets/icon/icon_master.png"
+  remove_alpha_ios: true
+  macos:
+    generate: true
+    image_path: "assets/icon/icon_master.png"
+  ios: true
+  windows:
+    generate: true
+    image_path: "assets/icon/icon_master.png"
+    icon_size: 256
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
