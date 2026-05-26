@@ -199,6 +199,16 @@ class BridgeClient {
   Future<void> addStaticPeer(String address, int port, {String? label}) async {
     try {
       await rust.addStaticPeer(address: address, port: port, label: label);
+      _emit({'event': 'config_updated'});
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
+  Future<void> removeStaticPeer(String address, int port) async {
+    try {
+      await rust.removeStaticPeer(address: address, port: port);
+      _emit({'event': 'config_updated'});
     } catch (e) {
       _emitError(e);
     }

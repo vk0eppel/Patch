@@ -26,7 +26,8 @@ Inspired by [Wavetool](https://wavetool.fi/) chat and [SideChain's TheaterChat](
 - **Configurable flash count** — set how many times the channel pulses per flash event (1–5 in Settings → Behavior; per-channel override in channel editor; default 4)
 - **Shortcut messages** — per-channel one-tap buttons for common callouts (HOLD, CLEAR, BATTERY LOW…), optionally bound to F-keys
 - **Session presets** — save and restore named channel layouts; accessible from the folder icon in the sidebar; import/export `.toml` files to share layouts across machines
-- **Hybrid discovery** — mDNS/Bonjour auto-discovery + OSC beacon + manual static IP for locked-down show networks
+- **Hybrid discovery** — mDNS/Bonjour auto-discovery + OSC beacon broadcast every 7s + manual static IP for AP-isolated or VLAN-segmented show networks
+- **Static peer management** — add/remove known peers by IP from the Settings screen; static peers are always contacted regardless of discovery state, bypassing AP isolation
 - **Configurable identity** — set your display name and network interface from the settings screen; NIC picker filters out virtual/tunnel interfaces and shows only real NICs with IPv4 addresses; changes persist immediately
 - **Priority levels** — info / warning / critical; critical messages are visually distinct and require ACK
 - **Message deduplication** — UUID per message; never see the same message twice
@@ -176,7 +177,9 @@ label = "Monitor World"
 - [x] F-key bindings for shortcuts (F1–F12, fires from any focus state)
 - [x] Platform data directory (`~/Library/Application Support/Patch/`, `%APPDATA%\Patch\`, etc.) with legacy `./patch.toml` migration
 - [x] iOS / macOS Local Network permission strings in Info.plist (`NSLocalNetworkUsageDescription` + `NSBonjourServices`)
-- [ ] Settings screen — static peer management via UI (`add_static_peer` API stub exists)
+- [x] Settings screen — static peer management via UI (add/remove peers by address + port + label)
+- [x] Heartbeat broadcast wired through transport (presence sent every 7s)
+- [x] Peer display — correct name from mDNS TXT record, transport-resolved IP preserved across heartbeats, self-discovery filtered out
 - [ ] Reliability layer wired for critical messages (ACK + retransmit)
 - [ ] Surface iOS/macOS Local-Network permission denial via the FRB event stream
 - [ ] External OSC trigger → Patch message mapping

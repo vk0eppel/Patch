@@ -129,6 +129,7 @@ set_flash_on_critical(enabled) / set_flash_on_message(enabled)
 set_flash_count(count: u8)                                        // global pulse count (1–10, default 4)
 set_channel_flash(channel_id, flash_on_critical: Option<bool>, flash_on_message: Option<bool>, flash_count: Option<u8>)
 add_static_peer(address, port, label)
+remove_static_peer(address, port)
 upsert_channel(id, display_name, color) / delete_channel(id)
 upsert_shortcut(channel_id, label, payload, priority, key_binding) / delete_shortcut(channel_id, label)
 save_session(name) -> SessionSaved
@@ -171,7 +172,6 @@ After regeneration, run `dart run build_runner build` from `patch_app/` if `Patc
 
 ```
 /patch/channel/{id}/message     # Core message — primary address (channel-scoped)
-/patch/message                  # Legacy fallback — decoded only, for interop
 /patch/ack                      # ACK for a message_id
 /patch/presence                 # Heartbeat / presence announcement
 /patch/system/heartbeat         # Standalone heartbeat ping
@@ -343,17 +343,23 @@ A single `flutter run` builds and links the Rust engine into the host binary via
 - F-key bindings: `HardwareKeyboard.instance.addHandler` is registered in `_HomeScreenState.initState` and removed in `dispose`. It intercepts `KeyDownEvent` before the `TextField` sees it, maps `LogicalKeyboardKey.f1`–`f12` → `"F1"`–`"F12"`, and fires the first matching shortcut across all selected channels. Keys not bound to a shortcut are not consumed.
 - Multi-channel selection: tap = exclusive select, long press = toggle into multi-select. The combined message feed and `_FlashLayer` both scope to the `_ChannelView` area.
 - The TCP bridge that used to live at `patch-core/src/bridge/` is **gone**. If you find yourself needing inter-process communication for a debug tool, build it as a separate small binary that links `patch_core` as an rlib — don't reintroduce the bridge.
+- `upsert_peer` preserves the transport-resolved address: `Peer::from_presence()` zeroes `address` and `osc_port`, so `upsert_peer` checks whether the existing peer record already has a non-empty address and copies it onto the new entry before inserting. This prevents the heartbeat `PeerUpdated` event from clearing an IP that `touch_peer_address` just set.
+- mDNS `ServiceResolved` skips self: after extracting `peer_id` from the TXT `peer_id` property, `discovery/mod.rs` checks `if peer_id == client_id { continue; }`. Without this, each device adds itself to its own peer registry.
+- mDNS `peer_name` TXT record: at registration, `"peer_name"` is added to the TXT props so `ServiceResolved` on other devices can read a clean display name. The fallback strips `._patch._udp` and everything after it from `info.get_fullname()`, which otherwise returns the full DNS label (e.g. `"FOH Engineer._patch._udp.local."`).
+- `peer_updated` event → `getPeers()`: `PeerPresence` (what `PeerUpdated` carries) has no address/port. `home_screen.dart` handles `peer_updated` by calling `widget.bridge.getPeers()`, which fetches the full `Peer` snapshot with the transport-resolved IP. Never try to update the in-memory peer list directly from a `PeerPresence` event — the address will always be blank.
+- Static peers in `patch.toml`: `add_static_peer` / `remove_static_peer` in `api.rs` delegate to `AppState::add_static_peer` / `remove_static_peer`, which persist immediately via `cfg.save()`. Settings screen shows the current list, a "this device" IP hint, and an "Add peer" dialog using `TextInputType.url` for the IP field (avoids locale-specific decimal separators on iOS, e.g. "," instead of "."). Static peers are always contacted in `send_to_peers()` regardless of discovery state.
 
 ---
 
 ## Known Incomplete (next tasks)
 
-- [ ] Settings screen — add static peer via UI (the `add_static_peer` API exists but is a no-op stub)
+- [x] Settings screen — static peer management via UI (add/remove with address, port, optional label)
 - [x] Keyboard shortcut binding in Flutter (F1–F12 wired to shortcut bar)
 - [x] Configurable flash pulse count (global + per-channel, 1–10, default 4)
 - [x] Session file import/export via file picker (`export_layout` / `import_layout` in `api.rs`)
+- [x] Wire heartbeat send through transport (`Discovery::new` now takes `Arc<Transport>` and broadcasts presence every 7s)
+- [x] Peer display: correct name (from `peer_name` TXT record, not `get_fullname()`), correct IP (preserved across `upsert_peer`), self-discovery filtered out
 - [ ] Reliability manager wired into the send path for critical messages
-- [ ] Wire heartbeat send through transport (discovery module encodes presence but needs the send handle)
 - [ ] Surface iOS/macOS Local Network permission-denied via the FRB event stream (currently logged-only)
 
 ---

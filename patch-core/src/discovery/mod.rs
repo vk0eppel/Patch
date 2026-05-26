@@ -7,7 +7,8 @@ use anyhow::Result;
 use chrono::Utc;
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use std::collections::HashMap;
-use tracing::{debug, error, info};
+use std::sync::Arc;
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::osc::{codec::encode_presence, types::PeerPresence};
@@ -17,7 +18,7 @@ use crate::transport::Transport;
 pub struct Discovery;
 
 impl Discovery {
-    pub async fn new(config: &Config, state: AppState) -> Result<Self> {
+    pub async fn new(config: &Config, state: AppState, transport: Arc<Transport>) -> Result<Self> {
         let client_id = config.client_id;
         let client_name = config.client_name.clone();
         let osc_port = config.osc_port;
@@ -33,6 +34,7 @@ impl Discovery {
         let host_name = format!("{}.local.", gethostname());
         let mut props = HashMap::new();
         props.insert("peer_id".to_string(), client_id.to_string());
+        props.insert("peer_name".to_string(), client_name.clone());
         props.insert("version".to_string(), "0.1.0".to_string());
 
         let service = ServiceInfo::new(
@@ -55,19 +57,38 @@ impl Discovery {
             while let Ok(event) = receiver.recv_async().await {
                 match event {
                     ServiceEvent::ServiceResolved(info) => {
-                        let addr = info.get_addresses().iter().next()
-                            .map(|a| a.to_string())
-                            .unwrap_or_default();
                         let peer_id = info.get_properties()
                             .get("peer_id")
                             .and_then(|p| Uuid::parse_str(p.val_str()).ok())
                             .unwrap_or_else(Uuid::new_v4);
 
+                        // Skip our own service — mDNS resolves it too.
+                        if peer_id == client_id {
+                            continue;
+                        }
+
+                        let addr = info.get_addresses().iter().next()
+                            .map(|a| a.to_string())
+                            .unwrap_or_default();
                         let port = info.get_port();
-                        debug!("mDNS resolved: {} @ {}:{}", info.get_fullname(), addr, port);
+
+                        // Prefer the peer_name TXT record; fall back to stripping
+                        // the service-type suffix from the full DNS name.
+                        let peer_name = info.get_properties()
+                            .get("peer_name")
+                            .map(|p| p.val_str().to_string())
+                            .unwrap_or_else(|| {
+                                info.get_fullname()
+                                    .split("._patch._udp")
+                                    .next()
+                                    .unwrap_or(info.get_fullname())
+                                    .to_string()
+                            });
+
+                        debug!("mDNS resolved: {} ({}) @ {}:{}", peer_name, peer_id, addr, port);
                         let presence = PeerPresence {
                             peer_id,
-                            peer_name: info.get_fullname().to_string(),
+                            peer_name,
                             channels: Vec::new(),
                             timestamp: Utc::now(),
                         };
@@ -88,13 +109,14 @@ impl Discovery {
 
         // ── Heartbeat + beacon task ───────────────────────────────────────────
         let hb_state = state.clone();
+        let hb_transport = transport.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(
                 std::time::Duration::from_secs(heartbeat_secs),
             );
             loop {
                 interval.tick().await;
-                // Broadcast our presence
+                // Broadcast our presence so every peer on the LAN can discover us.
                 let channels = hb_state
                     .get_channels()
                     .await
@@ -107,10 +129,15 @@ impl Discovery {
                     channels,
                     timestamp: Utc::now(),
                 };
-                // Encode and fire — transport not wired here yet, will be
-                // connected via AppEvent in a later pass
-                debug!("Heartbeat tick — presence broadcast queued");
-                let _ = encode_presence(&presence); // validates encoding
+                match encode_presence(&presence) {
+                    Ok(bytes) => {
+                        debug!("Heartbeat — broadcasting presence on port {}", osc_port);
+                        if let Err(e) = hb_transport.broadcast(bytes, osc_port).await {
+                            warn!("Presence broadcast failed: {}", e);
+                        }
+                    }
+                    Err(e) => warn!("Failed to encode presence: {}", e),
+                }
 
                 // Expire stale peers
                 let peers = hb_state.get_peers().await;

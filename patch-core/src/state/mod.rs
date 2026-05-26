@@ -145,6 +145,25 @@ impl AppState {
         Ok(())
     }
 
+    // ── Static peers ─────────────────────────────────────────────────────────
+
+    pub async fn add_static_peer(
+        &self,
+        address: String,
+        port: u16,
+        label: Option<String>,
+    ) -> anyhow::Result<()> {
+        let mut cfg = self.0.config.write().await;
+        cfg.static_peers.push(config::StaticPeer { address, port, label });
+        cfg.save()
+    }
+
+    pub async fn remove_static_peer(&self, address: &str, port: u16) -> anyhow::Result<()> {
+        let mut cfg = self.0.config.write().await;
+        cfg.static_peers.retain(|p| !(p.address == address && p.port == port));
+        cfg.save()
+    }
+
     // ── Messages ──────────────────────────────────────────────────────────────
 
     pub async fn store_message(&self, msg: PatchMessage) {
@@ -179,7 +198,17 @@ impl AppState {
 
     pub async fn upsert_peer(&self, presence: PeerPresence) {
         let mut peers = self.0.peers.write().await;
-        peers.insert(presence.peer_id, peer::Peer::from_presence(presence.clone()));
+        let mut new_peer = peer::Peer::from_presence(presence.clone());
+        // Preserve the transport-resolved address — touch_peer_address runs
+        // before upsert_peer in handle_event, and from_presence() would
+        // otherwise overwrite it with an empty string.
+        if let Some(existing) = peers.get(&presence.peer_id) {
+            if !existing.address.is_empty() {
+                new_peer.address = existing.address.clone();
+                new_peer.osc_port = existing.osc_port;
+            }
+        }
+        peers.insert(presence.peer_id, new_peer);
         drop(peers);
         self.publish(AppEvent::PeerUpdated(presence)).await;
     }

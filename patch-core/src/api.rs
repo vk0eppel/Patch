@@ -58,7 +58,7 @@ pub async fn init(config_dir: Option<String>) -> Result<()> {
 
             let state = AppState::new(config.clone());
             let transport = Arc::new(Transport::new(&config, state.clone()).await?);
-            let discovery = Arc::new(Discovery::new(&config, state.clone()).await?);
+            let discovery = Arc::new(Discovery::new(&config, state.clone(), Arc::clone(&transport)).await?);
 
             Ok::<_, anyhow::Error>(EngineHandle {
                 state,
@@ -192,11 +192,12 @@ pub async fn set_channel_flash(
         .await
 }
 
-/// NOTE: persistence intentionally not wired here — the legacy bridge
-/// command was a no-op too. Tracked under Phase 5 of the FFI migration.
 pub async fn add_static_peer(address: String, port: u16, label: Option<String>) -> Result<()> {
-    let _ = (address, port, label);
-    Ok(())
+    engine().state.add_static_peer(address, port, label).await
+}
+
+pub async fn remove_static_peer(address: String, port: u16) -> Result<()> {
+    engine().state.remove_static_peer(&address, port).await
 }
 
 pub async fn upsert_channel(id: String, display_name: Option<String>, color: Option<String>) -> Result<()> {

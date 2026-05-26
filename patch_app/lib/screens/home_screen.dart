@@ -209,11 +209,9 @@ class _HomeScreenState extends State<HomeScreen> {
         });
 
       case 'peer_updated':
-        final peer = PeerInfo.fromJson(event['data'] as Map<String, dynamic>);
-        setState(() {
-          _peers.removeWhere((p) => p.peerId == peer.peerId);
-          _peers.add(peer);
-        });
+        // The event carries only PeerPresence (no address). Refresh the full
+        // peer list so we always show the transport-resolved IP.
+        widget.bridge.getPeers();
 
       case 'peer_expired':
         final peerId = event['data']['peer_id'] as String;

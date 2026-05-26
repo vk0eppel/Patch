@@ -26,21 +26,12 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<!--
-	  Patch sends and receives OSC over UDP on the local network and uses
-	  Bonjour (_patch._udp.local.) to discover peer apps. iOS 14+ requires
-	  both keys below; without them, the first send/receive call will fail
-	  silently and Bonjour browsing returns nothing.
-	-->
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Patch uses your local network to discover and exchange operational messages with other Patch devices on the show LAN (FOH, monitors, RF, lighting, video, stage).</string>
 	<key>NSBonjourServices</key>
 	<array>
-		<!-- Apple's NSBonjourServices format omits the trailing `.local.`
-		     (the OS appends it). The Rust discovery module registers
-		     `_patch._udp.local.` which matches this entry. -->
 		<string>_patch._udp</string>
 	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Patch uses your local network to discover and exchange operational messages with other Patch devices on the show LAN (FOH, monitors, RF, lighting, video, stage).</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

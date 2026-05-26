@@ -87,8 +87,6 @@ Future<void> setChannelFlash({
   flashCount: flashCount,
 );
 
-/// NOTE: persistence intentionally not wired here — the legacy bridge
-/// command was a no-op too. Tracked under Phase 5 of the FFI migration.
 Future<void> addStaticPeer({
   required String address,
   required int port,
@@ -98,6 +96,9 @@ Future<void> addStaticPeer({
   port: port,
   label: label,
 );
+
+Future<void> removeStaticPeer({required String address, required int port}) =>
+    RustLib.instance.api.crateApiRemoveStaticPeer(address: address, port: port);
 
 Future<void> upsertChannel({
   required String id,

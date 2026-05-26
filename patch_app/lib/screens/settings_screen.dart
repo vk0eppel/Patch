@@ -37,6 +37,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _selectedInterface; // null = auto
   bool _interfaceChangedPending = false;
 
+  // Static peers
+  List<Map<String, dynamic>> _staticPeers = [];
+
   @override
   void initState() {
     super.initState();
@@ -64,7 +67,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _flashOnCritical = (data['flash_on_critical'] as bool?) ?? true;
           _flashOnMessage = (data['flash_on_message'] as bool?) ?? false;
           _flashCount = (data['flash_count'] as int?) ?? 4;
+          _staticPeers = List<Map<String, dynamic>>.from(
+            (data['static_peers'] as List<dynamic>? ?? [])
+                .map((p) => Map<String, dynamic>.from(p as Map)),
+          );
         });
+      case 'config_updated':
+        widget.bridge.getConfig();
       case 'interfaces':
         final data = event['data'] as List<dynamic>;
         setState(() {
@@ -171,6 +180,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
               widget.bridge.setInterface(name ?? 'auto');
             },
           ),
+
+          const SizedBox(height: 32),
+
+          // ── Static Peers ─────────────────────────────────────────────────
+          Row(
+            children: [
+              Expanded(child: _SectionHeader('Static Peers')),
+              TextButton.icon(
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Add peer'),
+                style: TextButton.styleFrom(foregroundColor: PatchTheme.accent),
+                onPressed: () => _showAddPeerDialog(context, widget.bridge),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Add peers by IP when mDNS is blocked (AP isolation, VLANs, show networks). '
+            'Static peers are always sent to and never expire.',
+            style: TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeSmall),
+          ),
+          if (_interfaces.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              children: _interfaces.map((iface) => Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.laptop, size: 13, color: PatchTheme.textMuted),
+                  const SizedBox(width: 4),
+                  Text(
+                    'This device: ${iface['ip']} (${iface['name']})',
+                    style: const TextStyle(
+                      color: PatchTheme.textMuted,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              )).toList(),
+            ),
+          ],
+          const SizedBox(height: 12),
+          if (_staticPeers.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'No static peers',
+                style: TextStyle(color: PatchTheme.textMuted, fontSize: PatchTheme.fontSizeSmall),
+              ),
+            )
+          else
+            ..._staticPeers.map((peer) => _StaticPeerRow(
+                  peer: peer,
+                  onDelete: () => widget.bridge.removeStaticPeer(
+                    peer['address'] as String,
+                    peer['port'] as int,
+                  ),
+                )),
 
           const SizedBox(height: 32),
 
@@ -961,6 +1029,151 @@ void _showChannelDialog(
           ],
         );
       },
+    ),
+  );
+}
+
+// ── Static peer row ───────────────────────────────────────────────────────────
+
+class _StaticPeerRow extends StatelessWidget {
+  final Map<String, dynamic> peer;
+  final VoidCallback onDelete;
+
+  const _StaticPeerRow({required this.peer, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    final address = peer['address'] as String;
+    final port = peer['port'] as int;
+    final label = peer['label'] as String?;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: PatchTheme.surface,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: PatchTheme.border),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.push_pin_outlined, size: 14, color: PatchTheme.textMuted),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$address:$port',
+                  style: const TextStyle(
+                    color: PatchTheme.textPrimary,
+                    fontSize: PatchTheme.fontSizeSmall,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+                if (label != null && label.isNotEmpty)
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: PatchTheme.textSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline, size: 16, color: PatchTheme.textMuted),
+            tooltip: 'Remove peer',
+            onPressed: onDelete,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+void _showAddPeerDialog(BuildContext context, BridgeClient bridge) {
+  final addrCtrl = TextEditingController();
+  final portCtrl = TextEditingController(text: '9000');
+  final labelCtrl = TextEditingController();
+  String? error;
+
+  showDialog(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setDialogState) => AlertDialog(
+        title: const Text('Add Static Peer'),
+        content: SizedBox(
+          width: 320,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: addrCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'IP address',
+                  hintText: '192.168.1.50',
+                ),
+                keyboardType: TextInputType.url,
+                autofocus: true,
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: portCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'OSC port',
+                  hintText: '9000',
+                ),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: labelCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Label (optional)',
+                  hintText: 'e.g. Monitor World',
+                ),
+              ),
+              if (error != null) ...[
+                const SizedBox(height: 8),
+                Text(error!, style: const TextStyle(color: PatchTheme.critical)),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final address = addrCtrl.text.trim();
+              final portStr = portCtrl.text.trim();
+              if (address.isEmpty) {
+                setDialogState(() => error = 'IP address is required');
+                return;
+              }
+              final port = int.tryParse(portStr);
+              if (port == null || port < 1 || port > 65535) {
+                setDialogState(() => error = 'Port must be 1–65535');
+                return;
+              }
+              final label = labelCtrl.text.trim();
+              bridge.addStaticPeer(
+                address,
+                port,
+                label: label.isEmpty ? null : label,
+              );
+              Navigator.pop(ctx);
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
     ),
   );
 }

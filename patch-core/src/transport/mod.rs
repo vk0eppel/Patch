@@ -13,6 +13,8 @@ use crate::osc::codec::{decode_packet, PatchEvent};
 use crate::state::{AppEvent, AppState, Config};
 
 pub struct Transport {
+    /// Kept alive so the socket isn't dropped while the send/receive loops run.
+    #[allow(dead_code)]
     socket: Arc<UdpSocket>,
     /// Sender half — clone to send packets from any task.
     send_tx: mpsc::Sender<(Vec<u8>, SocketAddr)>,
