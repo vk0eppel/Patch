@@ -23,7 +23,6 @@ pub fn encode_message(msg: &PatchMessage) -> Result<Vec<u8>> {
         args: vec![
             OscType::String(msg.sender_id.to_string()),
             OscType::String(msg.sender_name.clone()),
-            OscType::String(msg.channel_id.clone()),
             OscType::String(msg.message_id.to_string()),
             OscType::Long(msg.timestamp.timestamp_millis()),
             OscType::Int(msg.priority as i32),
@@ -102,8 +101,6 @@ fn decode_message(msg: OscMessage) -> Result<PatchEvent> {
         addr if addr.starts_with("/patch/channel/") && addr.ends_with("/message") => {
             decode_patch_message(msg)
         }
-        // Legacy flat address — kept for interop with external OSC tools
-        addresses::MESSAGE => decode_patch_message(msg),
         addresses::ACK => decode_ack(msg),
         addresses::PRESENCE => decode_presence(msg),
         addresses::SYSTEM_HEARTBEAT => decode_heartbeat(msg),
@@ -114,17 +111,19 @@ fn decode_message(msg: OscMessage) -> Result<PatchEvent> {
 }
 
 fn decode_patch_message(msg: OscMessage) -> Result<PatchEvent> {
+    // Channel id lives in the address: /patch/channel/{id}/message
+    let parts: Vec<&str> = msg.addr.split('/').collect();
+    let channel_id = parts.get(3).copied().unwrap_or("unknown").to_string();
     let args = msg.args;
-    if args.len() < 7 {
-        bail!("Expected 7 args for /patch/message, got {}", args.len());
+    if args.len() < 6 {
+        bail!("Expected 6 args for /patch/channel/.../message, got {}", args.len());
     }
     let sender_id = parse_uuid(&args[0])?;
     let sender_name = parse_string(&args[1])?;
-    let channel_id = parse_string(&args[2])?;
-    let message_id = parse_uuid(&args[3])?;
-    let ts_ms = parse_long(&args[4])?;
-    let priority = Priority::try_from(parse_int(&args[5])?)?;
-    let payload = parse_string(&args[6])?;
+    let message_id = parse_uuid(&args[2])?;
+    let ts_ms = parse_long(&args[3])?;
+    let priority = Priority::try_from(parse_int(&args[4])?)?;
+    let payload = parse_string(&args[5])?;
 
     Ok(PatchEvent::Message(PatchMessage {
         message_id,

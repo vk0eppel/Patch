@@ -1,7 +1,6 @@
 //! Canonical OSC address constants for the PATCH namespace.
 
 // Core messaging
-pub const MESSAGE: &str = "/patch/message";
 pub const ACK: &str = "/patch/ack";
 pub const TYPING: &str = "/patch/typing";
 pub const PRESENCE: &str = "/patch/presence";

@@ -191,15 +191,16 @@ After regeneration, run `dart run build_runner build` from `patch_app/` if `Patc
 Messages and flash are **not** broadcast. If no peers are known yet, packets are silently dropped. Peer addresses are learned from UDP `from` fields on receive and from mDNS resolution.
 
 ### `/patch/channel/{id}/message` arguments
+`channel_id` is encoded in the OSC address path, not in the args.
+
 | # | Type | Field |
 |---|---|---|
 | 0 | string | sender_id (UUID) |
 | 1 | string | sender_name |
-| 2 | string | channel_id |
-| 3 | string | message_id (UUID) |
-| 4 | int64 | timestamp (ms since epoch) |
-| 5 | int32 | priority (0=debug 1=info 2=warning 3=critical) |
-| 6 | string | payload |
+| 2 | string | message_id (UUID) |
+| 3 | int64 | timestamp (ms since epoch) |
+| 4 | int32 | priority (0=debug 1=info 2=warning 3=critical) |
+| 5 | string | payload |
 
 ---
 

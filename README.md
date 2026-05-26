@@ -121,16 +121,16 @@ See [CLAUDE.md](CLAUDE.md) for the full architecture, FFI API reference, OSC nam
 Patch listens on UDP port 9000 (configurable). Send a standard OSC message to it from any device on the LAN:
 
 ```
-/patch/channel/rf/message  <sender_id> <sender_name> <channel_id> <message_id> <timestamp_ms> <priority> <payload>
+/patch/channel/rf/message  <sender_id> <sender_name> <message_id> <timestamp_ms> <priority> <payload>
 ```
+
+The channel is identified by the address path — no need to repeat it in the args. `priority` is an integer: 0=info, 1=warning, 2=critical.
 
 Flash/page a channel from any OSC source:
 
 ```
 /patch/channel/rf/flash  <sender_id> <sender_name>
 ```
-
-The legacy address `/patch/message` is also decoded for backwards compatibility with older integrations.
 
 ---
 
