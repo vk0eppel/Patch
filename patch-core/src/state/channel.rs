@@ -19,6 +19,9 @@ pub struct Channel {
     /// Flash this channel's message box on every incoming message.
     #[serde(default)]
     pub flash_on_message: bool,
+    /// Per-channel flash pulse count override. None = use global setting.
+    #[serde(default)]
+    pub flash_count: Option<u8>,
 }
 
 impl Channel {
@@ -30,6 +33,7 @@ impl Channel {
             shortcuts: Vec::new(),
             flash_on_critical: true,
             flash_on_message: false,
+            flash_count: None,
         }
     }
 }

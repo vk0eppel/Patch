@@ -12,6 +12,7 @@ import '../widgets/flash_button.dart';
 import '../widgets/message_list.dart';
 import '../widgets/message_input.dart';
 import '../widgets/peers_panel.dart';
+import '../widgets/sessions_dialog.dart';
 import '../widgets/shortcut_bar.dart';
 import 'settings_screen.dart';
 
@@ -41,6 +42,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   bool _flashOnCritical = true;
   bool _flashOnMessage = false;
+  int _globalFlashCount = 4;
+  int _flashPulseCount = 4; // resolved count at the time of the last flash
 
   // ── F-key map ───────────────────────────────────────────────────────────────
   static final _fKeyLabels = <LogicalKeyboardKey, String>{
@@ -233,6 +236,8 @@ class _HomeScreenState extends State<HomeScreen> {
               (event['data']['flash_on_critical'] as bool?) ?? true;
           _flashOnMessage =
               (event['data']['flash_on_message'] as bool?) ?? false;
+          _globalFlashCount =
+              (event['data']['flash_count'] as int?) ?? 4;
         });
 
       case 'session_saved':
@@ -260,6 +265,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _flashCounts[channelId] = (_flashCounts[channelId] ?? 0) + 1;
       _flashNotify++;
       _flashColor = ch.color;
+      _flashPulseCount = ch.flashCount ?? _globalFlashCount;
     });
   }
 
@@ -298,6 +304,7 @@ class _HomeScreenState extends State<HomeScreen> {
             channels: _channels,
             selectedIds: _selectedIds,
             flashCounts: _flashCounts,
+            globalFlashCount: _globalFlashCount,
             onTap: _selectOnly,
             onLongPress: _toggleChannel,
             bridge: widget.bridge,
@@ -316,6 +323,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         setState(() => _showPeers = !_showPeers),
                     flashNotify: _flashNotify,
                     flashColor: _flashColor,
+                    flashPulseCount: _flashPulseCount,
                   ),
           ),
           if (_showPeers)
@@ -335,6 +343,7 @@ class _ChannelStrip extends StatelessWidget {
   final List<PatchChannel> channels;
   final Set<String> selectedIds;
   final Map<String, int> flashCounts;
+  final int globalFlashCount;
   final ValueChanged<String> onTap;
   final ValueChanged<String> onLongPress;
   final BridgeClient bridge;
@@ -343,6 +352,7 @@ class _ChannelStrip extends StatelessWidget {
     required this.channels,
     required this.selectedIds,
     required this.flashCounts,
+    required this.globalFlashCount,
     required this.onTap,
     required this.onLongPress,
     required this.bridge,
@@ -356,14 +366,10 @@ class _ChannelStrip extends StatelessWidget {
       child: Column(
         children: [
           const SizedBox(height: 12),
-          const Text(
-            'P',
-            style: TextStyle(
-              color: PatchTheme.accent,
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2,
-            ),
+          Image.asset(
+            'assets/icon/icon_master.png',
+            width: 56,
+            height: 56,
           ),
           const SizedBox(height: 8),
           const Divider(color: PatchTheme.border, height: 1),
@@ -377,6 +383,7 @@ class _ChannelStrip extends StatelessWidget {
                   channel: ch,
                   isSelected: selectedIds.contains(ch.id),
                   flashCount: flashCounts[ch.id] ?? 0,
+                  pulseCount: ch.flashCount ?? globalFlashCount,
                   onTap: () => onTap(ch.id),
                   onLongPress: () => onLongPress(ch.id),
                 );
@@ -388,6 +395,14 @@ class _ChannelStrip extends StatelessWidget {
             icon: const Icon(Icons.add, color: PatchTheme.textMuted),
             tooltip: 'Add channel',
             onPressed: () => _showAddChannel(context, bridge),
+          ),
+          IconButton(
+            icon: const Icon(Icons.folder_outlined, color: PatchTheme.textMuted),
+            tooltip: 'Sessions',
+            onPressed: () => showDialog(
+              context: context,
+              builder: (_) => SessionsDialog(bridge: bridge),
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined, color: PatchTheme.textMuted),
@@ -458,6 +473,7 @@ class _ChannelView extends StatelessWidget {
   final VoidCallback onTogglePeers;
   final int flashNotify;
   final Color flashColor;
+  final int flashPulseCount;
 
   const _ChannelView({
     required this.selectedChannels,
@@ -469,6 +485,7 @@ class _ChannelView extends StatelessWidget {
     required this.onTogglePeers,
     required this.flashNotify,
     required this.flashColor,
+    required this.flashPulseCount,
   });
 
   bool get _isMulti => selectedChannels.length > 1;
@@ -563,7 +580,7 @@ class _ChannelView extends StatelessWidget {
 
     return Stack(children: [
       content,
-      _FlashLayer(flashNotify: flashNotify, flashColor: flashColor),
+      _FlashLayer(flashNotify: flashNotify, flashColor: flashColor, pulseCount: flashPulseCount),
     ]);
   }
 }
@@ -621,13 +638,18 @@ class _MultiChannelLabel extends StatelessWidget {
 
 // ── Flash layer — message box border + background pulse ──────────────────────
 
-/// Positioned.fill overlay that pulses the channel colour 3 times when
-/// [flashNotify] increments. Uses timer-based setState for reliable pulses.
+/// Positioned.fill overlay that pulses the channel colour [pulseCount] times
+/// when [flashNotify] increments. Uses timer-based setState for reliable pulses.
 class _FlashLayer extends StatefulWidget {
   final int flashNotify;
   final Color flashColor;
+  final int pulseCount;
 
-  const _FlashLayer({required this.flashNotify, required this.flashColor});
+  const _FlashLayer({
+    required this.flashNotify,
+    required this.flashColor,
+    required this.pulseCount,
+  });
 
   @override
   State<_FlashLayer> createState() => _FlashLayerState();
@@ -643,13 +665,14 @@ class _FlashLayerState extends State<_FlashLayer> {
   }
 
   Future<void> _pulse() async {
-    for (var i = 0; i < 3; i++) {
+    final count = widget.pulseCount.clamp(1, 10);
+    for (var i = 0; i < count; i++) {
       if (!mounted) return;
       setState(() => _lit = true);
       await Future.delayed(const Duration(milliseconds: 200));
       if (!mounted) return;
       setState(() => _lit = false);
-      if (i < 2) await Future.delayed(const Duration(milliseconds: 150));
+      if (i < count - 1) await Future.delayed(const Duration(milliseconds: 150));
     }
   }
 

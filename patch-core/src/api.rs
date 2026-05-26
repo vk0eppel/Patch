@@ -134,6 +134,7 @@ pub struct ConfigSnapshot {
     pub static_peers: Vec<StaticPeer>,
     pub flash_on_critical: bool,
     pub flash_on_message: bool,
+    pub flash_count: u8,
 }
 
 pub async fn get_config() -> ConfigSnapshot {
@@ -145,6 +146,7 @@ pub async fn get_config() -> ConfigSnapshot {
         static_peers: cfg.static_peers,
         flash_on_critical: cfg.flash_on_critical,
         flash_on_message: cfg.flash_on_message,
+        flash_count: cfg.flash_count,
     }
 }
 
@@ -175,13 +177,18 @@ pub async fn set_flash_on_message(enabled: bool) -> Result<()> {
     engine().state.set_flash_on_message(enabled).await
 }
 
+pub async fn set_flash_count(count: u8) -> Result<()> {
+    engine().state.set_flash_count(count).await
+}
+
 pub async fn set_channel_flash(
     channel_id: String,
     flash_on_critical: Option<bool>,
     flash_on_message: Option<bool>,
+    flash_count: Option<u8>,
 ) -> Result<()> {
     engine().state
-        .set_channel_flash(&channel_id, flash_on_critical, flash_on_message)
+        .set_channel_flash(&channel_id, flash_on_critical, flash_on_message, flash_count)
         .await
 }
 
@@ -255,6 +262,35 @@ pub async fn save_session(name: String) -> Result<SessionSaved> {
     let sess = SessionConfig::new(&name, channels, cfg.static_peers);
     let slug = session::save_session(&sess)?;
     Ok(SessionSaved { slug, name })
+}
+
+/// Export the current channel layout to an arbitrary file path (file-picker).
+pub async fn export_layout(path: String, name: String) -> Result<()> {
+    let name = name.trim().to_string();
+    let name = if name.is_empty() { "Exported Layout".to_string() } else { name };
+    let h = engine();
+    let channels = h.state.get_channels().await;
+    let cfg = h.state.config().await;
+    let sess = SessionConfig::new(name, channels, cfg.static_peers);
+    let raw = toml::to_string_pretty(&sess)?;
+    std::fs::write(&path, raw)?;
+    Ok(())
+}
+
+/// Import a session from an arbitrary file path (file-picker) and apply it.
+pub async fn import_layout(path: String) -> Result<SessionLoaded> {
+    let raw = std::fs::read_to_string(&path)?;
+    let sess: SessionConfig = toml::from_str(&raw)?;
+    let name = sess.name.clone();
+    let channel_count = sess.channels.len() as u32;
+    // Derive a slug from the file stem or name
+    let slug = std::path::Path::new(&path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(|s| session::slugify(s))
+        .unwrap_or_else(|| session::slugify(&name));
+    engine().state.apply_session(sess.channels).await?;
+    Ok(SessionLoaded { slug, name, channel_count })
 }
 
 pub async fn load_session(slug: String) -> Result<SessionLoaded> {

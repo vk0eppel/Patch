@@ -72,14 +72,19 @@ Future<void> setFlashOnCritical({required bool enabled}) =>
 Future<void> setFlashOnMessage({required bool enabled}) =>
     RustLib.instance.api.crateApiSetFlashOnMessage(enabled: enabled);
 
+Future<void> setFlashCount({required int count}) =>
+    RustLib.instance.api.crateApiSetFlashCount(count: count);
+
 Future<void> setChannelFlash({
   required String channelId,
   bool? flashOnCritical,
   bool? flashOnMessage,
+  int? flashCount,
 }) => RustLib.instance.api.crateApiSetChannelFlash(
   channelId: channelId,
   flashOnCritical: flashOnCritical,
   flashOnMessage: flashOnMessage,
+  flashCount: flashCount,
 );
 
 /// NOTE: persistence intentionally not wired here — the legacy bridge
@@ -132,6 +137,14 @@ Future<void> deleteShortcut({
 Future<SessionSaved> saveSession({required String name}) =>
     RustLib.instance.api.crateApiSaveSession(name: name);
 
+/// Export the current channel layout to an arbitrary file path (file-picker).
+Future<void> exportLayout({required String path, required String name}) =>
+    RustLib.instance.api.crateApiExportLayout(path: path, name: name);
+
+/// Import a session from an arbitrary file path (file-picker) and apply it.
+Future<SessionLoaded> importLayout({required String path}) =>
+    RustLib.instance.api.crateApiImportLayout(path: path);
+
 Future<SessionLoaded> loadSession({required String slug}) =>
     RustLib.instance.api.crateApiLoadSession(slug: slug);
 
@@ -159,6 +172,7 @@ class ConfigSnapshot {
   final List<StaticPeer> staticPeers;
   final bool flashOnCritical;
   final bool flashOnMessage;
+  final int flashCount;
 
   const ConfigSnapshot({
     required this.clientName,
@@ -167,6 +181,7 @@ class ConfigSnapshot {
     required this.staticPeers,
     required this.flashOnCritical,
     required this.flashOnMessage,
+    required this.flashCount,
   });
 
   @override
@@ -176,7 +191,8 @@ class ConfigSnapshot {
       networkInterface.hashCode ^
       staticPeers.hashCode ^
       flashOnCritical.hashCode ^
-      flashOnMessage.hashCode;
+      flashOnMessage.hashCode ^
+      flashCount.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -188,7 +204,8 @@ class ConfigSnapshot {
           networkInterface == other.networkInterface &&
           staticPeers == other.staticPeers &&
           flashOnCritical == other.flashOnCritical &&
-          flashOnMessage == other.flashOnMessage;
+          flashOnMessage == other.flashOnMessage &&
+          flashCount == other.flashCount;
 }
 
 @freezed

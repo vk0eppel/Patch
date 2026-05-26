@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
-import '../models/message.dart';
 import '../theme/patch_theme.dart';
 
 /// Settings screen — identity, channels, shortcuts, and session management.
@@ -26,12 +25,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _nameCtrl = TextEditingController();
   StreamSubscription<Map<String, dynamic>>? _sub;
   bool _nameSaved = false;
-  List<SessionMeta> _sessions = [];
   late List<PatchChannel> _channels;
 
   // Behavior
   bool _flashOnCritical = true;
   bool _flashOnMessage = false;
+  int _flashCount = 4;
 
   // Network interfaces
   List<Map<String, String>> _interfaces = [];
@@ -44,7 +43,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _channels = List.of(widget.channels);
     _sub = widget.bridge.events.listen(_handleEvent);
     widget.bridge.getConfig();
-    widget.bridge.listSessions();
     widget.bridge.getInterfaces();
   }
 
@@ -65,6 +63,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _selectedInterface = data['network_interface'] as String?;
           _flashOnCritical = (data['flash_on_critical'] as bool?) ?? true;
           _flashOnMessage = (data['flash_on_message'] as bool?) ?? false;
+          _flashCount = (data['flash_count'] as int?) ?? 4;
         });
       case 'interfaces':
         final data = event['data'] as List<dynamic>;
@@ -83,13 +82,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Future.delayed(const Duration(seconds: 2), () {
           if (mounted) setState(() => _nameSaved = false);
         });
-      case 'sessions':
-        final data = event['data'] as List<dynamic>;
-        setState(() {
-          _sessions = data
-              .map((s) => SessionMeta.fromJson(s as Map<String, dynamic>))
-              .toList();
-        });
       case 'channels':
         final data = event['data'] as List<dynamic>;
         setState(() {
@@ -99,9 +91,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         });
       case 'channel_list_updated':
         widget.bridge.getChannels();
-      case 'session_saved':
-      case 'session_loaded':
-        widget.bridge.listSessions();
     }
   }
 
@@ -138,40 +127,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showSaveSessionDialog() {
-    final ctrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Save Session'),
-        content: TextField(
-          controller: ctrl,
-          decoration: const InputDecoration(
-            hintText: 'Session name (e.g. "Festival Day 1")',
-          ),
-          autofocus: true,
-          textInputAction: TextInputAction.done,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final name = ctrl.text.trim();
-              if (name.isNotEmpty) {
-                widget.bridge.saveSession(name);
-              }
-              Navigator.pop(context);
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -192,6 +147,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
             controller: _nameCtrl,
             saved: _nameSaved,
             onSave: _saveName,
+          ),
+
+          const SizedBox(height: 32),
+
+          // ── Network Interface ────────────────────────────────────────────
+          _SectionHeader('Network Interface'),
+          const SizedBox(height: 4),
+          const Text(
+            'Bind OSC to a specific NIC. Use Auto on single-homed machines. Takes effect after restart.',
+            style: TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeSmall),
+          ),
+          const SizedBox(height: 12),
+          _InterfacePicker(
+            interfaces: _interfaces,
+            selected: _selectedInterface,
+            restartPending: _interfaceChangedPending,
+            onSelect: (name) {
+              setState(() {
+                _selectedInterface = name;
+                _interfaceChangedPending = false;
+              });
+              widget.bridge.setInterface(name ?? 'auto');
+            },
           ),
 
           const SizedBox(height: 32),
@@ -233,44 +211,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
               widget.bridge.setFlashOnCritical(val);
             },
           ),
-
-          const SizedBox(height: 32),
-
-          // ── Network Interface ────────────────────────────────────────────
-          _SectionHeader('Network Interface'),
-          const SizedBox(height: 4),
-          const Text(
-            'Bind OSC to a specific NIC. Use Auto on single-homed machines. Takes effect after restart.',
-            style: TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeSmall),
-          ),
-          const SizedBox(height: 12),
-          _InterfacePicker(
-            interfaces: _interfaces,
-            selected: _selectedInterface,
-            restartPending: _interfaceChangedPending,
-            onSelect: (name) {
-              setState(() {
-                _selectedInterface = name;
-                _interfaceChangedPending = false;
-              });
-              widget.bridge.setInterface(name ?? 'auto');
-            },
-          ),
-
-          const SizedBox(height: 32),
-
-          // ── Sessions ────────────────────────────────────────────────────
-          _SectionHeader('Sessions'),
-          const SizedBox(height: 4),
-          const Text(
-            'Save the current channel layout as a named preset. Load it on any machine running Patch.',
-            style: TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeSmall),
-          ),
-          const SizedBox(height: 12),
-          _SessionPanel(
-            sessions: _sessions,
-            bridge: widget.bridge,
-            onSaveNew: _showSaveSessionDialog,
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Flash pulses',
+                      style: TextStyle(
+                        color: PatchTheme.textPrimary,
+                        fontSize: PatchTheme.fontSizeSmall,
+                      ),
+                    ),
+                    Text(
+                      'Number of times the channel flashes per event',
+                      style: TextStyle(color: PatchTheme.textSecondary, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              _FlashCountPicker(
+                value: _flashCount,
+                onChanged: (val) {
+                  if (val == null) return; // global picker never yields null
+                  setState(() => _flashCount = val);
+                  widget.bridge.setFlashCount(val);
+                },
+              ),
+            ],
           ),
 
           const SizedBox(height: 32),
@@ -452,129 +423,6 @@ class _InterfacePicker extends StatelessWidget {
   }
 }
 
-// ── Session panel ─────────────────────────────────────────────────────────────
-
-class _SessionPanel extends StatelessWidget {
-  final List<SessionMeta> sessions;
-  final BridgeClient bridge;
-  final VoidCallback onSaveNew;
-
-  const _SessionPanel({
-    required this.sessions,
-    required this.bridge,
-    required this.onSaveNew,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ElevatedButton.icon(
-          icon: const Icon(Icons.save_outlined, size: 16),
-          label: const Text('Save current layout…'),
-          onPressed: onSaveNew,
-        ),
-        if (sessions.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          ...sessions.map((s) => _SessionRow(session: s, bridge: bridge)),
-        ],
-      ],
-    );
-  }
-}
-
-class _SessionRow extends StatelessWidget {
-  final SessionMeta session;
-  final BridgeClient bridge;
-
-  const _SessionRow({required this.session, required this.bridge});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: PatchTheme.surface,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: PatchTheme.border),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.folder_outlined, size: 16, color: PatchTheme.textMuted),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  session.name,
-                  style: const TextStyle(
-                    color: PatchTheme.textPrimary,
-                    fontWeight: FontWeight.w600,
-                    fontSize: PatchTheme.fontSizeSmall,
-                  ),
-                ),
-                Text(
-                  '${session.channelCount} channel${session.channelCount == 1 ? '' : 's'} · ${_formatDate(session.createdAt)}',
-                  style: const TextStyle(
-                    color: PatchTheme.textMuted,
-                    fontSize: 11,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          TextButton(
-            style: TextButton.styleFrom(foregroundColor: PatchTheme.accent),
-            onPressed: () => bridge.loadSession(session.slug),
-            child: const Text('Load'),
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline, size: 16, color: PatchTheme.textMuted),
-            tooltip: 'Delete session',
-            onPressed: () => _confirmDelete(context),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatDate(DateTime dt) {
-    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
-  }
-
-  void _confirmDelete(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text('Delete "${session.name}"?'),
-        content: const Text(
-          'This will permanently remove the saved session.',
-          style: TextStyle(color: PatchTheme.textSecondary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: PatchTheme.critical),
-            onPressed: () {
-              bridge.deleteSession(session.slug);
-              Navigator.pop(context);
-            },
-            child: const Text('Delete', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 // ── Per-channel shortcut editor ───────────────────────────────────────────────
 
 class _ChannelShortcutEditor extends StatelessWidget {
@@ -706,6 +554,30 @@ class _ChannelShortcutEditor extends StatelessWidget {
                   onChanged: (val) =>
                       bridge.setChannelFlash(channel.id, flashOnCritical: val),
                 ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Flash pulses',
+                        style: TextStyle(
+                          color: PatchTheme.textSecondary,
+                          fontSize: PatchTheme.fontSizeSmall,
+                        ),
+                      ),
+                    ),
+                    // null = use global; picker shows "–" for global
+                    _FlashCountPicker(
+                      value: channel.flashCount,
+                      onChanged: (val) => bridge.setChannelFlash(
+                        channel.id,
+                        // 0 signals "clear override" to the Rust side
+                        flashCount: val ?? 0,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
               ],
             ),
           ),
@@ -1091,4 +963,64 @@ void _showChannelDialog(
       },
     ),
   );
+}
+
+// ── Flash pulse count picker ──────────────────────────────────────────────────
+//
+// Compact segmented control: 1 · 2 · 3 · 4 · 5.
+// When [value] is null (per-channel use) a "–" (global) option is prepended.
+
+class _FlashCountPicker extends StatelessWidget {
+  /// Current value. null means "use global" (only valid for per-channel pickers).
+  final int? value;
+
+  /// Called with the new value, or null to clear a per-channel override.
+  final void Function(int? val) onChanged;
+
+  const _FlashCountPicker({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    // When value is null we're in per-channel mode — show a "–" (global) option.
+    final showGlobal = value == null;
+    final options = <({int? v, String label})>[
+      if (showGlobal) (v: null, label: '–'),
+      (v: 1, label: '1'),
+      (v: 2, label: '2'),
+      (v: 3, label: '3'),
+      (v: 4, label: '4'),
+      (v: 5, label: '5'),
+    ];
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: options.map((opt) {
+        final selected = opt.v == value;
+        return GestureDetector(
+          onTap: () => onChanged(opt.v),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: selected ? PatchTheme.accent : PatchTheme.surfaceHigh,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(
+                color: selected ? PatchTheme.accent : PatchTheme.border,
+              ),
+            ),
+            child: Text(
+              opt.label,
+              style: TextStyle(
+                color: selected ? Colors.white : PatchTheme.textSecondary,
+                fontSize: 12,
+                fontWeight:
+                    selected ? FontWeight.w700 : FontWeight.w400,
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
 }

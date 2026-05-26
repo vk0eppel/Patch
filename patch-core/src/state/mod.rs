@@ -112,12 +112,20 @@ impl AppState {
         cfg.save()
     }
 
+    /// Persist the global flash pulse count (clamped to 1–10).
+    pub async fn set_flash_count(&self, count: u8) -> anyhow::Result<()> {
+        let mut cfg = self.0.config.write().await;
+        cfg.flash_count = count.clamp(1, 10);
+        cfg.save()
+    }
+
     /// Update per-channel flash flags. `None` means "leave unchanged".
     pub async fn set_channel_flash(
         &self,
         channel_id: &str,
         flash_on_critical: Option<bool>,
         flash_on_message: Option<bool>,
+        flash_count: Option<u8>,
     ) -> anyhow::Result<()> {
         {
             let mut channels = self.0.channels.write().await;
@@ -126,6 +134,11 @@ impl AppState {
                 .ok_or_else(|| anyhow::anyhow!("Channel '{}' not found", channel_id))?;
             if let Some(v) = flash_on_critical { ch.flash_on_critical = v; }
             if let Some(v) = flash_on_message  { ch.flash_on_message  = v; }
+            // flash_count: None = leave unchanged, Some(0) = clear override (use global),
+            // Some(n) = set per-channel override to n.
+            if let Some(v) = flash_count {
+                ch.flash_count = if v == 0 { None } else { Some(v.clamp(1, 10)) };
+            }
         }
         self.persist_channels().await?;
         self.publish(AppEvent::ChannelListUpdated).await;

@@ -166,6 +166,7 @@ class BridgeClient {
           'static_peers': cfg.staticPeers.map(_staticPeerToMap).toList(),
           'flash_on_critical': cfg.flashOnCritical,
           'flash_on_message': cfg.flashOnMessage,
+          'flash_count': cfg.flashCount,
         },
       });
     } catch (e) {
@@ -267,6 +268,25 @@ class BridgeClient {
     }
   }
 
+  /// Export the current layout to an arbitrary file path (from a file picker).
+  Future<void> exportLayout(String path, {String name = ''}) async {
+    try {
+      await rust.exportLayout(path: path, name: name);
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
+  /// Import a session from an arbitrary file path (from a file picker) and apply it.
+  Future<void> importLayout(String path) async {
+    try {
+      final s = await rust.importLayout(path: path);
+      _emit({'event': 'session_loaded', 'slug': s.slug, 'name': s.name, 'channel_count': s.channelCount});
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
   Future<void> loadSession(String slug) async {
     try {
       final s = await rust.loadSession(slug: slug);
@@ -319,16 +339,29 @@ class BridgeClient {
     }
   }
 
+  /// Set the global flash pulse count (1–10).
+  Future<void> setFlashCount(int count) async {
+    try {
+      await rust.setFlashCount(count: count);
+      _emit({'event': 'config_updated', 'flash_count': count});
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
   Future<void> setChannelFlash(
     String channelId, {
     bool? flashOnCritical,
     bool? flashOnMessage,
+    /// Pass 0 to clear the per-channel override (revert to global).
+    int? flashCount,
   }) async {
     try {
       await rust.setChannelFlash(
         channelId: channelId,
         flashOnCritical: flashOnCritical,
         flashOnMessage: flashOnMessage,
+        flashCount: flashCount,
       );
     } catch (e) {
       _emitError(e);
@@ -356,6 +389,7 @@ Map<String, dynamic> _channelToMap(rust_channel.Channel c) => {
       'shortcuts': c.shortcuts.map(_shortcutToMap).toList(),
       'flash_on_critical': c.flashOnCritical,
       'flash_on_message': c.flashOnMessage,
+      'flash_count': c.flashCount,
     };
 
 Map<String, dynamic> _shortcutToMap(rust_channel.ShortcutMessage s) => {

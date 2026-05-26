@@ -91,12 +91,13 @@ patch/
         │   └── patch_theme.dart     # Dark palette, typography, component themes
         ├── screens/
         │   ├── home_screen.dart     # Channel strip + multi-channel view + peers panel + flash layer
-        │   └── settings_screen.dart # Identity, NIC picker, sessions, channels & shortcuts
+        │   └── settings_screen.dart # Identity, NIC picker, behavior, channels & shortcuts
         └── widgets/
             ├── channel_tab.dart     # Sidebar tab with color dot
             ├── flash_button.dart    # Animated FLASH/page button
             ├── message_list.dart    # Auto-scrolling, priority-colored message rows
             ├── message_input.dart   # Enter-to-send text field
+            ├── sessions_dialog.dart # Sessions panel — save/load named presets, import/export .toml
             ├── shortcut_bar.dart    # One-tap shortcut chip strip
             └── peers_panel.dart     # Right panel — online peers, discovery mode
 ```
@@ -125,7 +126,8 @@ get_config() -> ConfigSnapshot
 set_client_name(name)
 set_interface(name: Option<String>)
 set_flash_on_critical(enabled) / set_flash_on_message(enabled)
-set_channel_flash(channel_id, flash_on_critical: Option<bool>, flash_on_message: Option<bool>)
+set_flash_count(count: u8)                                        // global pulse count (1–10, default 4)
+set_channel_flash(channel_id, flash_on_critical: Option<bool>, flash_on_message: Option<bool>, flash_count: Option<u8>)
 add_static_peer(address, port, label)
 upsert_channel(id, display_name, color) / delete_channel(id)
 upsert_shortcut(channel_id, label, payload, priority, key_binding) / delete_shortcut(channel_id, label)
@@ -133,6 +135,8 @@ save_session(name) -> SessionSaved
 load_session(slug) -> SessionLoaded
 list_sessions() -> Vec<SessionMeta>
 delete_session(slug)
+export_layout(path: String, name: String) -> Result<()>           // write current layout to arbitrary path
+import_layout(path: String) -> Result<SessionLoaded>              // load + apply layout from arbitrary path
 subscribe_events(sink: StreamSink<PatchAppEvent>) -> Result<()>   // long-lived stream
 ```
 
@@ -211,6 +215,7 @@ Each channel has:
 - `display_name` (shown in UI)
 - `color` (hex, for visual differentiation)
 - `shortcuts` (list of one-tap/keyboard shortcut messages)
+- `flash_count` (optional `u8`; `None` = use global setting, `Some(n)` = override pulse count for this channel)
 
 Channels can be created and deleted at runtime. Changes are persisted to `patch.toml` immediately.
 
@@ -228,8 +233,10 @@ A session is a named snapshot of the current channel layout (channels + shortcut
 - **Save** — captures current channels and static peers under a user-chosen name
 - **Load** — replaces all current channels with those from the session (persisted immediately)
 - **Delete** — removes the session file
+- **Export to file** — writes the current layout as a `SessionConfig` TOML to a user-chosen path (`export_layout` in `api.rs`)
+- **Import from file** — parses a `SessionConfig` TOML from a user-chosen path and applies it (`import_layout` in `api.rs`)
 
-Sessions are managed from the Settings screen and are designed to be portable across machines running Patch.
+Sessions are accessed via the **folder icon** in the left sidebar (not the Settings screen). The `SessionsDialog` widget handles the UI; `file_picker` is used for the file dialogs. On macOS the sandbox entitlements include `com.apple.security.files.user-selected.read-write`.
 
 ---
 
@@ -284,6 +291,7 @@ heartbeat_interval_secs = 7
 peer_timeout_secs = 30
 flash_on_critical = true    # Auto-flash channel when priority-3 message arrives
 flash_on_message = false    # Auto-flash on every incoming message
+flash_count = 4             # Flash pulse count per event (1–10, default 4)
 
 [[static_peers]]
 address = "192.168.1.50"
@@ -328,7 +336,9 @@ A single `flutter run` builds and links the Rust engine into the host binary via
 - `Priority` uses manual `Serialize`/`Deserialize` impls to emit integers (not variant name strings). The Dart-side façade reads `priority.index` from the FRB-generated `Priority` enum when converting back to the legacy event Map shape.
 - Flash fires `AppEvent::ChannelFlash` locally after sending, so the sender always sees their own flash without needing to receive it back over the network.
 - Flash animation uses timer-based `setState` + `Future.delayed` (not `AnimationController`/`TweenSequence`) in `_FlashLayer` — the `TweenSequence` approach proved visually unreliable on macOS. Don't revert to it.
+- Flash pulse count is configurable (default 4, range 1–10). `_FlashLayer` accepts a `pulseCount` param and loops that many times; `ChannelTab` accepts a `pulseCount` param and sets `_remainingPulses = pulseCount - 1`. The resolved count at flash time is stored in `_flashPulseCount` on `_HomeScreenState` and passes through `_ChannelView`. Per-channel override (`ch.flashCount`) takes priority over the global `_globalFlashCount`.
 - Auto-flash on message/critical: `_dispatch` ORs global flags (`_flashOnMessage`, `_flashOnCritical`) with per-channel flags (`ch.flashOnMessage`, `ch.flashOnCritical`). Global flags are read via `get_config` on startup; `config_updated` events trigger a `getConfig()` refresh so changes in Settings take effect immediately without restart. Per-channel flags are stored on `Channel` (serde defaults: `flash_on_critical=true`, `flash_on_message=false`) and updated via `set_channel_flash`.
+- Sessions panel: `SessionsDialog` is opened from the folder icon in `_ChannelStrip` (not Settings). It subscribes to bridge events directly and calls `listSessions()` on open. File import/export uses the `file_picker` package (`pubspec.yaml`). `export_layout` / `import_layout` in `api.rs` serialize/deserialize `SessionConfig` TOML to/from arbitrary paths.
 - F-key bindings: `HardwareKeyboard.instance.addHandler` is registered in `_HomeScreenState.initState` and removed in `dispose`. It intercepts `KeyDownEvent` before the `TextField` sees it, maps `LogicalKeyboardKey.f1`–`f12` → `"F1"`–`"F12"`, and fires the first matching shortcut across all selected channels. Keys not bound to a shortcut are not consumed.
 - Multi-channel selection: tap = exclusive select, long press = toggle into multi-select. The combined message feed and `_FlashLayer` both scope to the `_ChannelView` area.
 - The TCP bridge that used to live at `patch-core/src/bridge/` is **gone**. If you find yourself needing inter-process communication for a debug tool, build it as a separate small binary that links `patch_core` as an rlib — don't reintroduce the bridge.
@@ -339,6 +349,8 @@ A single `flutter run` builds and links the Rust engine into the host binary via
 
 - [ ] Settings screen — add static peer via UI (the `add_static_peer` API exists but is a no-op stub)
 - [x] Keyboard shortcut binding in Flutter (F1–F12 wired to shortcut bar)
+- [x] Configurable flash pulse count (global + per-channel, 1–10, default 4)
+- [x] Session file import/export via file picker (`export_layout` / `import_layout` in `api.rs`)
 - [ ] Reliability manager wired into the send path for critical messages
 - [ ] Wire heartbeat send through transport (discovery module encodes presence but needs the send handle)
 - [ ] Surface iOS/macOS Local Network permission-denied via the FRB event stream (currently logged-only)
@@ -373,9 +385,10 @@ Patch UI is designed for live environments:
 - keyboard-first on desktop (Enter to send, F1–F12 fire bound shortcuts from any focus state)
 - touch-first on iPad
 - **multi-channel view**: tap to select exclusively, long-press to toggle into multi-select; combined feed sorted by timestamp; channel colour dot on each message row
-- **flash**: channel tab pulses (3× scale animation); message box border + background tint pulses 3× in the channel colour (`_FlashLayer` inside `_ChannelView` Stack); triggers determined by OR of global + per-channel flags
+- **flash**: channel tab pulses N× scale animation (default 4, configurable 1–10); message box border + background tint pulses N× in the channel colour (`_FlashLayer` inside `_ChannelView` Stack, receives `pulseCount`); triggers determined by OR of global + per-channel flags
 - **NIC picker**: Settings → Network Interface; dropdown shows only real NICs (loopback, virtual/tunnel, and link-local IPv6 interfaces filtered out); "Auto" binds all; change persists to `patch.toml`, takes effect on next restart
-- **Behavior settings**: Settings → Behavior — global flash defaults ("Flash on every message", "Flash on critical messages"); Settings → channel editor footer — per-channel overrides for the same two flags (either global or channel flag being on is sufficient to trigger)
+- **Behavior settings**: Settings → Behavior — global flash defaults ("Flash on every message", "Flash on critical messages", "Flash pulses" 1–5 segmented picker); Settings → channel editor footer — per-channel overrides for the same flags (either global or channel flag being on is sufficient to trigger; "–" in the pulse picker = use global)
+- **sessions**: folder icon in the left sidebar opens `SessionsDialog` — load/save named presets or import/export `.toml` files; Settings screen no longer contains a Sessions section
 
 ---
 

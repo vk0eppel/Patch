@@ -28,6 +28,8 @@ class PatchChannel {
   final List<ShortcutMessage> shortcuts;
   final bool flashOnCritical;
   final bool flashOnMessage;
+  /// Per-channel pulse count override. null = use global setting.
+  final int? flashCount;
 
   const PatchChannel({
     required this.id,
@@ -36,6 +38,7 @@ class PatchChannel {
     this.shortcuts = const [],
     this.flashOnCritical = true,
     this.flashOnMessage = false,
+    this.flashCount,
   });
 
   factory PatchChannel.fromJson(Map<String, dynamic> j) {
@@ -49,6 +52,7 @@ class PatchChannel {
           .toList(),
       flashOnCritical: (j['flash_on_critical'] as bool?) ?? true,
       flashOnMessage:  (j['flash_on_message']  as bool?) ?? false,
+      flashCount:      (j['flash_count'] as int?),
     );
   }
 }

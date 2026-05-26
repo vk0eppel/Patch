@@ -26,6 +26,9 @@ class Channel {
   /// Flash this channel's message box on every incoming message.
   final bool flashOnMessage;
 
+  /// Per-channel flash pulse count override. None = use global setting.
+  final int? flashCount;
+
   const Channel({
     required this.id,
     required this.displayName,
@@ -33,6 +36,7 @@ class Channel {
     required this.shortcuts,
     required this.flashOnCritical,
     required this.flashOnMessage,
+    this.flashCount,
   });
 
   @override
@@ -42,7 +46,8 @@ class Channel {
       color.hashCode ^
       shortcuts.hashCode ^
       flashOnCritical.hashCode ^
-      flashOnMessage.hashCode;
+      flashOnMessage.hashCode ^
+      flashCount.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -54,7 +59,8 @@ class Channel {
           color == other.color &&
           shortcuts == other.shortcuts &&
           flashOnCritical == other.flashOnCritical &&
-          flashOnMessage == other.flashOnMessage;
+          flashOnMessage == other.flashOnMessage &&
+          flashCount == other.flashCount;
 }
 
 /// A one-tap/keyboard shortcut message.

@@ -12,6 +12,9 @@ class ChannelTab extends StatefulWidget {
   /// trigger the pulse animation.
   final int flashCount;
 
+  /// How many times the tab should pulse per flash event.
+  final int pulseCount;
+
   const ChannelTab({
     super.key,
     required this.channel,
@@ -19,6 +22,7 @@ class ChannelTab extends StatefulWidget {
     required this.onTap,
     this.onLongPress,
     this.flashCount = 0,
+    this.pulseCount = 4,
   });
 
   @override
@@ -73,7 +77,7 @@ class _ChannelTabState extends State<ChannelTab>
   void didUpdateWidget(ChannelTab old) {
     super.didUpdateWidget(old);
     if (widget.flashCount > old.flashCount) {
-      _remainingPulses = 2; // total 3 pulses: immediate + 2 repeats
+      _remainingPulses = (widget.pulseCount - 1).clamp(0, 99);
       _ctrl.forward(from: 0);
     }
   }

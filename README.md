@@ -12,7 +12,7 @@ It is not a chat app. It is a coordination layer for live environments.
 
 Existing options (Slack, WhatsApp, walkie-talkie apps) are either too slow, too noisy, or don't integrate with the show network. Patch is designed to sit alongside QLab, Companion, and your console, receive OSC triggers, and get the right message to the right department in under a second.
 
-Inspired by [Shure Wireless Workbench](https://www.shure.com/en-US/products/software/wireless-workbench) chat and [SideChain's TheaterChat](https://sidechainsoftware.com).
+Inspired by [Wavetool](https://wavetool.fi/) chat and [SideChain's TheaterChat](https://sidechainsoftware.com).
 
 ---
 
@@ -22,9 +22,10 @@ Inspired by [Shure Wireless Workbench](https://www.shure.com/en-US/products/soft
 - **OSC-native transport** — messages travel as OSC packets; unicast to known peers, broadcast only for presence/discovery
 - **Logical channels** — FOH, MON, RF, LIGHTING, VIDEO, STAGE, PRODUCTION — create and delete at runtime
 - **Multi-channel view** — tap to focus a channel, long-press to add it to the view; combined feed sorted by timestamp with per-message channel colour dots
-- **Flash / page** — one-button high-priority alert per channel; channel tab pulses + message box border lights up in the channel colour × 3; auto-flash configurable globally (Settings → Behavior) and per-channel (Settings → channel editor)
+- **Flash / page** — one-button high-priority alert per channel; channel tab pulses + message box border lights up in the channel colour; auto-flash configurable globally (Settings → Behavior) and per-channel (Settings → channel editor)
+- **Configurable flash count** — set how many times the channel pulses per flash event (1–5 in Settings → Behavior; per-channel override in channel editor; default 4)
 - **Shortcut messages** — per-channel one-tap buttons for common callouts (HOLD, CLEAR, BATTERY LOW…), optionally bound to F-keys
-- **Session presets** — save and restore named channel layouts; portable across machines
+- **Session presets** — save and restore named channel layouts; accessible from the folder icon in the sidebar; import/export `.toml` files to share layouts across machines
 - **Hybrid discovery** — mDNS/Bonjour auto-discovery + OSC beacon + manual static IP for locked-down show networks
 - **Configurable identity** — set your display name and network interface from the settings screen; NIC picker filters out virtual/tunnel interfaces and shows only real NICs with IPv4 addresses; changes persist immediately
 - **Priority levels** — info / warning / critical; critical messages are visually distinct and require ACK
@@ -142,6 +143,7 @@ osc_port = 9000
 network_interface = "en0"      # Omit to bind all interfaces
 flash_on_critical = true       # Auto-flash on priority-3 messages (Settings → Behavior)
 flash_on_message = false       # Auto-flash on every message (Settings → Behavior)
+flash_count = 4                # Flash pulse count per event, 1–10 (Settings → Behavior)
 
 heartbeat_interval_secs = 7
 peer_timeout_secs = 30
@@ -165,11 +167,12 @@ label = "Monitor World"
 - [x] Message deduplication by UUID
 - [x] Single-binary build via `flutter_rust_bridge` + cargokit (no more TCP bridge)
 - [x] Settings screen — display name, NIC picker, shortcuts, channel management
-- [x] Session presets — save / load / delete named channel layouts
+- [x] Session presets — save / load / delete named channel layouts; sidebar folder icon (not Settings); import/export `.toml` files
 - [x] Multi-channel view — combined feed, long-press to add channels
-- [x] Flash animation — channel tab pulse + message box border/tint × 3
+- [x] Flash animation — channel tab pulse + message box border/tint (configurable pulse count)
 - [x] Auto-flash on critical messages — global default in Settings → Behavior
-- [x] Per-channel flash settings — override "flash on message" and "flash on critical" per channel
+- [x] Per-channel flash settings — override "flash on message", "flash on critical", and pulse count per channel
+- [x] Configurable flash pulse count — 1–10 globally (default 4), per-channel override
 - [x] F-key bindings for shortcuts (F1–F12, fires from any focus state)
 - [x] Platform data directory (`~/Library/Application Support/Patch/`, `%APPDATA%\Patch\`, etc.) with legacy `./patch.toml` migration
 - [x] iOS / macOS Local Network permission strings in Info.plist (`NSLocalNetworkUsageDescription` + `NSBonjourServices`)

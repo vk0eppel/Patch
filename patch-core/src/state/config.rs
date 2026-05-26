@@ -63,6 +63,9 @@ pub struct Config {
     /// Flash the channel on every incoming message, regardless of priority.
     #[serde(default)]  // default = false
     pub flash_on_message: bool,
+    /// Number of flash pulses per flash event (1–10).
+    #[serde(default = "default_four")]
+    pub flash_count: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,11 +88,13 @@ impl Default for Config {
             peer_timeout_secs: 30,
             flash_on_critical: true,
             flash_on_message: false,
+            flash_count: 4,
         }
     }
 }
 
 fn default_true() -> bool { true }
+fn default_four() -> u8 { 4 }
 
 impl Config {
     /// Load `patch.toml` from the platform data directory, migrating an existing
