@@ -245,8 +245,9 @@ class _HomeScreenState extends State<HomeScreen> {
         break;
 
       case 'config_updated':
-        // Re-fetch full config so global flash flags stay in sync.
+        // Re-fetch config (flash flags) and peers (static peer list may have changed).
         widget.bridge.getConfig();
+        widget.bridge.getPeers();
 
       case 'error':
         debugPrint('Bridge error: ${event['message']}');

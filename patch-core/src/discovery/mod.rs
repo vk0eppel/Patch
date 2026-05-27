@@ -23,7 +23,6 @@ impl Discovery {
         let client_name = config.client_name.clone();
         let osc_port = config.osc_port;
         let heartbeat_secs = config.heartbeat_interval_secs;
-        let peer_timeout = config.peer_timeout_secs;
 
         // ── mDNS ──────────────────────────────────────────────────────────────
         let mdns = ServiceDaemon::new().expect("Failed to create mDNS daemon");
@@ -142,14 +141,8 @@ impl Discovery {
                     Err(e) => warn!("Failed to encode presence: {}", e),
                 }
 
-                // Expire stale peers
-                let peers = hb_state.get_peers().await;
-                for peer in peers {
-                    if peer.peer_id != client_id && peer.is_stale(peer_timeout) {
-                        info!("Expiring stale peer: {} ({})", peer.peer_name, peer.peer_id);
-                        hb_state.expire_peer(peer.peer_id).await;
-                    }
-                }
+                // Peers are never auto-expired — they stay in the list for the
+                // whole session. The Flutter side uses lastSeen to show green/gray.
             }
         });
 

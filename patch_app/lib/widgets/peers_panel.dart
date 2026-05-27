@@ -90,11 +90,17 @@ class _PeerTile extends StatelessWidget {
               ],
             ),
           ),
-          // Green = confirmed online (heard from); gray = configured but not yet contacted.
-          // ManualIp entries are always synthetic (config-only); real entries use OscBeacon/Mdns.
+          // Green = heard from within the last 35 s (5 × 7 s heartbeat interval).
+          // Gray = ManualIp synthetic entry (never contacted), or real entry gone quiet.
           Builder(builder: (context) {
-            final isOnline = peer.discoveryMode != 'ManualIp' &&
-                             peer.discoveryMode != 'manual_ip';
+            final bool isOnline;
+            if (peer.discoveryMode == 'ManualIp' ||
+                peer.discoveryMode == 'manual_ip') {
+              isOnline = false;
+            } else {
+              final age = DateTime.now().difference(peer.lastSeen);
+              isOnline = age.inSeconds <= 35;
+            }
             return Container(
               width: 7,
               height: 7,

@@ -351,6 +351,9 @@ A single `flutter run` builds and links the Rust engine into the host binary via
 - Static peers always appear in the peers panel: `get_peers()` in `state/mod.rs` merges `config.static_peers` into the returned list. For each static peer whose `address:port` is not already represented by a dynamic entry, a synthetic `Peer` is created with `DiscoveryMode::ManualIp`, label (or raw address) as name, and a UUID v5 derived from `"static:{address}:{port}"` for stability across calls. The synthetic entry disappears automatically once a real packet arrives from that address and a dynamic entry is inserted for the same address.
 - Auto-register peer on first received packet: in `transport/mod.rs` `handle_event`, when a `Message` or `Flash` arrives from a sender not yet in the peer registry (`has_peer` returns false), a minimal `PeerPresence` is synthesised from `sender_id` + `sender_name` and passed to `upsert_peer`. `touch_peer_address` is then called a second time (the first call at the top of `handle_event` was a no-op before the entry existed). This makes the sender appear in the peers panel immediately, even on AP-isolated networks where their broadcast heartbeats never arrive.
 - Heartbeat name stays fresh: the heartbeat loop in `discovery/mod.rs` reads `hb_state.config().await.client_name` on every tick instead of using the `client_name` value captured at startup. This ensures a rename propagates to remote peers within one heartbeat interval (≤7s) without restarting the app.
+- Peers never auto-expire: the expiry loop has been removed from `discovery/mod.rs`. Peers stay in the registry for the full app session. The `expire_peer` API and `PeerExpired` event are preserved but not called automatically. Online/offline status is computed on the Flutter side from `peer.lastSeen`: `ManualIp` entries are always gray; dynamic entries (`OscBeacon`/`Mdns`) show green if `lastSeen` ≤ 35 s ago, gray otherwise. This prevents peers from disappearing on AP-isolated networks where broadcast heartbeats are blocked.
+- `peer_expired` and `peer_updated` both call `getPeers()`: the `peer_expired` handler in `home_screen.dart` was changed from `removeWhere` to `getPeers()` so that a static-peer-backed entry immediately reappears as ManualIp (gray) rather than vanishing from the panel.
+- `config_updated` also calls `getPeers()`: since adding or removing a static peer emits `config_updated`, the peers panel is refreshed in the same handler so changes are reflected immediately without a separate event.
 
 ---
 
@@ -365,6 +368,7 @@ A single `flutter run` builds and links the Rust engine into the host binary via
 - [x] Static peers always visible in peers panel (synthesised `ManualIp` entries in `get_peers()`, replaced by real entry on first received packet)
 - [x] Peer name updates propagate within one heartbeat (heartbeat reads live config instead of captured startup value)
 - [x] Auto-register peer on first received message/flash (AP-isolation-safe discovery via `has_peer` + `upsert_peer` in `handle_event`)
+- [x] Peers never auto-expire — stay in panel for full session; dot color from `lastSeen` (green ≤ 35 s, gray otherwise); expiry loop removed from `discovery/mod.rs`
 - [ ] Reliability manager wired into the send path for critical messages
 - [ ] Surface iOS/macOS Local Network permission-denied via the FRB event stream (currently logged-only)
 
@@ -402,6 +406,7 @@ Patch UI is designed for live environments:
 - **NIC picker**: Settings → Network Interface; dropdown shows only real NICs (loopback, virtual/tunnel, and link-local IPv6 interfaces filtered out); "Auto" binds all; change persists to `patch.toml`, takes effect on next restart
 - **Behavior settings**: Settings → Behavior — global flash defaults ("Flash on every message", "Flash on critical messages", "Flash pulses" 1–5 segmented picker); Settings → channel editor footer — per-channel overrides for the same flags (either global or channel flag being on is sufficient to trigger; "–" in the pulse picker = use global)
 - **sessions**: folder icon in the left sidebar opens `SessionsDialog` — load/save named presets or import/export `.toml` files; Settings screen no longer contains a Sessions section
+- **peers panel**: header is "PEERS" (not "ONLINE"); dot is green if heard from within 35 s, gray if stale or ManualIp (configured-only); peers persist for the full session and never auto-expire; static peers always appear even before first contact (gray dot with 📌 icon)
 
 ---
 
