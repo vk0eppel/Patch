@@ -224,6 +224,10 @@ impl AppState {
         }
     }
 
+    pub async fn has_peer(&self, peer_id: Uuid) -> bool {
+        self.0.peers.read().await.contains_key(&peer_id)
+    }
+
     pub async fn expire_peer(&self, peer_id: Uuid) {
         let mut peers = self.0.peers.write().await;
         peers.remove(&peer_id);
@@ -232,7 +236,37 @@ impl AppState {
     }
 
     pub async fn get_peers(&self) -> Vec<peer::Peer> {
-        self.0.peers.read().await.values().cloned().collect()
+        let mut peers: Vec<_> = self.0.peers.read().await.values().cloned().collect();
+
+        // Merge in static peers that haven't been heard from yet.
+        // Once a real packet arrives from the same address, the dynamic entry
+        // takes over and the synthetic one is suppressed by the address check.
+        let static_peers = self.0.config.read().await.static_peers.clone();
+        let known_by_addr: std::collections::HashSet<(String, u16)> = peers
+            .iter()
+            .map(|p| (p.address.clone(), p.osc_port))
+            .collect();
+
+        for sp in &static_peers {
+            if known_by_addr.contains(&(sp.address.clone(), sp.port)) {
+                continue; // real entry already present for this address
+            }
+            // Derive a stable UUID from the address:port so the ID doesn't
+            // flicker on every getPeers() call.
+            let key = format!("static:{}:{}", sp.address, sp.port);
+            let synthetic_id = Uuid::new_v5(&Uuid::NAMESPACE_DNS, key.as_bytes());
+            peers.push(peer::Peer {
+                peer_id: synthetic_id,
+                peer_name: sp.label.clone().unwrap_or_else(|| sp.address.clone()),
+                channels: Vec::new(),
+                discovery_mode: peer::DiscoveryMode::ManualIp,
+                address: sp.address.clone(),
+                osc_port: sp.port,
+                last_seen: chrono::Utc::now(),
+            });
+        }
+
+        peers
     }
 
     // ── Channels & shortcuts ──────────────────────────────────────────────────

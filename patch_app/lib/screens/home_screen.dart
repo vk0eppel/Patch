@@ -214,8 +214,9 @@ class _HomeScreenState extends State<HomeScreen> {
         widget.bridge.getPeers();
 
       case 'peer_expired':
-        final peerId = event['data']['peer_id'] as String;
-        setState(() => _peers.removeWhere((p) => p.peerId == peerId));
+        // Refresh the full list — a static-peer-backed entry should
+        // immediately reappear as ManualIp (gray dot) rather than disappearing.
+        widget.bridge.getPeers();
 
       case 'channel_flash':
         final chId = event['data']['channel_id'] as String;

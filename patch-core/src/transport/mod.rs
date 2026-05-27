@@ -9,7 +9,9 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, warn};
 use uuid::Uuid;
 
+use chrono::Utc;
 use crate::osc::codec::{decode_packet, PatchEvent};
+use crate::osc::types::PeerPresence;
 use crate::state::{AppEvent, AppState, Config};
 
 pub struct Transport {
@@ -36,8 +38,9 @@ impl Transport {
         // Receive loop
         let rx_socket = socket.clone();
         let rx_state = state.clone();
+        let client_id = config.client_id;
         tokio::spawn(async move {
-            receive_loop(rx_socket, rx_state).await;
+            receive_loop(rx_socket, rx_state, client_id).await;
         });
 
         // Send loop
@@ -127,14 +130,14 @@ impl Transport {
 
 // ── Internal loops ────────────────────────────────────────────────────────────
 
-async fn receive_loop(socket: Arc<UdpSocket>, state: AppState) {
+async fn receive_loop(socket: Arc<UdpSocket>, state: AppState, client_id: Uuid) {
     let mut buf = vec![0u8; 65535];
     loop {
         match socket.recv_from(&mut buf).await {
             Ok((len, peer_addr)) => {
                 debug!("OSC packet from {} ({} bytes)", peer_addr, len);
                 match decode_packet(&buf[..len]) {
-                    Ok(event) => handle_event(event, peer_addr, &state).await,
+                    Ok(event) => handle_event(event, peer_addr, &state, client_id).await,
                     Err(e) => warn!("Decode error from {}: {}", peer_addr, e),
                 }
             }
@@ -145,9 +148,10 @@ async fn receive_loop(socket: Arc<UdpSocket>, state: AppState) {
     }
 }
 
-async fn handle_event(event: PatchEvent, from: SocketAddr, state: &AppState) {
+async fn handle_event(event: PatchEvent, from: SocketAddr, state: &AppState, client_id: Uuid) {
     // For every event that carries a sender_id, record the source address so
-    // we can unicast back to that peer later.
+    // we can unicast back to that peer later.  Skip our own packets — the Mac
+    // receives its own broadcast, and we don't want to add ourselves as a peer.
     let sender_id: Option<Uuid> = match &event {
         PatchEvent::Message(m)    => Some(m.sender_id),
         PatchEvent::Presence(p)   => Some(p.peer_id),
@@ -157,20 +161,56 @@ async fn handle_event(event: PatchEvent, from: SocketAddr, state: &AppState) {
         _ => None,
     };
     if let Some(id) = sender_id {
-        state.touch_peer_address(id, from.ip().to_string(), from.port()).await;
+        if id != client_id {
+            state.touch_peer_address(id, from.ip().to_string(), from.port()).await;
+        }
     }
 
     match event {
         PatchEvent::Message(msg) => {
+            // Auto-register the sender so they appear in the peers panel
+            // immediately, even when AP isolation blocks their broadcast heartbeats.
+            if !state.has_peer(msg.sender_id).await {
+                let presence = PeerPresence {
+                    peer_id: msg.sender_id,
+                    peer_name: msg.sender_name.clone(),
+                    channels: Vec::new(),
+                    timestamp: Utc::now(),
+                };
+                state.upsert_peer(presence).await;
+                // touch_peer_address was a no-op above (no entry yet); now it works.
+                state.touch_peer_address(
+                    msg.sender_id,
+                    from.ip().to_string(),
+                    from.port(),
+                ).await;
+            }
             state.store_message(msg).await;
         }
         PatchEvent::Ack { message_id, peer_id } => {
             state.publish(AppEvent::MessageAcked { message_id, peer_id }).await;
         }
         PatchEvent::Presence(p) => {
+            // Ignore our own presence broadcast — we receive it on the same socket.
+            if p.peer_id == client_id { return; }
             state.upsert_peer(p).await;
         }
         PatchEvent::Flash(f) => {
+            // Same auto-register logic as for Message.
+            if !state.has_peer(f.sender_id).await {
+                let presence = PeerPresence {
+                    peer_id: f.sender_id,
+                    peer_name: f.sender_name.clone(),
+                    channels: Vec::new(),
+                    timestamp: Utc::now(),
+                };
+                state.upsert_peer(presence).await;
+                state.touch_peer_address(
+                    f.sender_id,
+                    from.ip().to_string(),
+                    from.port(),
+                ).await;
+            }
             state.publish(AppEvent::ChannelFlash(f)).await;
         }
         PatchEvent::Heartbeat { peer_id } => {

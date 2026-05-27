@@ -17,7 +17,7 @@ class PeersPanel extends StatelessWidget {
           const Padding(
             padding: EdgeInsets.fromLTRB(12, 14, 12, 8),
             child: Text(
-              'ONLINE',
+              'PEERS',
               style: TextStyle(
                 color: PatchTheme.textSecondary,
                 fontSize: PatchTheme.fontSizeSmall,
@@ -90,15 +90,20 @@ class _PeerTile extends StatelessWidget {
               ],
             ),
           ),
-          // Online indicator
-          Container(
-            width: 7,
-            height: 7,
-            decoration: const BoxDecoration(
-              color: PatchTheme.success,
-              shape: BoxShape.circle,
-            ),
-          ),
+          // Green = confirmed online (heard from); gray = configured but not yet contacted.
+          // ManualIp entries are always synthetic (config-only); real entries use OscBeacon/Mdns.
+          Builder(builder: (context) {
+            final isOnline = peer.discoveryMode != 'ManualIp' &&
+                             peer.discoveryMode != 'manual_ip';
+            return Container(
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(
+                color: isOnline ? PatchTheme.success : PatchTheme.textMuted,
+                shape: BoxShape.circle,
+              ),
+            );
+          }),
         ],
       ),
     );

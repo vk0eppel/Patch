@@ -123,9 +123,12 @@ impl Discovery {
                     .iter()
                     .map(|c| c.id.clone())
                     .collect();
+                // Re-read the name on every tick so renames propagate to peers
+                // within one heartbeat interval without requiring a restart.
+                let current_name = hb_state.config().await.client_name.clone();
                 let presence = PeerPresence {
                     peer_id: client_id,
-                    peer_name: client_name.clone(),
+                    peer_name: current_name,
                     channels,
                     timestamp: Utc::now(),
                 };
