@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
@@ -136,6 +137,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  /// Show a confirmation dialog before resetting a section to defaults.
+  /// Returns true if the user confirms.
+  Future<bool> _confirmReset(String section) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text('Reset $section?'),
+            content: SizedBox(
+              width: double.infinity,
+              child: Text(
+                'This will restore factory defaults for $section.',
+                style: const TextStyle(color: PatchTheme.textSecondary),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Reset'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Widget _resetButton(String section, VoidCallback onReset) {
+    return IconButton(
+      icon: const Icon(Icons.restart_alt, size: 18),
+      color: PatchTheme.textMuted,
+      tooltip: 'Reset $section to defaults',
+      onPressed: () async {
+        if (await _confirmReset(section)) onReset();
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -150,7 +191,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
         padding: const EdgeInsets.all(20),
         children: [
           // ── Identity ────────────────────────────────────────────────────
-          _SectionHeader('Identity'),
+          Row(children: [
+            Expanded(child: _SectionHeader('Identity')),
+            _resetButton('Identity', () {
+              final name = Platform.environment['USER'] ??
+                  Platform.environment['USERNAME'] ??
+                  'crew';
+              _nameCtrl.text = name;
+              widget.bridge.setClientName(name);
+            }),
+          ]),
           const SizedBox(height: 10),
           _UsernameField(
             controller: _nameCtrl,
@@ -193,6 +243,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 style: TextButton.styleFrom(foregroundColor: PatchTheme.accent),
                 onPressed: () => _showAddPeerDialog(context, widget.bridge),
               ),
+              _resetButton('Static Peers', () {
+                for (final peer in List.of(_staticPeers)) {
+                  widget.bridge.removeStaticPeer(
+                    peer['address'] as String,
+                    peer['port'] as int,
+                  );
+                }
+              }),
             ],
           ),
           const SizedBox(height: 4),
@@ -243,7 +301,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 32),
 
           // ── Behavior ─────────────────────────────────────────────────────
-          _SectionHeader('Behavior'),
+          Row(children: [
+            Expanded(child: _SectionHeader('Behavior')),
+            _resetButton('Behavior', () {
+              setState(() {
+                _flashOnCritical = true;
+                _flashOnMessage = false;
+                _flashCount = 4;
+              });
+              widget.bridge.setFlashOnCritical(true);
+              widget.bridge.setFlashOnMessage(false);
+              widget.bridge.setFlashCount(4);
+            }),
+          ]),
           const SizedBox(height: 4),
           SwitchListTile(
             title: const Text(
@@ -328,6 +398,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   existingIds: _channels.map((c) => c.id).toSet(),
                 ),
               ),
+              _resetButton('Channels & Shortcuts', () {
+                widget.bridge.resetChannels();
+              }),
             ],
           ),
           const SizedBox(height: 4),

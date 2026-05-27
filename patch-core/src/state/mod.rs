@@ -291,6 +291,11 @@ impl AppState {
         Ok(())
     }
 
+    /// Replace all channels with the factory defaults.
+    pub async fn reset_channels(&self) -> anyhow::Result<()> {
+        self.apply_session(config::default_channels()).await
+    }
+
     /// Replace all channels with those from a loaded session.
     pub async fn apply_session(&self, channels: Vec<channel::Channel>) -> anyhow::Result<()> {
         {

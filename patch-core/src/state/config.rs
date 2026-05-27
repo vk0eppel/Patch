@@ -142,7 +142,7 @@ fn whoami() -> String {
         .unwrap_or_else(|_| "crew".to_string())
 }
 
-fn default_channels() -> Vec<Channel> {
+pub fn default_channels() -> Vec<Channel> {
     let specs = [
         ("audio",    "AUDIO",    "#E53935"),
         ("rf",       "RF",       "#1E88E5"),

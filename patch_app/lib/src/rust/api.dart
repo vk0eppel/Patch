@@ -113,6 +113,8 @@ Future<void> upsertChannel({
 Future<void> deleteChannel({required String id}) =>
     RustLib.instance.api.crateApiDeleteChannel(id: id);
 
+Future<void> resetChannels() => RustLib.instance.api.crateApiResetChannels();
+
 Future<void> upsertShortcut({
   required String channelId,
   required String label,

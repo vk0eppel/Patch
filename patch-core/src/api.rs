@@ -217,6 +217,10 @@ pub async fn delete_channel(id: String) -> Result<()> {
     engine().state.delete_channel(&id).await
 }
 
+pub async fn reset_channels() -> Result<()> {
+    engine().state.reset_channels().await
+}
+
 pub async fn upsert_shortcut(
     channel_id: String,
     label: String,

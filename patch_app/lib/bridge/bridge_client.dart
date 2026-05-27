@@ -269,6 +269,16 @@ class BridgeClient {
     }
   }
 
+  /// Reset all channels to factory defaults (AUDIO · RF · LIGHTING · VIDEO · STAGE).
+  Future<void> resetChannels() async {
+    try {
+      await rust.resetChannels();
+      // ChannelListUpdated is emitted by the engine; home_screen will refresh.
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
   Future<void> saveSession(String name) async {
     try {
       final s = await rust.saveSession(name: name);
