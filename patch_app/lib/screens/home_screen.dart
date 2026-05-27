@@ -525,13 +525,16 @@ class _ChannelView extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  selectedChannels.first.displayName,
-                  style: const TextStyle(
-                    color: PatchTheme.textPrimary,
-                    fontSize: PatchTheme.fontSizeLarge,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.2,
+                Flexible(
+                  child: Text(
+                    selectedChannels.first.displayName,
+                    style: const TextStyle(
+                      color: PatchTheme.textPrimary,
+                      fontSize: PatchTheme.fontSizeLarge,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.2,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],

@@ -153,6 +153,7 @@ class _ChannelTabState extends State<ChannelTab>
               widget.channel.displayName,
               textAlign: TextAlign.center,
               maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: widget.isSelected
                     ? PatchTheme.textPrimary

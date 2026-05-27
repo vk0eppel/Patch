@@ -407,6 +407,7 @@ Patch UI is designed for live environments:
 - **Behavior settings**: Settings → Behavior — global flash defaults ("Flash on every message", "Flash on critical messages", "Flash pulses" 1–5 segmented picker); Settings → channel editor footer — per-channel overrides for the same flags (either global or channel flag being on is sufficient to trigger; "–" in the pulse picker = use global)
 - **sessions**: folder icon in the left sidebar opens `SessionsDialog` — load/save named presets or import/export `.toml` files; Settings screen no longer contains a Sessions section
 - **peers panel**: header is "PEERS" (not "ONLINE"); dot is green if heard from within 35 s, gray if stale or ManualIp (configured-only); peers persist for the full session and never auto-expire; static peers always appear even before first contact (gray dot with 📌 icon)
+- **iPhone layout**: dialog `AlertDialog` content uses `SizedBox(width: double.infinity)` — never a hardcoded pixel width. The `AlertDialog` widget constrains its content to `screenWidth - margins` automatically; fixed widths (360–380 px) exceeded iPhone SE's available space and caused right-overflow errors. The channel-name `Text` in the `_ChannelView` header is wrapped in `Flexible` with `overflow: TextOverflow.ellipsis` so long names don't overflow the header `Row`. Key `Text` nodes in tight layouts (`channel_tab.dart`, `peers_panel.dart` IP line) carry `overflow: TextOverflow.ellipsis` to truncate gracefully instead of clipping silently.
 
 ---
 

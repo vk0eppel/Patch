@@ -86,6 +86,7 @@ class _PeerTile extends StatelessWidget {
                     color: PatchTheme.textMuted,
                     fontSize: 10,
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),

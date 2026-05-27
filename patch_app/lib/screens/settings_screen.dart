@@ -671,7 +671,7 @@ class _ChannelShortcutEditor extends StatelessWidget {
         builder: (ctx, setDialogState) => AlertDialog(
           title: Text(existing == null ? 'New Shortcut' : 'Edit Shortcut'),
           content: SizedBox(
-            width: 360,
+            width: double.infinity,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -913,7 +913,7 @@ void _showChannelDialog(
         return AlertDialog(
           title: Text(existing == null ? 'New Channel' : 'Edit Channel'),
           content: SizedBox(
-            width: 380,
+            width: double.infinity,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1107,7 +1107,7 @@ void _showAddPeerDialog(BuildContext context, BridgeClient bridge) {
       builder: (ctx, setDialogState) => AlertDialog(
         title: const Text('Add Static Peer'),
         content: SizedBox(
-          width: 320,
+          width: double.infinity,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
