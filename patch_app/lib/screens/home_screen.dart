@@ -365,13 +365,11 @@ class _ChannelStrip extends StatelessWidget {
       color: PatchTheme.surface,
       child: Column(
         children: [
-          const SizedBox(height: 12),
           Image.asset(
             'assets/icon/icon_master.png',
-            width: 56,
-            height: 56,
+            width: double.infinity,
+            fit: BoxFit.fitWidth,
           ),
-          const SizedBox(height: 8),
           const Divider(color: PatchTheme.border, height: 1),
           const SizedBox(height: 8),
           Expanded(
@@ -513,9 +511,10 @@ class _ChannelView extends StatelessWidget {
           child: Row(
             children: [
               // Channel dot(s) + name(s)
-              if (_isMulti)
-                _MultiChannelLabel(channels: selectedChannels)
-              else ...[
+              if (_isMulti) ...[
+                _MultiChannelLabel(channels: selectedChannels),
+                const Spacer(),
+              ] else ...[
                 Container(
                   width: 10,
                   height: 10,
@@ -525,7 +524,7 @@ class _ChannelView extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
-                Flexible(
+                Expanded(
                   child: Text(
                     selectedChannels.first.displayName,
                     style: const TextStyle(
@@ -538,7 +537,6 @@ class _ChannelView extends StatelessWidget {
                   ),
                 ),
               ],
-              const Spacer(),
               FlashButton(onFlash: _sendFlash),
               const SizedBox(width: 8),
               IconButton(

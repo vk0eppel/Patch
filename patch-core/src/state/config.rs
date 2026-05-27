@@ -144,24 +144,31 @@ fn whoami() -> String {
 
 fn default_channels() -> Vec<Channel> {
     let specs = [
-        ("foh",        "FOH",        "#E53935"),
-        ("mon",        "MON",        "#8E24AA"),
-        ("rf",         "RF",         "#1E88E5"),
-        ("lighting",   "LIGHTING",   "#F4511E"),
-        ("video",      "VIDEO",      "#00897B"),
-        ("stage",      "STAGE",      "#43A047"),
-        ("production", "PRODUCTION", "#FFB300"),
+        ("audio",    "AUDIO",    "#E53935"),
+        ("rf",       "RF",       "#1E88E5"),
+        ("lighting", "LIGHTING", "#F4511E"),
+        ("video",    "VIDEO",    "#00897B"),
+        ("stage",    "STAGE",    "#43A047"),
     ];
 
     specs.iter().map(|(id, name, color)| {
         let mut ch = Channel::new(*id, *name, *color);
-        // Seed RF with some practical shortcuts
-        if *id == "rf" {
-            ch.shortcuts = vec![
-                ShortcutMessage { label: "CLEAR".into(),      payload: "Channel clear".into(),     key_binding: Some("F1".into()), priority: 1 },
-                ShortcutMessage { label: "HOLD".into(),       payload: "HOLD — do not transmit".into(), key_binding: Some("F2".into()), priority: 2 },
-                ShortcutMessage { label: "BATTERY LOW".into(),payload: "Battery low — swap now".into(),  key_binding: Some("F3".into()), priority: 3 },
-            ];
+        match *id {
+            "audio" => {
+                ch.shortcuts = vec![
+                    ShortcutMessage { label: "YES".into(),          payload: "Yes".into(),          key_binding: Some("F1".into()), priority: 1 },
+                    ShortcutMessage { label: "NO".into(),           payload: "No".into(),           key_binding: Some("F2".into()), priority: 1 },
+                    ShortcutMessage { label: "PROBLEM W/".into(),   payload: "Problem with:".into(),key_binding: Some("F3".into()), priority: 3 },
+                ];
+            }
+            "rf" => {
+                ch.shortcuts = vec![
+                    ShortcutMessage { label: "CLEAR".into(),       payload: "Channel clear".into(),          key_binding: Some("F1".into()), priority: 1 },
+                    ShortcutMessage { label: "HOLD".into(),        payload: "HOLD — do not transmit".into(), key_binding: Some("F2".into()), priority: 2 },
+                    ShortcutMessage { label: "LOW BATT".into(),    payload: "Battery low — swap now".into(), key_binding: Some("F3".into()), priority: 3 },
+                ];
+            }
+            _ => {}
         }
         ch
     }).collect()
