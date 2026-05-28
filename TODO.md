@@ -197,6 +197,21 @@ A lightweight relay process (separate binary) that bridges two or more Patch
 instances across the internet — useful for remote production or multi-venue shows.
 Must not compromise the local-first, single-binary design for LAN deployments.
 
+### MIDI-triggered shortcuts
+**Effort:** medium
+
+Bind a shortcut to a MIDI Note On or CC event so a pad, keyboard, or MIDI
+footswitch can fire it without touching the screen or keyboard.
+
+- Add `midi_note: Option<u8>` and `midi_cc: Option<u8>` to `ShortcutMessage` in
+  `patch-core/src/state/channel.rs` (both `#[serde(default)]` — no migration needed)
+- Add `midir` crate to `patch-core/Cargo.toml` (CoreMIDI on macOS/iOS, WinMM on Windows, ALSA on Linux)
+- New `patch-core/src/midi/mod.rs`: `spawn_blocking` listener; on Note On or CC, iterate all channel shortcuts and fire matches via the existing `send_message` path
+- Wire into `api.rs::init()`, optionally add `get_midi_ports() -> Vec<String>` for a future port-selector UI
+- Extend the shortcut dialog in `settings_screen.dart` with MIDI note / CC number fields
+
+Note: OSC-triggered shortcuts are not a separate feature — users can already send `/patch/channel/{id}/message` directly from QLab, Companion, or scripts. Mapping *foreign* OSC addresses (e.g. `/rf/battery_low` from a proprietary device) is covered by the existing "External OSC trigger → Patch message mapping" item above.
+
 ### In-app help & contextual tooltips
 **Effort:** medium
 
