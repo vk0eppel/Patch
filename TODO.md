@@ -30,6 +30,21 @@ fire-and-forget with no retry logic.
 - Spawn a retransmit loop in `api::init` that calls `reliability.drain_retransmits()` periodically
 - In `transport/mod.rs` `PatchEvent::Ack` arm, call `reliability.ack(message_id)`
 
+### Multicast transport option
+**Files:** `patch-core/src/transport/mod.rs`, `patch-core/src/discovery/mod.rs`, `patch-core/src/state/config.rs`
+**Effort:** large
+
+Currently Patch uses UDP broadcast for presence/discovery (LAN-only, blocked by routers)
+and UDP unicast to known peers for messages. Multicast would allow group delivery that
+can be routed across VLANs on networks that support multicast routing.
+
+Scope is TBD — options include:
+- Multicast for presence/discovery only (replace 255.255.255.255 broadcast with a multicast group, e.g. `239.0.0.1:9000`), keeping unicast for messages
+- Multicast for messages too (all receivers in the group get every message, no per-peer send loop)
+- A config toggle so users can opt in on complex show networks (VLAN-segmented, multi-subnet)
+
+Considerations: multicast requires `IP_ADD_MEMBERSHIP` socket option; iOS/macOS sandbox may require additional entitlements; many consumer APs still block multicast.
+
 ### ~~mDNS init panics instead of gracefully degrading~~ ✅ Done
 **File:** `patch-core/src/discovery/mod.rs`
 
@@ -191,13 +206,24 @@ Implementation:
 
 Limitations: no offline queueing, no read receipts, conversation IDs are UUID-based (not portable across reinstalls).
 
-### External OSC trigger → Patch message mapping
+### OSC macro shortcuts + inbound trigger mapping
 **Effort:** medium
 
+Two related features covering both directions of OSC interoperability:
+
+**Outbound — OSC macro shortcuts**
+A new shortcut type that fires an arbitrary OSC message to a configured address/port
+instead of (or in addition to) a Patch channel message. Useful for triggering QLab
+cues, Companion buttons, vMix overlays, or any other OSC-capable gear directly from
+the shortcuts panel.
+- Add `OscTarget { address: String, port: u16 }` and an optional `osc_macro` field to `ShortcutMessage` in `channel.rs`
+- Add `send_osc_macro(address, port, path, args)` to `api.rs` + `bridge_client.dart`
+- Extend the shortcut editor in `settings_screen.dart` with an OSC target section
+
+**Inbound — external OSC trigger → Patch message mapping**
 Allow an incoming OSC message on any address (e.g. `/rf/battery_low`) to be mapped
-to a Patch channel message with a configured priority and payload — bridging
-external show-control gear (QLab, Companion, TouchDesigner, vMix) into Patch
-without custom scripts.
+to a Patch channel message with a configured priority and payload — bridging external
+show-control gear into Patch without custom scripts.
 
 ### OSCQuery support for zero-config integration
 **Effort:** large
@@ -226,7 +252,7 @@ footswitch can fire it without touching the screen or keyboard.
 - Wire into `api.rs::init()`, optionally add `get_midi_ports() -> Vec<String>` for a future port-selector UI
 - Extend the shortcut dialog in `settings_screen.dart` with MIDI note / CC number fields
 
-Note: OSC-triggered shortcuts are not a separate feature — users can already send `/patch/channel/{id}/message` directly from QLab, Companion, or scripts. Mapping *foreign* OSC addresses (e.g. `/rf/battery_low` from a proprietary device) is covered by the existing "External OSC trigger → Patch message mapping" item above.
+Note: OSC-triggered shortcuts are not a separate feature — users can already send `/patch/channel/{id}/message` directly from QLab, Companion, or scripts. Mapping *foreign* OSC addresses (e.g. `/rf/battery_low` from a proprietary device) is covered by the existing "OSC macro shortcuts + inbound trigger mapping" item above.
 
 ### Native Stream Deck plugin
 **Effort:** large (separate project)
@@ -239,6 +265,63 @@ A dedicated Elgato Stream Deck plugin (Node.js, Elgato SDK) that:
 
 Note: Stream Deck already works with Patch today via F-key emulation or OSC through
 Bitfocus Companion — see `docs/integrations.md`.
+
+### Export chat history
+**Effort:** small
+
+Serialize the in-memory message buffer to a file (CSV or plain text: timestamp, channel,
+sender, priority, payload). Export can be per-channel or full log across all channels.
+Uses `file_picker` (already a dependency) for the save dialog, same pattern as session export.
+
+Implementation:
+- Add `export_messages(channel_id: Option<String>, path: String)` to `api.rs` — filters ring buffer and writes CSV/text via `std::fs`
+- Add `exportMessages()` to `bridge_client.dart`
+- Add an export button in the `_ChannelView` header (or via a long-press menu on the channel name)
+
+### Clear chat history
+**Effort:** small
+
+Clear the in-memory message buffer for a specific channel, or all channels at once.
+No persistence impact — only affects the runtime buffer (messages are not stored to disk).
+
+Implementation:
+- Add `clear_messages(channel_id: Option<String>)` to `state/mod.rs` + `api.rs`
+- Button in the `_ChannelView` header (destructive action — show confirm dialog first)
+
+### Clear inactive dynamic peers
+**Effort:** small
+
+A button in the peers panel to remove stale dynamic peers (OscBeacon / Mdns entries
+whose `last_seen` exceeds a threshold, e.g. 60 s). ManualIp / static peers are never
+removed. Useful for post-show cleanup or when moving between network environments.
+
+Implementation:
+- Add `clear_stale_peers(max_age_secs: u64)` to `state/mod.rs` + `api.rs`
+- Add a ↺ or 🗑 button to the peers panel header; confirm dialog optional
+
+### Global shortcuts (shown on all channels)
+**Effort:** medium
+
+A separate list of shortcuts configured once in Settings that appears at the bottom of
+every channel's shortcuts panel regardless of which channel is selected. Useful for
+crew-wide callouts ("LUNCH BREAK", "HOLD ALL", "GO") that don't belong to any one
+department.
+
+Implementation approaches (TBD):
+- A synthetic `__global__` channel whose shortcuts are appended to every panel; messages sent on `__global__` reach all peers regardless of their channel subscriptions
+- Or: a top-level `global_shortcuts` field in `Config` (not attached to any channel), with a dedicated send path
+
+### Hide keyboard on iOS / iPad
+**Effort:** small
+
+Option to prevent the message input field from auto-focusing (and raising the iOS software
+keyboard) on channel switch or app open. In show mode on iPad, shortcuts are the primary
+input method; the keyboard appearing unexpectedly covers part of the UI.
+
+Implementation:
+- Add `hide_keyboard_on_switch: bool` to `Config` (serde default: false); expose in Settings → Behavior
+- In `_ChannelView`, when this setting is on, call `FocusScope.of(context).unfocus()` after channel selection changes
+- `MessageInput` widget should only auto-focus when the user explicitly taps the field
 
 ### In-app help & contextual tooltips
 **Effort:** medium
