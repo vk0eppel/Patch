@@ -14,9 +14,11 @@ class PeersPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(12, 14, 12, 8),
-            child: Text(
+          Container(
+            height: PatchTheme.headerHeight,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            alignment: Alignment.centerLeft,
+            child: const Text(
               'PEERS',
               style: TextStyle(
                 color: PatchTheme.textSecondary,

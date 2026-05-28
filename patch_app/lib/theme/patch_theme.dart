@@ -19,6 +19,11 @@ class PatchTheme {
   static const warning       = Color(0xFFFFB300); // amber
   static const success       = Color(0xFF43A047); // green
 
+  // ── Layout ────────────────────────────────────────────────────────────────
+  /// Unified header height for all top-of-screen sections (channel strip logo,
+  /// message area header, shortcuts panel, peers panel).
+  static const double headerHeight = 80.0;
+
   // ── Typography ────────────────────────────────────────────────────────────
   /// Large, readable timestamp / label for stage desk use
   static const fontSizeLarge  = 18.0;

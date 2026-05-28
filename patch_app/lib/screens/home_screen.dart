@@ -13,7 +13,7 @@ import '../widgets/message_list.dart';
 import '../widgets/message_input.dart';
 import '../widgets/peers_panel.dart';
 import '../widgets/sessions_dialog.dart';
-import '../widgets/shortcut_bar.dart';
+import '../widgets/shortcuts_panel.dart' show ShortcutsPanel, ChannelShortcut;
 import 'settings_screen.dart';
 
 /// Root screen — channel tab strip on the left, message area on the right.
@@ -61,8 +61,12 @@ class _HomeScreenState extends State<HomeScreen> {
     LogicalKeyboardKey.f12: 'F12',
   };
 
+  static const double _kShortcutsPanelWidth = 180.0;
+  static const double _kPeersPanelWidth = 160.0;
+
   List<PeerInfo> _peers = [];
   bool _showPeers = false;
+  bool _showShortcuts = false;
   StreamSubscription<Map<String, dynamic>>? _eventSub;
 
   // ── Derived state ───────────────────────────────────────────────────────────
@@ -334,14 +338,30 @@ class _HomeScreenState extends State<HomeScreen> {
                     showPeers: _showPeers,
                     onTogglePeers: () =>
                         setState(() => _showPeers = !_showPeers),
+                    showShortcuts: _showShortcuts,
+                    onToggleShortcuts: () =>
+                        setState(() => _showShortcuts = !_showShortcuts),
                     flashNotify: _flashNotify,
                     flashColor: _flashColor,
                     flashPulseCount: _flashPulseCount,
                   ),
           ),
+          if (_showShortcuts)
+            SizedBox(
+              width: _kShortcutsPanelWidth,
+              child: ShortcutsPanel(
+                shortcuts: _aggregatedShortcuts,
+                isMulti: _selectedIds.length > 1,
+                onShortcut: (cs) => widget.bridge.sendMessage(
+                  channelId: cs.channelId,
+                  payload: cs.shortcut.payload,
+                  priority: cs.shortcut.priority,
+                ),
+              ),
+            ),
           if (_showPeers)
             SizedBox(
-              width: 220,
+              width: _kPeersPanelWidth,
               child: PeersPanel(peers: _peers),
             ),
         ],
@@ -378,10 +398,13 @@ class _ChannelStrip extends StatelessWidget {
       color: PatchTheme.surface,
       child: Column(
         children: [
-          Image.asset(
-            'assets/icon/icon_master.png',
-            width: double.infinity,
-            fit: BoxFit.fitWidth,
+          SizedBox(
+            height: PatchTheme.headerHeight,
+            child: Image.asset(
+              'assets/icon/icon_master.png',
+              width: double.infinity,
+              fit: BoxFit.fitWidth,
+            ),
           ),
           const Divider(color: PatchTheme.border, height: 1),
           const SizedBox(height: 8),
@@ -482,6 +505,8 @@ class _ChannelView extends StatelessWidget {
   final BridgeClient bridge;
   final bool showPeers;
   final VoidCallback onTogglePeers;
+  final bool showShortcuts;
+  final VoidCallback onToggleShortcuts;
   final int flashNotify;
   final Color flashColor;
   final int flashPulseCount;
@@ -494,6 +519,8 @@ class _ChannelView extends StatelessWidget {
     required this.bridge,
     required this.showPeers,
     required this.onTogglePeers,
+    required this.showShortcuts,
+    required this.onToggleShortcuts,
     required this.flashNotify,
     required this.flashColor,
     required this.flashPulseCount,
@@ -519,8 +546,10 @@ class _ChannelView extends StatelessWidget {
       children: [
         // ── Header ────────────────────────────────────────────────────────
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          height: PatchTheme.headerHeight,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           color: PatchTheme.surface,
+          alignment: Alignment.center,
           child: Row(
             children: [
               // Channel dot(s) + name(s)
@@ -554,6 +583,15 @@ class _ChannelView extends StatelessWidget {
               const SizedBox(width: 8),
               IconButton(
                 icon: Icon(
+                  Icons.bolt,
+                  color: showShortcuts ? PatchTheme.accent : PatchTheme.textMuted,
+                  size: 20,
+                ),
+                tooltip: showShortcuts ? 'Hide shortcuts' : 'Show shortcuts',
+                onPressed: onToggleShortcuts,
+              ),
+              IconButton(
+                icon: Icon(
                   Icons.people,
                   color: showPeers ? PatchTheme.accent : PatchTheme.textMuted,
                   size: 20,
@@ -574,18 +612,6 @@ class _ChannelView extends StatelessWidget {
           ),
         ),
         const Divider(color: PatchTheme.border, height: 1),
-
-        // ── Shortcuts ─────────────────────────────────────────────────────
-        if (aggregatedShortcuts.isNotEmpty)
-          ShortcutBar(
-            shortcuts: aggregatedShortcuts,
-            showChannelDots: _isMulti,
-            onShortcut: (cs) => bridge.sendMessage(
-              channelId: cs.channelId,
-              payload: cs.shortcut.payload,
-              priority: cs.shortcut.priority,
-            ),
-          ),
 
         // ── Input ─────────────────────────────────────────────────────────
         MessageInput(onSend: _sendMessage),
