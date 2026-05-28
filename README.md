@@ -115,6 +115,8 @@ cd patch_app && dart run build_runner build
 
 See [CLAUDE.md](CLAUDE.md) for the full architecture, FFI API reference, OSC namespace, and development notes.
 
+For end-user documentation (getting started, networking, OSC integration, troubleshooting), see the **[docs/](docs/README.md)** folder.
+
 ---
 
 ## OSC Integration

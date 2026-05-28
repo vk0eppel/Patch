@@ -138,6 +138,43 @@ this impossible as written. Either remove the comment or implement multi-line in
 
 ## 🔵 Future Features (from Roadmap)
 
+### ALL channel — broadcast view + all-department send
+**Effort:** small
+
+A permanent `ALL` tab at the top of the channel strip. Shows every message from
+every channel combined, sorted by timestamp, with per-message channel colour dots.
+Also supports **sending to all channels simultaneously** — messages are broadcast
+to every channel at once and displayed with a 📢 indicator so recipients know it's
+an all-department call. The input bar shows a "Sending to ALL channels" hint.
+Auto-updates as channels are added or removed.
+
+Implementation:
+- Add `send_broadcast(payload, priority)` to `api.rs` — loops over all channels and calls `send_message` for each
+- Add `get_all_messages(limit)` to `api.rs` — same as `get_messages` without the `channel_id` filter
+- Add `sendBroadcast()` / `getAllMessages()` to `bridge_client.dart`
+- Prepend a synthetic `__all__` entry to the channel sidebar in `home_screen.dart`
+- When `__all__` selected: use `getAllMessages()`, populate full `_channelColors` map, show broadcast input with hint text
+- Messages sent from ALL get a 📢 icon in place of the channel dot in `message_list.dart`
+- No new OSC addresses, no FRB codegen needed
+
+### Direct messages (peer-to-peer, outside channels)
+**Effort:** medium
+
+Private messages between two specific peers. Uses the existing `PatchMessage` type
+and OSC address — no new wire format. A `dm:` channel_id convention identifies the
+conversation: `dm:{sorted_uuid_a}:{sorted_uuid_b}` (UUIDs sorted so A→B and B→A
+resolve to the same key). The transport unicasts to the target peer only.
+
+Implementation:
+- Add `send_direct_message(peer_id, payload, priority)` to `api.rs`: builds the `dm:` channel_id, calls `transport.send_to()` for that peer only, stores locally
+- Add `sendDirectMessage()` to `bridge_client.dart`
+- DM button on each peer row in `peers_panel.dart`
+- DM conversations appear in the sidebar with a 💬 icon; created on-demand on first message
+- `get_messages(channel_id)` already works — `dm:` is just another channel key in the ring buffer
+- Flash does not apply to DMs; use a notification badge instead
+
+Limitations: no offline queueing, no read receipts, conversation IDs are UUID-based (not portable across reinstalls).
+
 ### External OSC trigger → Patch message mapping
 **Effort:** medium
 
@@ -159,6 +196,17 @@ address configuration.
 A lightweight relay process (separate binary) that bridges two or more Patch
 instances across the internet — useful for remote production or multi-venue shows.
 Must not compromise the local-first, single-binary design for LAN deployments.
+
+### In-app help & contextual tooltips
+**Effort:** medium
+
+Contextual help for crew members who won't read external docs. Target areas:
+- First-run onboarding: name prompt, NIC picker explanation, "how to find peers"
+- Peers panel `?` tooltip explaining the three discovery modes (mDNS / OSC beacon / static IP) and what the green/gray dots mean
+- Settings sections: short description above each section header
+- Permission-denied SnackBar (already implemented) could link to a help page
+- Empty message list hint: "No messages yet — are you on the same network as your crew?"
+- Consider a `HelpTooltip` widget wrapping an `IconButton(icon: Icon(Icons.help_outline))` for reuse across screens
 
 ---
 

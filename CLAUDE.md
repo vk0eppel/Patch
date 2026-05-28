@@ -43,6 +43,7 @@ Patch is designed to integrate into existing show-control ecosystems (QLab, Comp
 patch/
 ├── Cargo.toml                       # Workspace root
 ├── flutter_rust_bridge.yaml         # Codegen config (regenerate on api.rs changes)
+├── docs/                            # End-user documentation (quick-start, networking, OSC integration)
 │
 ├── patch-core/                      # Rust engine (cdylib + staticlib + rlib)
 │   └── src/
@@ -101,6 +102,8 @@ patch/
             ├── shortcut_bar.dart    # One-tap shortcut chip strip
             └── peers_panel.dart     # Right panel — online peers, discovery mode
 ```
+
+> End-user documentation lives in [`docs/`](docs/README.md) — quick-start, channels & sessions, networking, OSC integration, troubleshooting. This file (`CLAUDE.md`) is developer/architecture reference only.
 
 ---
 
