@@ -66,6 +66,9 @@ pub struct Config {
     /// Number of flash pulses per flash event (1–10).
     #[serde(default = "default_four")]
     pub flash_count: u8,
+    /// Number of columns in the shortcuts panel (1–2).
+    #[serde(default = "default_one")]
+    pub shortcuts_columns: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,12 +92,14 @@ impl Default for Config {
             flash_on_critical: true,
             flash_on_message: false,
             flash_count: 4,
+            shortcuts_columns: 1,
         }
     }
 }
 
 fn default_true() -> bool { true }
 fn default_four() -> u8 { 4 }
+fn default_one()  -> u8 { 1 }
 
 impl Config {
     /// Load `patch.toml` from the platform data directory, migrating an existing

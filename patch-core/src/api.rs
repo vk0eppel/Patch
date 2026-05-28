@@ -135,6 +135,7 @@ pub struct ConfigSnapshot {
     pub flash_on_critical: bool,
     pub flash_on_message: bool,
     pub flash_count: u8,
+    pub shortcuts_columns: u8,
 }
 
 pub async fn get_config() -> ConfigSnapshot {
@@ -147,6 +148,7 @@ pub async fn get_config() -> ConfigSnapshot {
         flash_on_critical: cfg.flash_on_critical,
         flash_on_message: cfg.flash_on_message,
         flash_count: cfg.flash_count,
+        shortcuts_columns: cfg.shortcuts_columns,
     }
 }
 
@@ -179,6 +181,10 @@ pub async fn set_flash_on_message(enabled: bool) -> Result<()> {
 
 pub async fn set_flash_count(count: u8) -> Result<()> {
     engine().state.set_flash_count(count).await
+}
+
+pub async fn set_shortcuts_columns(columns: u8) -> Result<()> {
+    engine().state.set_shortcuts_columns(columns).await
 }
 
 pub async fn set_channel_flash(

@@ -75,6 +75,9 @@ Future<void> setFlashOnMessage({required bool enabled}) =>
 Future<void> setFlashCount({required int count}) =>
     RustLib.instance.api.crateApiSetFlashCount(count: count);
 
+Future<void> setShortcutsColumns({required int columns}) =>
+    RustLib.instance.api.crateApiSetShortcutsColumns(columns: columns);
+
 Future<void> setChannelFlash({
   required String channelId,
   bool? flashOnCritical,
@@ -176,6 +179,7 @@ class ConfigSnapshot {
   final bool flashOnCritical;
   final bool flashOnMessage;
   final int flashCount;
+  final int shortcutsColumns;
 
   const ConfigSnapshot({
     required this.clientName,
@@ -185,6 +189,7 @@ class ConfigSnapshot {
     required this.flashOnCritical,
     required this.flashOnMessage,
     required this.flashCount,
+    required this.shortcutsColumns,
   });
 
   @override
@@ -195,7 +200,8 @@ class ConfigSnapshot {
       staticPeers.hashCode ^
       flashOnCritical.hashCode ^
       flashOnMessage.hashCode ^
-      flashCount.hashCode;
+      flashCount.hashCode ^
+      shortcutsColumns.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -208,7 +214,8 @@ class ConfigSnapshot {
           staticPeers == other.staticPeers &&
           flashOnCritical == other.flashOnCritical &&
           flashOnMessage == other.flashOnMessage &&
-          flashCount == other.flashCount;
+          flashCount == other.flashCount &&
+          shortcutsColumns == other.shortcutsColumns;
 }
 
 @freezed

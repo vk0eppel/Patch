@@ -99,7 +99,7 @@ patch/
             ├── message_list.dart    # Auto-scrolling, priority-colored message rows
             ├── message_input.dart   # Enter-to-send text field
             ├── sessions_dialog.dart # Sessions panel — save/load named presets, import/export .toml
-            ├── shortcut_bar.dart    # One-tap shortcut chip strip
+            ├── shortcuts_panel.dart # Toggleable right panel — shortcuts as fixed-height buttons; also exports ChannelShortcut
             └── peers_panel.dart     # Right panel — online peers, discovery mode
 ```
 
@@ -130,6 +130,7 @@ set_client_name(name)
 set_interface(name: Option<String>)
 set_flash_on_critical(enabled) / set_flash_on_message(enabled)
 set_flash_count(count: u8)                                        // global pulse count (1–10, default 4)
+set_shortcuts_columns(columns: u8)                                // shortcuts panel column count (1–2, default 1)
 set_channel_flash(channel_id, flash_on_critical: Option<bool>, flash_on_message: Option<bool>, flash_count: Option<u8>)
 add_static_peer(address, port, label)
 remove_static_peer(address, port)
@@ -228,7 +229,7 @@ Each channel has:
 Channels can be created and deleted at runtime. Changes are persisted to `patch.toml` immediately.
 
 ### Shortcut messages
-Per-channel shortcut buttons appear in a strip above the input field.
+Per-channel shortcut buttons appear in a **vertical side panel** on the right side of the message area (toggled with the ⚡ icon in the `_ChannelView` header). The panel shows all shortcuts simultaneously with no scroll — buttons share the panel height equally. Users configure 1 or 2 columns (`shortcuts_columns` in `patch.toml`, toggled in the panel header with [1][2] buttons); each column is 160 px wide so the panel grows from 160 px to 320 px when switching to 2 columns. The panel is implemented in `shortcuts_panel.dart`, which also exports the `ChannelShortcut` type used by `home_screen.dart`.
 Each shortcut has a `label`, `payload`, optional `key_binding` (e.g. `"F1"`), and `priority`.
 Shortcuts can be created, edited, and deleted in the settings screen.
 
@@ -300,6 +301,7 @@ peer_timeout_secs = 30
 flash_on_critical = true    # Auto-flash channel when priority-3 message arrives
 flash_on_message = false    # Auto-flash on every incoming message
 flash_count = 4             # Flash pulse count per event (1–10, default 4)
+shortcuts_columns = 1       # Shortcuts panel column count (1–2, default 1)
 
 [[static_peers]]
 address = "192.168.1.50"
@@ -361,6 +363,10 @@ A single `flutter run` builds and links the Rust engine into the host binary via
 - Peers never auto-expire: the expiry loop has been removed from `discovery/mod.rs`. Peers stay in the registry for the full app session. The `expire_peer` API and `PeerExpired` event are preserved but not called automatically. Online/offline status is computed on the Flutter side from `peer.lastSeen`: `ManualIp` entries are always gray; dynamic entries (`OscBeacon`/`Mdns`) show green if `lastSeen` ≤ 35 s ago, gray otherwise. This prevents peers from disappearing on AP-isolated networks where broadcast heartbeats are blocked.
 - `peer_expired` and `peer_updated` both call `getPeers()`: the `peer_expired` handler in `home_screen.dart` was changed from `removeWhere` to `getPeers()` so that a static-peer-backed entry immediately reappears as ManualIp (gray) rather than vanishing from the panel.
 - `config_updated` also calls `getPeers()`: since adding or removing a static peer emits `config_updated`, the peers panel is refreshed in the same handler so changes are reflected immediately without a separate event.
+- Shortcuts panel layout constants: `_kShortcutColumnWidth = 160.0` (per column); the `SizedBox` wrapping `ShortcutsPanel` in `home_screen.dart` is `width: _kShortcutColumnWidth * _shortcutsColumns`, so the panel doubles from 160 to 320 px in 2-column mode and each button always gets a full 160 px — no overflow regardless of label length.
+- `PatchTheme.headerHeight = 80.0`: single constant under `// ── Layout` in `patch_theme.dart`; applied as a fixed `Container(height: ...)` to all four top areas so their bottom dividers land on the same line.
+- `bridge_client.dart::getConfig()` builds the config map manually from `ConfigSnapshot` fields. **Every new field added to `ConfigSnapshot` in Rust must also be added to this map.** Missing a field silently resets the Dart state variable to its `?? default` every time `getConfig()` fires — e.g. the `shortcuts_columns` field was initially omitted, causing the [1][2] toggle to appear to do nothing (each toggle call triggered `getConfig()` which emitted a `'config'` event that reset `_shortcutsColumns` back to `?? 1`).
+- `shortcuts_panel.dart` exports both `ShortcutsPanel` and `ChannelShortcut`; `home_screen.dart` imports it with `show ShortcutsPanel, ChannelShortcut`. The old `shortcut_bar.dart` was deleted.
 
 ---
 
@@ -403,7 +409,9 @@ Patch UI is designed for live environments:
 - **Behavior settings**: Settings → Behavior — global flash defaults ("Flash on every message", "Flash on critical messages", "Flash pulses" 1–5 segmented picker); Settings → channel editor footer — per-channel overrides for the same flags (either global or channel flag being on is sufficient to trigger; "–" in the pulse picker = use global)
 - **reset to defaults**: each Settings section has a `↺` icon button that shows a confirm dialog then restores factory defaults for that section only — Identity resets name to system username (`Platform.environment['USER']`); Behavior resets flash flags to `flash_on_critical=true / flash_on_message=false / flash_count=4`; Static Peers removes all entries; Channels & Shortcuts calls `reset_channels()` which replaces all channels with the seeded defaults. `reset_channels()` in `state/mod.rs` delegates to `apply_session(default_channels())` and emits `ChannelListUpdated`. `state/config.rs::default_channels()` is `pub` so it can be called from `mod.rs`.
 - **sessions**: folder icon in the left sidebar opens `SessionsDialog` — load/save named presets or import/export `.toml` files; Settings screen no longer contains a Sessions section
-- **peers panel**: header is "PEERS" (not "ONLINE"); dot is green if heard from within 35 s, gray if stale or ManualIp (configured-only); peers persist for the full session and never auto-expire; static peers always appear even before first contact (gray dot with 📌 icon)
+- **shortcuts panel**: `shortcuts_panel.dart` — toggleable via ⚡ icon in `_ChannelView` header; vertical layout, all shortcuts always visible, no scroll; 1 or 2 columns (`_kShortcutColumnWidth = 160.0` per column, so panel is 160 or 320 px); column count persisted to `patch.toml` as `shortcuts_columns`; [1][2] toggle in panel header; multi-channel mode groups shortcuts by channel with a colored divider; when single channel, no channel bar on buttons; `Material(clipBehavior: Clip.hardEdge)` prevents overflow errors when many shortcuts are squeezed into a small window; `ConstrainedBox(minHeight: 40)` sets a floor on row height
+- **header alignment**: `PatchTheme.headerHeight = 80.0` is applied to all four top-section headers (channel strip image, `_ChannelView` header container, ShortcutsPanel header, PeersPanel header) so their dividers land on the same horizontal line
+- **peers panel**: 160 px wide (`_kPeersPanelWidth`); header is "PEERS" (not "ONLINE"); dot is green if heard from within 35 s, gray if stale or ManualIp (configured-only); peers persist for the full session and never auto-expire; static peers always appear even before first contact (gray dot with 📌 icon)
 - **iPhone layout**: dialog `AlertDialog` content uses `SizedBox(width: double.infinity)` — never a hardcoded pixel width. The `AlertDialog` widget constrains its content to `screenWidth - margins` automatically; fixed widths (360–380 px) exceeded iPhone SE's available space and caused right-overflow errors. The channel-name `Text` in the `_ChannelView` header is wrapped in `Expanded` with `overflow: TextOverflow.ellipsis`; the `Spacer` lives only in the multi-channel branch so buttons always sit at the right edge of the header (`Flexible` was previously used but split remaining space 50/50 with the `Spacer`, pushing buttons toward center). Key `Text` nodes in tight layouts (`channel_tab.dart`, `peers_panel.dart` IP line) carry `overflow: TextOverflow.ellipsis` to truncate gracefully instead of clipping silently.
 
 ---

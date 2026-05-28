@@ -1,3 +1,4 @@
+import 'dart:math' show min;
 import 'package:flutter/material.dart';
 import '../models/channel.dart';
 import '../theme/patch_theme.dart';
@@ -23,17 +24,25 @@ class ChannelShortcut {
 /// is never any hidden content. Users curate the shortcut list before the show
 /// to keep button sizes comfortable.
 ///
+/// [columns] (1 or 2) controls how many buttons appear per row. The preference
+/// is persisted via the Rust config and toggled with the [1] [2] control in the
+/// panel header.
+///
 /// When [isMulti] is true (multiple channels selected), shortcuts are grouped
 /// by channel with a thin colour-coded divider and channel name label.
 class ShortcutsPanel extends StatelessWidget {
   final List<ChannelShortcut> shortcuts;
   final bool isMulti;
+  final int columns;
+  final ValueChanged<int> onColumnsChanged;
   final ValueChanged<ChannelShortcut> onShortcut;
 
   const ShortcutsPanel({
     super.key,
     required this.shortcuts,
     required this.isMulti,
+    required this.columns,
+    required this.onColumnsChanged,
     required this.onShortcut,
   });
 
@@ -44,21 +53,28 @@ class ShortcutsPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // ── Header ──────────────────────────────────────────────────────
           Container(
             height: PatchTheme.headerHeight,
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            alignment: Alignment.centerLeft,
-            child: const Text(
-              'SHORTCUTS',
-              style: TextStyle(
-                color: PatchTheme.textSecondary,
-                fontSize: PatchTheme.fontSizeSmall,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.5,
-              ),
+            child: Row(
+              children: [
+                const Text(
+                  'SHORTCUTS',
+                  style: TextStyle(
+                    color: PatchTheme.textSecondary,
+                    fontSize: PatchTheme.fontSizeSmall,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+                const Spacer(),
+                _ColumnToggle(current: columns, onChanged: onColumnsChanged),
+              ],
             ),
           ),
           const Divider(color: PatchTheme.border, height: 1),
+          // ── Content ─────────────────────────────────────────────────────
           if (shortcuts.isEmpty)
             const Expanded(
               child: Center(
@@ -69,33 +85,49 @@ class ShortcutsPanel extends StatelessWidget {
               ),
             )
           else if (!isMulti)
-            // Single channel — flat list, no channel grouping
-            ..._buildFlatButtons(shortcuts)
+            ..._buildFlatRows(shortcuts)
           else
-            // Multi-channel — group by channel with colour headers
-            ..._buildGroupedButtons(shortcuts),
+            ..._buildGroupedRows(shortcuts),
         ],
       ),
     );
   }
 
-  /// Flat list of Expanded buttons, one per shortcut — no channel grouping.
-  List<Widget> _buildFlatButtons(List<ChannelShortcut> items) {
-    return items
-        .map((cs) => Expanded(
-              child: _ShortcutButton(
-                cs: cs,
-                showChannelBar: false,
-                onTap: () => onShortcut(cs),
+  /// Chunk [items] into rows of [columns] each and wrap each row in an Expanded.
+  List<Widget> _rowsFrom(List<ChannelShortcut> items, {required bool showChannelBar}) {
+    final rows = <Widget>[];
+    for (var i = 0; i < items.length; i += columns) {
+      final slice = items.sublist(i, min(i + columns, items.length));
+      rows.add(Expanded(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 40),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var col = 0; col < columns; col++)
+              Expanded(
+                child: col < slice.length
+                    ? _ShortcutButton(
+                        cs: slice[col],
+                        showChannelBar: showChannelBar,
+                        onTap: () => onShortcut(slice[col]),
+                      )
+                    : const _EmptyCell(),
               ),
-            ))
-        .toList();
+          ],
+          ),  // Row
+        ),    // ConstrainedBox
+      ));
+    }
+    return rows;
   }
 
-  /// Buttons grouped by channel. Each group gets a thin colour header.
-  /// Total flex weight = number of shortcuts (groups consume no vertical space).
-  List<Widget> _buildGroupedButtons(List<ChannelShortcut> items) {
-    // Preserve order: build groups in the order channels first appear.
+  /// Flat rows — single channel, no grouping.
+  List<Widget> _buildFlatRows(List<ChannelShortcut> items) =>
+      _rowsFrom(items, showChannelBar: false);
+
+  /// Rows grouped by channel with a full-width colour header per group.
+  List<Widget> _buildGroupedRows(List<ChannelShortcut> items) {
     final seen = <String>[];
     final groups = <String, List<ChannelShortcut>>{};
     for (final cs in items) {
@@ -107,21 +139,54 @@ class ShortcutsPanel extends StatelessWidget {
     for (final id in seen) {
       final group = groups[id]!;
       final color = group.first.channelColor;
-
-      // Thin channel-colour divider + name label (intrinsic height, no flex)
-      widgets.add(_ChannelGroupHeader(color: color, channelId: id, shortcuts: group));
-
-      for (final cs in group) {
-        widgets.add(Expanded(
-          child: _ShortcutButton(
-            cs: cs,
-            showChannelBar: true,
-            onTap: () => onShortcut(cs),
-          ),
-        ));
-      }
+      widgets.add(_ChannelGroupHeader(color: color, channelId: id));
+      widgets.addAll(_rowsFrom(group, showChannelBar: true));
     }
     return widgets;
+  }
+}
+
+// ── Column toggle ─────────────────────────────────────────────────────────────
+
+class _ColumnToggle extends StatelessWidget {
+  final int current;
+  final ValueChanged<int> onChanged;
+
+  const _ColumnToggle({required this.current, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [1, 2].map((n) {
+        final active = current == n;
+        return GestureDetector(
+          onTap: () => onChanged(n),
+          child: Container(
+            width: 24,
+            height: 24,
+            margin: const EdgeInsets.only(left: 4),
+            decoration: BoxDecoration(
+              color: active ? PatchTheme.accent.withAlpha(30) : Colors.transparent,
+              border: Border.all(
+                color: active ? PatchTheme.accent : PatchTheme.textMuted,
+                width: 1,
+              ),
+              borderRadius: BorderRadius.circular(3),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              '$n',
+              style: TextStyle(
+                color: active ? PatchTheme.accent : PatchTheme.textMuted,
+                fontSize: PatchTheme.fontSizeSmall,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
   }
 }
 
@@ -130,13 +195,8 @@ class ShortcutsPanel extends StatelessWidget {
 class _ChannelGroupHeader extends StatelessWidget {
   final Color color;
   final String channelId;
-  final List<ChannelShortcut> shortcuts;
 
-  const _ChannelGroupHeader({
-    required this.color,
-    required this.channelId,
-    required this.shortcuts,
-  });
+  const _ChannelGroupHeader({required this.color, required this.channelId});
 
   @override
   Widget build(BuildContext context) {
@@ -157,6 +217,23 @@ class _ChannelGroupHeader extends StatelessWidget {
           fontSize: 9,
           fontWeight: FontWeight.w700,
           letterSpacing: 1.2,
+        ),
+      ),
+    );
+  }
+}
+
+// ── Empty cell (fills unused grid slot) ───────────────────────────────────────
+
+class _EmptyCell extends StatelessWidget {
+  const _EmptyCell();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: PatchTheme.border, width: 1),
         ),
       ),
     );
@@ -196,6 +273,7 @@ class _ShortcutButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: _bgColor,
+      clipBehavior: Clip.hardEdge,
       child: InkWell(
         onTap: onTap,
         child: Container(
@@ -207,7 +285,7 @@ class _ShortcutButton extends StatelessWidget {
               bottom: const BorderSide(color: PatchTheme.border, width: 1),
             ),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
           alignment: Alignment.center,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,

@@ -171,6 +171,7 @@ class BridgeClient {
           'flash_on_critical': cfg.flashOnCritical,
           'flash_on_message': cfg.flashOnMessage,
           'flash_count': cfg.flashCount,
+          'shortcuts_columns': cfg.shortcutsColumns,
         },
       });
     } catch (e) {
@@ -368,6 +369,15 @@ class BridgeClient {
     try {
       await rust.setFlashCount(count: count);
       _emit({'event': 'config_updated', 'flash_count': count});
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
+  Future<void> setShortcutsColumns(int columns) async {
+    try {
+      await rust.setShortcutsColumns(columns: columns);
+      await getConfig();
     } catch (e) {
       _emitError(e);
     }

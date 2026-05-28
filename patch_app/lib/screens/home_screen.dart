@@ -61,12 +61,13 @@ class _HomeScreenState extends State<HomeScreen> {
     LogicalKeyboardKey.f12: 'F12',
   };
 
-  static const double _kShortcutsPanelWidth = 180.0;
+  static const double _kShortcutColumnWidth = 160.0;
   static const double _kPeersPanelWidth = 160.0;
 
   List<PeerInfo> _peers = [];
   bool _showPeers = false;
   bool _showShortcuts = false;
+  int _shortcutsColumns = 1;
   StreamSubscription<Map<String, dynamic>>? _eventSub;
 
   // ── Derived state ───────────────────────────────────────────────────────────
@@ -241,6 +242,8 @@ class _HomeScreenState extends State<HomeScreen> {
               (event['data']['flash_on_message'] as bool?) ?? false;
           _globalFlashCount =
               (event['data']['flash_count'] as int?) ?? 4;
+          _shortcutsColumns =
+              (event['data']['shortcuts_columns'] as int?) ?? 1;
         });
 
       case 'session_saved':
@@ -348,10 +351,15 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           if (_showShortcuts)
             SizedBox(
-              width: _kShortcutsPanelWidth,
+              width: _kShortcutColumnWidth * _shortcutsColumns,
               child: ShortcutsPanel(
                 shortcuts: _aggregatedShortcuts,
                 isMulti: _selectedIds.length > 1,
+                columns: _shortcutsColumns,
+                onColumnsChanged: (n) {
+                  setState(() => _shortcutsColumns = n);
+                  widget.bridge.setShortcutsColumns(n);
+                },
                 onShortcut: (cs) => widget.bridge.sendMessage(
                   channelId: cs.channelId,
                   payload: cs.shortcut.payload,

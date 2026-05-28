@@ -71,7 +71,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 1940989502;
+  int get rustContentHash => -44285217;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -157,6 +157,8 @@ abstract class RustLibApi extends BaseApi {
   Future<void> crateApiSetFlashOnMessage({required bool enabled});
 
   Future<void> crateApiSetInterface({String? name});
+
+  Future<void> crateApiSetShortcutsColumns({required int columns});
 
   Stream<PatchAppEvent> crateApiSubscribeEvents();
 
@@ -932,6 +934,37 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "set_interface", argNames: ["name"]);
 
   @override
+  Future<void> crateApiSetShortcutsColumns({required int columns}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_8(columns, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 26,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiSetShortcutsColumnsConstMeta,
+        argValues: [columns],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSetShortcutsColumnsConstMeta =>
+      const TaskConstMeta(
+        debugName: "set_shortcuts_columns",
+        argNames: ["columns"],
+      );
+
+  @override
   Stream<PatchAppEvent> crateApiSubscribeEvents() {
     final sink = RustStreamSink<PatchAppEvent>();
     unawaited(
@@ -943,7 +976,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 26,
+              funcId: 27,
               port: port_,
             );
           },
@@ -979,7 +1012,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 27,
+            funcId: 28,
             port: port_,
           );
         },
@@ -1019,7 +1052,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 28,
+            funcId: 29,
             port: port_,
           );
         },
@@ -1141,8 +1174,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ConfigSnapshot dco_decode_config_snapshot(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 8)
+      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
     return ConfigSnapshot(
       clientName: dco_decode_String(arr[0]),
       oscPort: dco_decode_u_16(arr[1]),
@@ -1151,6 +1184,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       flashOnCritical: dco_decode_bool(arr[4]),
       flashOnMessage: dco_decode_bool(arr[5]),
       flashCount: dco_decode_u_8(arr[6]),
+      shortcutsColumns: dco_decode_u_8(arr[7]),
     );
   }
 
@@ -1564,6 +1598,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_flashOnCritical = sse_decode_bool(deserializer);
     var var_flashOnMessage = sse_decode_bool(deserializer);
     var var_flashCount = sse_decode_u_8(deserializer);
+    var var_shortcutsColumns = sse_decode_u_8(deserializer);
     return ConfigSnapshot(
       clientName: var_clientName,
       oscPort: var_oscPort,
@@ -1572,6 +1607,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       flashOnCritical: var_flashOnCritical,
       flashOnMessage: var_flashOnMessage,
       flashCount: var_flashCount,
+      shortcutsColumns: var_shortcutsColumns,
     );
   }
 
@@ -2060,6 +2096,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.flashOnCritical, serializer);
     sse_encode_bool(self.flashOnMessage, serializer);
     sse_encode_u_8(self.flashCount, serializer);
+    sse_encode_u_8(self.shortcutsColumns, serializer);
   }
 
   @protected
