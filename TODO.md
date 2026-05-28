@@ -212,6 +212,18 @@ footswitch can fire it without touching the screen or keyboard.
 
 Note: OSC-triggered shortcuts are not a separate feature — users can already send `/patch/channel/{id}/message` directly from QLab, Companion, or scripts. Mapping *foreign* OSC addresses (e.g. `/rf/battery_low` from a proprietary device) is covered by the existing "External OSC trigger → Patch message mapping" item above.
 
+### Native Stream Deck plugin
+**Effort:** large (separate project)
+
+A dedicated Elgato Stream Deck plugin (Node.js, Elgato SDK) that:
+- Shows live Patch channel names and colours on LCD buttons
+- Displays message count, flash animation, and online peer indicator per channel
+- Fires Patch shortcuts/messages directly via OSC when a button is pressed
+- Distributed via the Elgato Marketplace, not part of this repo
+
+Note: Stream Deck already works with Patch today via F-key emulation or OSC through
+Bitfocus Companion — see `docs/integrations.md`.
+
 ### In-app help & contextual tooltips
 **Effort:** medium
 
