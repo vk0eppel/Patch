@@ -24,87 +24,93 @@ impl Discovery {
         let osc_port = config.osc_port;
         let heartbeat_secs = config.heartbeat_interval_secs;
 
-        // ── mDNS ──────────────────────────────────────────────────────────────
-        let mdns = ServiceDaemon::new().expect("Failed to create mDNS daemon");
-
-        // Register ourselves
+        // ── mDNS (best-effort — gracefully skipped if unavailable) ───────────
         let service_type = "_patch._udp.local.";
-        let instance_name = &client_name;
-        let host_name = format!("{}.local.", gethostname());
-        let mut props = HashMap::new();
-        props.insert("peer_id".to_string(), client_id.to_string());
-        props.insert("peer_name".to_string(), client_name.clone());
-        props.insert("version".to_string(), "0.1.0".to_string());
+        let mdns_result: anyhow::Result<()> = async {
+            let mdns = ServiceDaemon::new()?;
 
-        let service = ServiceInfo::new(
-            service_type,
-            instance_name,
-            &host_name,
-            "",
-            osc_port,
-            props,
-        )
-        .expect("Invalid mDNS service info");
+            // Register ourselves
+            let instance_name = &client_name;
+            let host_name = format!("{}.local.", gethostname());
+            let mut props = HashMap::new();
+            props.insert("peer_id".to_string(), client_id.to_string());
+            props.insert("peer_name".to_string(), client_name.clone());
+            props.insert("version".to_string(), "0.1.0".to_string());
 
-        mdns.register(service).expect("Failed to register mDNS service");
-        info!("mDNS service registered as '{}'", instance_name);
+            let service = ServiceInfo::new(
+                service_type,
+                instance_name,
+                &host_name,
+                "",
+                osc_port,
+                props,
+            )?;
 
-        // Browse for peers
-        let browse_state = state.clone();
-        let receiver = mdns.browse(service_type).expect("Failed to browse mDNS");
-        tokio::spawn(async move {
-            while let Ok(event) = receiver.recv_async().await {
-                match event {
-                    ServiceEvent::ServiceResolved(info) => {
-                        let peer_id = info.get_properties()
-                            .get("peer_id")
-                            .and_then(|p| Uuid::parse_str(p.val_str()).ok())
-                            .unwrap_or_else(Uuid::new_v4);
+            mdns.register(service)?;
+            info!("mDNS service registered as '{}'", instance_name);
 
-                        // Skip our own service — mDNS resolves it too.
-                        if peer_id == client_id {
-                            continue;
+            // Browse for peers
+            let browse_state = state.clone();
+            let receiver = mdns.browse(service_type)?;
+            tokio::spawn(async move {
+                while let Ok(event) = receiver.recv_async().await {
+                    match event {
+                        ServiceEvent::ServiceResolved(info) => {
+                            let peer_id = info.get_properties()
+                                .get("peer_id")
+                                .and_then(|p| Uuid::parse_str(p.val_str()).ok())
+                                .unwrap_or_else(Uuid::new_v4);
+
+                            // Skip our own service — mDNS resolves it too.
+                            if peer_id == client_id {
+                                continue;
+                            }
+
+                            let addr = info.get_addresses().iter().next()
+                                .map(|a| a.to_string())
+                                .unwrap_or_default();
+                            let port = info.get_port();
+
+                            // Prefer the peer_name TXT record; fall back to stripping
+                            // the service-type suffix from the full DNS name.
+                            let peer_name = info.get_properties()
+                                .get("peer_name")
+                                .map(|p| p.val_str().to_string())
+                                .unwrap_or_else(|| {
+                                    info.get_fullname()
+                                        .split("._patch._udp")
+                                        .next()
+                                        .unwrap_or(info.get_fullname())
+                                        .to_string()
+                                });
+
+                            debug!("mDNS resolved: {} ({}) @ {}:{}", peer_name, peer_id, addr, port);
+                            let presence = PeerPresence {
+                                peer_id,
+                                peer_name,
+                                channels: Vec::new(),
+                                timestamp: Utc::now(),
+                            };
+                            browse_state.upsert_peer(presence).await;
+                            // Wire the resolved IP+port into the peer record so
+                            // unicast sends work immediately after mDNS discovery.
+                            if !addr.is_empty() {
+                                browse_state.touch_peer_address(peer_id, addr, port).await;
+                            }
                         }
-
-                        let addr = info.get_addresses().iter().next()
-                            .map(|a| a.to_string())
-                            .unwrap_or_default();
-                        let port = info.get_port();
-
-                        // Prefer the peer_name TXT record; fall back to stripping
-                        // the service-type suffix from the full DNS name.
-                        let peer_name = info.get_properties()
-                            .get("peer_name")
-                            .map(|p| p.val_str().to_string())
-                            .unwrap_or_else(|| {
-                                info.get_fullname()
-                                    .split("._patch._udp")
-                                    .next()
-                                    .unwrap_or(info.get_fullname())
-                                    .to_string()
-                            });
-
-                        debug!("mDNS resolved: {} ({}) @ {}:{}", peer_name, peer_id, addr, port);
-                        let presence = PeerPresence {
-                            peer_id,
-                            peer_name,
-                            channels: Vec::new(),
-                            timestamp: Utc::now(),
-                        };
-                        browse_state.upsert_peer(presence).await;
-                        // Wire the resolved IP+port into the peer record so
-                        // unicast sends work immediately after mDNS discovery.
-                        if !addr.is_empty() {
-                            browse_state.touch_peer_address(peer_id, addr, port).await;
+                        ServiceEvent::ServiceRemoved(_, fullname) => {
+                            debug!("mDNS removed: {}", fullname);
                         }
+                        _ => {}
                     }
-                    ServiceEvent::ServiceRemoved(_, fullname) => {
-                        debug!("mDNS removed: {}", fullname);
-                    }
-                    _ => {}
                 }
-            }
-        });
+            });
+            Ok(())
+        }.await;
+
+        if let Err(e) = mdns_result {
+            warn!("mDNS unavailable, falling back to OSC beacon only: {}", e);
+        }
 
         // ── Heartbeat + beacon task ───────────────────────────────────────────
         let hb_state = state.clone();

@@ -1424,6 +1424,12 @@ impl SseDecode for crate::api::PatchAppEvent {
                 let mut var_name = <String>::sse_decode(deserializer);
                 return crate::api::PatchAppEvent::ClientNameChanged { name: var_name };
             }
+            7 => {
+                let mut var_context = <String>::sse_decode(deserializer);
+                return crate::api::PatchAppEvent::PermissionDenied {
+                    context: var_context,
+                };
+            }
             _ => {
                 unimplemented!("");
             }
@@ -1805,6 +1811,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::PatchAppEvent {
             crate::api::PatchAppEvent::ChannelListUpdated => [5.into_dart()].into_dart(),
             crate::api::PatchAppEvent::ClientNameChanged { name } => {
                 [6.into_dart(), name.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::PatchAppEvent::PermissionDenied { context } => {
+                [7.into_dart(), context.into_into_dart().into_dart()].into_dart()
             }
             _ => {
                 unimplemented!("");
@@ -2282,6 +2291,10 @@ impl SseEncode for crate::api::PatchAppEvent {
             crate::api::PatchAppEvent::ClientNameChanged { name } => {
                 <i32>::sse_encode(6, serializer);
                 <String>::sse_encode(name, serializer);
+            }
+            crate::api::PatchAppEvent::PermissionDenied { context } => {
+                <i32>::sse_encode(7, serializer);
+                <String>::sse_encode(context, serializer);
             }
             _ => {
                 unimplemented!("");

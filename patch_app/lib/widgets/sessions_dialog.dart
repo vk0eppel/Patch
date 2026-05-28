@@ -60,8 +60,8 @@ class _SessionsDialogState extends State<SessionsDialog> {
       allowedExtensions: ['toml'],
       dialogTitle: 'Import Patch Session',
     );
-    if (result == null || result.files.single.path == null) return;
-    final path = result.files.single.path!;
+    if (result == null || result.files.isEmpty || result.files.first.path == null) return;
+    final path = result.files.first.path!;
     await widget.bridge.importLayout(path);
     if (mounted) Navigator.of(context).pop();
   }

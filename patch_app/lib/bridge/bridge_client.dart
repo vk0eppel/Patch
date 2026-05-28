@@ -69,6 +69,10 @@ class BridgeClient {
         'event': 'client_name_changed',
         'name': name,
       },
+      rust.PatchAppEvent_PermissionDenied(:final context) => {
+        'event': 'permission_denied',
+        'message': context,
+      },
     };
     _eventController.add(map);
   }

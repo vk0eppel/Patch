@@ -231,6 +231,10 @@ sealed class PatchAppEvent with _$PatchAppEvent {
       PatchAppEvent_ChannelListUpdated;
   const factory PatchAppEvent.clientNameChanged({required String name}) =
       PatchAppEvent_ClientNameChanged;
+
+  /// The OS denied network access (iOS/macOS Local Network permission).
+  const factory PatchAppEvent.permissionDenied({required String context}) =
+      PatchAppEvent_PermissionDenied;
 }
 
 class SessionLoaded {

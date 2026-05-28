@@ -5,24 +5,13 @@ Effort: **trivial** < **small** < **medium** < **large**.
 
 ---
 
-## 🔴 Critical — Runtime Panics
+## ~~🔴 Critical — Runtime Panics~~ ✅ Fixed
 
-### OSC codec decoders missing bounds checks
+### ~~OSC codec decoders missing bounds checks~~ ✅ Done
 **File:** `patch-core/src/osc/codec.rs`
-**Effort:** small
 
-Five decoder functions access `args[N]` without checking `args.len()` first.
-A malformed or truncated OSC packet from any peer will **panic the engine**.
-`decode_patch_message()` already has the correct guard (`if args.len() < 6 { bail!(...) }`) —
-the other five need the same treatment:
-
-| Function | Needs guard |
-|---|---|
-| `decode_ack()` | `args.len() < 2` |
-| `decode_presence()` | `args.len() < 4` |
-| `decode_heartbeat()` | `args.len() < 1` |
-| `decode_discovery()` | `args.len() < 3` |
-| `decode_flash()` | `args.len() < 2` |
+All five decoders now have `bail!` guards matching the pattern in `decode_patch_message`.
+Malformed or truncated OSC packets are logged and discarded instead of panicking.
 
 ---
 
@@ -41,70 +30,45 @@ fire-and-forget with no retry logic.
 - Spawn a retransmit loop in `api::init` that calls `reliability.drain_retransmits()` periodically
 - In `transport/mod.rs` `PatchEvent::Ack` arm, call `reliability.ack(message_id)`
 
-### mDNS init panics instead of gracefully degrading
-**File:** `patch-core/src/discovery/mod.rs` — lines 28, 47, 49, 54
-**Effort:** medium
+### ~~mDNS init panics instead of gracefully degrading~~ ✅ Done
+**File:** `patch-core/src/discovery/mod.rs`
 
-Four `.expect()` calls on mDNS init/register/browse. On networks where mDNS is
-unavailable or firewalled the entire engine crashes instead of falling back to
-OSC beacon + static peer discovery.
+mDNS setup is now wrapped in an async `Result` block. On failure a `warn!` is logged
+and the engine continues with OSC beacon + static peer discovery only.
 
-- Change `Discovery::new` to return `Result<Discovery>`
-- Wrap each `.expect()` in a match/`?`; on failure log a warning and continue without mDNS
+### ~~Surface iOS/macOS Local Network permission-denied to the UI~~ ✅ Done
+**Files:** `patch-core/src/transport/mod.rs`, `patch-core/src/api.rs`, `patch_app/lib/bridge/bridge_client.dart`, `patch_app/lib/screens/home_screen.dart`
 
-### Surface iOS/macOS Local Network permission-denied to the UI
-**File:** `patch-core/src/transport/mod.rs` + Flutter event handler
-**Effort:** medium
-**Also tracked in:** `CLAUDE.md` → Known Incomplete
-
-When the user denies the Local Network permission, OSC sends/receives silently fail.
-The error is logged to the console but no `PatchAppEvent` is emitted and the UI
-shows no feedback.
-
-- Detect `EPERM`/`EACCES` errors from socket operations in `transport/mod.rs`
-- Add a `PatchAppEvent::PermissionDenied` variant in `api.rs`
-- Handle it in `bridge_client.dart` → show a banner or alert in Flutter
+`AppEvent::PermissionDenied` / `PatchAppEvent::PermissionDenied` added. Detected in
+`receive_loop` via `ErrorKind::PermissionDenied`. Shows a red `SnackBar` in Flutter.
 
 ---
 
 ## 🟡 Medium — Validation & Silent Failures
 
-### Channel ID not validated for OSC path safety
-**File:** `patch-core/src/api.rs` — `upsert_channel()` ~line 203
-**Effort:** small
+### ~~Channel ID not validated for OSC path safety~~ ✅ Done
+**File:** `patch-core/src/api.rs` — `upsert_channel()`
 
-`id` is embedded directly into `/patch/channel/{id}/message` without sanitisation.
-Forward slashes, spaces, or an empty string will silently corrupt OSC addresses.
+`upsert_channel` now rejects any `id` containing characters outside `[a-z0-9_-]`
+or an empty string, returning a descriptive error to the caller.
 
-- Validate with `^[a-z0-9_-]+$` (reject anything else with a descriptive error)
+### ~~Static peer address not validated before storing~~ ✅ Done
+**File:** `patch-core/src/state/mod.rs` — `add_static_peer()`
 
-### Static peer address not validated before storing
-**File:** `patch-core/src/state/mod.rs` — `add_static_peer()` ~line 150
-**Effort:** small
+`add_static_peer` now parses the address with `std::net::IpAddr`, rejects port 0,
+and rejects duplicate `address:port` pairs.
 
-Accepts malformed IP strings, port 0, and duplicate address:port pairs without error.
+### ~~`send_to_peers()` always returns `Ok(())` even when all sends failed~~ ✅ Done
+**File:** `patch-core/src/transport/mod.rs`
 
-- Parse with `std::net::IpAddr::from_str()` before pushing; return `Err` on bad address
-- Reject duplicates (same `address:port` already in `config.static_peers`)
+When `sent == 0` and there were known targets, a `warn!` is now emitted so the
+failure is visible in logs. The return is still `Ok(())` so the local message store
+is not affected.
 
-### `send_to_peers()` always returns `Ok(())` even when all sends failed
-**File:** `patch-core/src/transport/mod.rs` — ~line 127
-**Effort:** small
+### ~~`sessions_dialog.dart` — `.single` throws on empty file picker result~~ ✅ Done
+**File:** `patch_app/lib/widgets/sessions_dialog.dart`
 
-If every unicast send fails, the function still returns `Ok(())`. The caller
-(`send_message` in `api.rs`) tells Flutter the send succeeded when zero peers
-received the packet.
-
-- Return `Err` (or a partial-success enum) if `sent == 0` and at least one peer was targeted
-
-### `sessions_dialog.dart` — `.single` throws on empty file picker result
-**File:** `patch_app/lib/widgets/sessions_dialog.dart` — ~line 63
-**Effort:** trivial
-
-`result.files.single.path` will throw a `StateError` if the file picker returns
-an empty list (e.g. user selected then immediately closed the dialog).
-
-- Replace with `result.files.isEmpty` guard + `result.files.first.path`
+Fixed: `result.files.single` → `result.files.isEmpty` guard + `result.files.first`.
 
 ---
 

@@ -139,6 +139,9 @@ fn decode_patch_message(msg: OscMessage) -> Result<PatchEvent> {
 
 fn decode_ack(msg: OscMessage) -> Result<PatchEvent> {
     let args = msg.args;
+    if args.len() < 2 {
+        bail!("Expected 2 args for /patch/ack, got {}", args.len());
+    }
     Ok(PatchEvent::Ack {
         message_id: parse_uuid(&args[0])?,
         peer_id: parse_uuid(&args[1])?,
@@ -147,6 +150,9 @@ fn decode_ack(msg: OscMessage) -> Result<PatchEvent> {
 
 fn decode_presence(msg: OscMessage) -> Result<PatchEvent> {
     let args = msg.args;
+    if args.len() < 4 {
+        bail!("Expected 4 args for /patch/presence, got {}", args.len());
+    }
     let peer_id = parse_uuid(&args[0])?;
     let peer_name = parse_string(&args[1])?;
     let channels: Vec<String> = serde_json::from_str(&parse_string(&args[2])?)?;
@@ -161,6 +167,9 @@ fn decode_presence(msg: OscMessage) -> Result<PatchEvent> {
 }
 
 fn decode_heartbeat(msg: OscMessage) -> Result<PatchEvent> {
+    if msg.args.is_empty() {
+        bail!("Expected 1 arg for /patch/system/heartbeat, got 0");
+    }
     Ok(PatchEvent::Heartbeat {
         peer_id: parse_uuid(&msg.args[0])?,
     })
@@ -168,6 +177,9 @@ fn decode_heartbeat(msg: OscMessage) -> Result<PatchEvent> {
 
 fn decode_discovery(msg: OscMessage) -> Result<PatchEvent> {
     let args = msg.args;
+    if args.len() < 3 {
+        bail!("Expected 3 args for /patch/discovery, got {}", args.len());
+    }
     Ok(PatchEvent::Discovery {
         peer_id: parse_uuid(&args[0])?,
         peer_name: parse_string(&args[1])?,
@@ -180,6 +192,9 @@ fn decode_flash(msg: OscMessage) -> Result<PatchEvent> {
     let parts: Vec<&str> = msg.addr.split('/').collect();
     let channel_id = parts.get(3).copied().unwrap_or("unknown").to_string();
     let args = msg.args;
+    if args.len() < 2 {
+        bail!("Expected 2 args for .../flash, got {}", args.len());
+    }
     Ok(PatchEvent::Flash(ChannelFlash {
         channel_id,
         sender_id: parse_uuid(&args[0])?,

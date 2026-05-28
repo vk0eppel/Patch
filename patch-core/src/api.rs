@@ -201,6 +201,10 @@ pub async fn remove_static_peer(address: String, port: u16) -> Result<()> {
 }
 
 pub async fn upsert_channel(id: String, display_name: Option<String>, color: Option<String>) -> Result<()> {
+    // Validate that the id is safe to embed in an OSC address path.
+    if id.is_empty() || id.chars().any(|c| !matches!(c, 'a'..='z' | '0'..='9' | '_' | '-')) {
+        anyhow::bail!("channel id '{}' is invalid — use only lowercase letters, digits, _ or -", id);
+    }
     let id_for_name = id.clone();
     let display_name = display_name.unwrap_or(id_for_name);
     let color = color.unwrap_or_else(|| "#607D8B".to_string());
@@ -357,6 +361,8 @@ pub enum PatchAppEvent {
     ChannelFlash(ChannelFlash),
     ChannelListUpdated,
     ClientNameChanged { name: String },
+    /// The OS denied network access (iOS/macOS Local Network permission).
+    PermissionDenied { context: String },
 }
 
 impl From<AppEvent> for PatchAppEvent {
@@ -372,6 +378,7 @@ impl From<AppEvent> for PatchAppEvent {
             AppEvent::ChannelFlash(f) => Self::ChannelFlash(f),
             AppEvent::ChannelListUpdated => Self::ChannelListUpdated,
             AppEvent::ClientNameChanged(name) => Self::ClientNameChanged { name },
+            AppEvent::PermissionDenied { context } => Self::PermissionDenied { context },
         }
     }
 }

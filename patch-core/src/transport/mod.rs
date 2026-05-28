@@ -120,8 +120,13 @@ impl Transport {
             }
         }
 
-        if sent == 0 && peers.is_empty() && config.static_peers.is_empty() {
-            debug!("No peers known yet — packet not sent");
+        let total_targets = peers.len() + config.static_peers.len();
+        if sent == 0 {
+            if total_targets == 0 {
+                debug!("No peers known yet — packet not sent");
+            } else {
+                warn!("send_to_peers: all {} send(s) failed", total_targets);
+            }
         }
 
         Ok(())
@@ -142,6 +147,11 @@ async fn receive_loop(socket: Arc<UdpSocket>, state: AppState, client_id: Uuid) 
                 }
             }
             Err(e) => {
+                if e.kind() == std::io::ErrorKind::PermissionDenied {
+                    state.publish(crate::state::AppEvent::PermissionDenied {
+                        context: "OSC socket blocked — check Local Network permission".into(),
+                    }).await;
+                }
                 error!("UDP receive error: {}", e);
             }
         }

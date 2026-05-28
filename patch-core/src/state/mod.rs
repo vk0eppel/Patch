@@ -24,6 +24,8 @@ pub enum AppEvent {
     ChannelFlash(ChannelFlash),
     ChannelListUpdated,
     ClientNameChanged(String),
+    /// Emitted when the OS denies network access (iOS/macOS Local Network permission).
+    PermissionDenied { context: String },
 }
 
 #[derive(Debug, Clone)]
@@ -153,7 +155,16 @@ impl AppState {
         port: u16,
         label: Option<String>,
     ) -> anyhow::Result<()> {
+        // Validate the IP address before storing.
+        address.parse::<std::net::IpAddr>()
+            .map_err(|_| anyhow::anyhow!("Invalid IP address: '{}'", address))?;
+        if port == 0 {
+            anyhow::bail!("Port 0 is not valid for a static peer");
+        }
         let mut cfg = self.0.config.write().await;
+        if cfg.static_peers.iter().any(|p| p.address == address && p.port == port) {
+            anyhow::bail!("Peer {}:{} is already configured", address, port);
+        }
         cfg.static_peers.push(config::StaticPeer { address, port, label });
         cfg.save()
     }

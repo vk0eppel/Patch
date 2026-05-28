@@ -249,6 +249,19 @@ class _HomeScreenState extends State<HomeScreen> {
         widget.bridge.getConfig();
         widget.bridge.getPeers();
 
+      case 'permission_denied':
+        final msg = event['message'] as String? ??
+            'Network access denied — check Local Network permission in System Settings';
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(msg),
+              backgroundColor: PatchTheme.critical,
+              duration: const Duration(seconds: 8),
+            ),
+          );
+        }
+
       case 'error':
         debugPrint('Bridge error: ${event['message']}');
     }
