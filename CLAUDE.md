@@ -361,20 +361,9 @@ A single `flutter run` builds and links the Rust engine into the host binary via
 
 ---
 
-## Known Incomplete (next tasks)
+## Known Incomplete
 
-- [x] Settings screen — static peer management via UI (add/remove with address, port, optional label)
-- [x] Keyboard shortcut binding in Flutter (F1–F12 wired to shortcut bar)
-- [x] Configurable flash pulse count (global + per-channel, 1–10, default 4)
-- [x] Session file import/export via file picker (`export_layout` / `import_layout` in `api.rs`)
-- [x] Wire heartbeat send through transport (`Discovery::new` now takes `Arc<Transport>` and broadcasts presence every 7s)
-- [x] Peer display: correct name (from `peer_name` TXT record, not `get_fullname()`), correct IP (preserved across `upsert_peer`), self-discovery filtered out
-- [x] Static peers always visible in peers panel (synthesised `ManualIp` entries in `get_peers()`, replaced by real entry on first received packet)
-- [x] Peer name updates propagate within one heartbeat (heartbeat reads live config instead of captured startup value)
-- [x] Auto-register peer on first received message/flash (AP-isolation-safe discovery via `has_peer` + `upsert_peer` in `handle_event`)
-- [x] Peers never auto-expire — stay in panel for full session; dot color from `lastSeen` (green ≤ 35 s, gray otherwise); expiry loop removed from `discovery/mod.rs`
-- [ ] Reliability manager wired into the send path for critical messages
-- [ ] Surface iOS/macOS Local Network permission-denied via the FRB event stream (currently logged-only)
+See [TODO.md](TODO.md) for the full list of known issues and pending work.
 
 ---
 

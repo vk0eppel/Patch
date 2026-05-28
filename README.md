@@ -180,11 +180,7 @@ label = "Monitor World"
 - [x] Settings screen — static peer management via UI (add/remove peers by address + port + label)
 - [x] Heartbeat broadcast wired through transport (presence sent every 7s)
 - [x] Peer display — correct name from mDNS TXT record, transport-resolved IP preserved across heartbeats, self-discovery filtered out
-- [ ] Reliability layer wired for critical messages (ACK + retransmit)
-- [ ] Surface iOS/macOS Local-Network permission denial via the FRB event stream
-- [ ] External OSC trigger → Patch message mapping
-- [ ] OSCQuery support for zero-config integration
-- [ ] Optional WAN relay server
+See [TODO.md](TODO.md) for pending work and known issues.
 
 ---
 

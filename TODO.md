@@ -172,6 +172,32 @@ this impossible as written. Either remove the comment or implement multi-line in
 
 ---
 
+## 🔵 Future Features (from Roadmap)
+
+### External OSC trigger → Patch message mapping
+**Effort:** medium
+
+Allow an incoming OSC message on any address (e.g. `/rf/battery_low`) to be mapped
+to a Patch channel message with a configured priority and payload — bridging
+external show-control gear (QLab, Companion, TouchDesigner, vMix) into Patch
+without custom scripts.
+
+### OSCQuery support for zero-config integration
+**Effort:** large
+
+Implement [OSCQuery](https://github.com/Vidvox/OSCQueryProposal) so peers and
+external tools can discover Patch's OSC namespace automatically without manual
+address configuration.
+
+### Optional WAN relay server
+**Effort:** large
+
+A lightweight relay process (separate binary) that bridges two or more Patch
+instances across the internet — useful for remote production or multi-venue shows.
+Must not compromise the local-first, single-binary design for LAN deployments.
+
+---
+
 ## ✅ Verified — No Action Needed
 
 - All Cargo + pubspec dependencies are current; lockfile is consistent.
