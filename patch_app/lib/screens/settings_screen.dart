@@ -665,6 +665,17 @@ class _ChannelShortcutEditor extends StatelessWidget {
             ),
             child: Column(
               children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(0, 8, 0, 4),
+                  child: Text(
+                    'Global Behavior settings always apply — these flags add triggers '
+                    'per channel but cannot suppress a global setting.',
+                    style: TextStyle(
+                      color: PatchTheme.textMuted,
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
                 SwitchListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,

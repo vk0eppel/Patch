@@ -65,7 +65,7 @@ The **FLASH** button sends an instant page to all peers on a channel. The channe
 
 Use flash for "Hey, pay attention" moments — a battery swap warning, a cue hold, a stage-clear call.
 
-Flash is also triggered automatically on incoming Critical messages by default. You can adjust this per-channel in **Settings → Channels**.
+Flash is also triggered automatically on incoming Critical messages by default (global setting in **Settings → Behavior**). You can disable this globally, or add per-channel flash triggers in **Settings → Channels** — note that per-channel flags only add triggers; they cannot suppress a global setting that is on.
 
 ---
 

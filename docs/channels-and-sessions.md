@@ -66,15 +66,29 @@ On desktop, F1–F12 fire the first matching shortcut across all currently selec
 
 ## Flash settings
 
-Flash can be triggered automatically when messages arrive:
+Flash fires automatically when messages arrive. There are two levels of control:
 
-| Setting | Default | Scope |
+**Global flags** (Settings → Behavior) apply to every channel. When a global flag is on,
+that channel will always flash — the per-channel setting cannot suppress it.
+
+**Per-channel flags** (Settings → Channels → channel editor footer) let you *add* flash
+triggers for specific channels beyond the global defaults. They cannot turn off what a
+global setting enables.
+
+**In practice:**
+- Leave global "Flash on critical" **on** (default) if you want all departments alerted on
+  critical messages. Turn it off in Settings → Behavior if you only want specific channels
+  to flash on critical, then enable the flag per channel.
+- "Flash on every message" is off globally by default — enable it per channel for
+  high-activity departments only (e.g. RF).
+
+| Setting | Default | Where |
 |---|---|---|
-| Flash on critical messages | ✅ On | Global |
-| Flash on every message | ❌ Off | Global |
-| Flash pulse count | 4 | Global (range 1–10) |
+| Flash on critical messages | ✅ On | Global — Settings → Behavior |
+| Flash on every message | ❌ Off | Global — Settings → Behavior |
+| Flash pulse count | 4 | Global default; overridable per channel (1–10) |
 
-Per-channel overrides are available in the channel editor footer. Either the global flag or the per-channel flag being on is sufficient to trigger a flash.
+Flash pulse count shows **–** in the channel editor when the global value is in use; pick a number to set a per-channel override.
 
 ---
 
