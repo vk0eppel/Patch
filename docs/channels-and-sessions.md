@@ -1,10 +1,10 @@
-# Channels, Shortcuts & Sessions
+# Channels, Macros & Sessions
 
 ---
 
 ## Channels
 
-Channels are logical departments — AUDIO, RF, LIGHTING, VIDEO, STAGE, etc. Each has its own message feed, colour, and shortcut set. Channel IDs are stable slugs (e.g. `rf`, `foh`) used in OSC addresses; display names can be anything.
+Channels are logical departments — AUDIO, RF, LIGHTING, VIDEO, STAGE, etc. Each has its own message feed, colour, and macro set. Channel IDs are stable slugs (e.g. `rf`, `foh`) used in OSC addresses; display names can be anything.
 
 ### Default channels
 
@@ -18,12 +18,12 @@ On first run Patch seeds five channels:
 | `video` | VIDEO |
 | `stage` | STAGE |
 
-`AUDIO` comes with shortcuts: **Yes** (info), **No** (info), **Problem with:** (critical).  
-`RF` comes with shortcuts: **CLEAR** (info, F1), **HOLD** (warning, F2), **BATTERY LOW** (critical, F3).
+`AUDIO` comes with macros: **Yes** (info), **No** (info), **Problem with:** (critical).  
+`RF` comes with macros: **CLEAR** (info, F1), **HOLD** (warning, F2), **BATTERY LOW** (critical, F3).
 
 ### Creating a channel
 
-1. Go to **Settings → Channels & Shortcuts**.
+1. Go to **Settings → Channels & Macros**.
 2. Tap **+ Add channel**.
 3. Enter a name and pick a colour.
 4. The channel ID (slug) is auto-generated from the name — lowercase, no spaces.
@@ -32,26 +32,26 @@ On first run Patch seeds five channels:
 
 ### Editing a channel
 
-Tap any channel row in **Settings → Channels & Shortcuts** to open the editor. You can change the display name, colour, and per-channel flash settings.
+Tap any channel row in **Settings → Channels & Macros** to open the editor. You can change the display name, colour, and per-channel flash settings.
 
 ### Deleting a channel
 
-Swipe left on a channel row (iOS) or tap the delete icon. The channel and all its shortcuts are removed. Messages already received are not deleted from the in-memory buffer for the current session.
+Swipe left on a channel row (iOS) or tap the delete icon. The channel and all its macros are removed. Messages already received are not deleted from the in-memory buffer for the current session.
 
 ### Resetting to defaults
 
-Tap the **↺** icon at the top-right of the Channels & Shortcuts section → confirm. This replaces all channels with the factory defaults (AUDIO, RF, LIGHTING, VIDEO, STAGE).
+Tap the **↺** icon at the top-right of the Channels & Macros section → confirm. This replaces all channels with the factory defaults (AUDIO, RF, LIGHTING, VIDEO, STAGE).
 
 ---
 
-## Shortcut messages
+## Macros
 
-Shortcuts are one-tap buttons that appear above the message input on each channel. They're ideal for common callouts you'd otherwise type every time.
+Macros are one-tap buttons that appear in a side panel on each channel. They're ideal for common callouts you'd otherwise type every time.
 
-### Creating a shortcut
+### Creating a macro
 
-1. Open **Settings → Channels & Shortcuts** → tap a channel.
-2. Scroll to the shortcuts section → tap **+ Add shortcut**.
+1. Open **Settings → Channels & Macros** → tap a channel.
+2. Scroll to the macros section → tap **+ Add macro**.
 3. Fill in:
    - **Label** — the button text (e.g. "BATTERY LOW")
    - **Message** — the payload sent (can be different from the label)
@@ -60,7 +60,7 @@ Shortcuts are one-tap buttons that appear above the message input on each channe
 
 ### F-key bindings
 
-On desktop, F1–F12 fire the first matching shortcut across all currently selected channels — no need to click the button. Key bindings are shown as a small badge on the shortcut chip.
+On desktop, F1–F12 fire the first matching macro across all currently selected channels — no need to click the button. Key bindings are shown as a small badge on the macro button.
 
 ---
 
@@ -94,7 +94,7 @@ Flash pulse count shows **–** in the channel editor when the global value is i
 
 ## Sessions
 
-A **session** is a named snapshot of your full channel layout: channels, shortcuts, and static peers. Use sessions to:
+A **session** is a named snapshot of your full channel layout: channels, macros, and static peers. Use sessions to:
 
 - Save and restore a show-specific configuration
 - Share a layout with the rest of the crew (export → send the `.toml` file)
@@ -106,7 +106,7 @@ Tap the **folder icon** in the left sidebar (below the channel list).
 
 ### Saving a session
 
-1. Configure channels, shortcuts, and static peers as needed.
+1. Configure channels, macros, and static peers as needed.
 2. Open the sessions panel → tap **+ Save current layout**.
 3. Enter a name (e.g. "Festival Day 1") → Save.
 
@@ -137,7 +137,7 @@ color = "#F44336"
 flash_on_critical = true
 flash_on_message = false
 
-  [[channels.shortcuts]]
+  [[channels.macros]]
   label = "CLEAR"
   payload = "CLEAR"
   priority = 1

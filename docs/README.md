@@ -9,7 +9,7 @@ Patch is a real-time communication tool for live production crews (AV, broadcast
 | Guide | Audience |
 |---|---|
 | [Quick Start](quick-start.md) | Everyone — first run, basic usage |
-| [Channels, Shortcuts & Sessions](channels-and-sessions.md) | Crew leads, production managers |
+| [Channels, Macros & Sessions](channels-and-sessions.md) | Crew leads, production managers |
 | [Networking](networking.md) | Production managers, network engineers |
 | [OSC Integration](osc-integration.md) | Show-control operators, developers |
 | [Integrations](integrations.md) | Stream Deck, Companion, QLab, TouchDesigner |

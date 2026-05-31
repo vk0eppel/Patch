@@ -7,18 +7,18 @@ hardware controllers and show-control software.
 
 ## Stream Deck
 
-Elgato Stream Deck can control Patch shortcuts in several ways — no code changes or
+Elgato Stream Deck can trigger Patch macros in several ways — no code changes or
 plugins required for the first two options.
 
 ### Option A — F-key emulation (works today)
 
 Stream Deck can emulate keyboard keypresses. Map a button to F1–F12 and it fires the
-matching Patch shortcut instantly, regardless of which app has focus.
+matching Patch macro instantly, regardless of which app has focus.
 
 1. Open the **Stream Deck** app.
 2. Drag a **Hotkey** action onto a button.
 3. Set the hotkey to **F1** (or F2, F3… up to F12).
-4. In Patch, bind your shortcut to the matching F-key under **Settings → Channels & Shortcuts → [channel] → [shortcut] → Key binding**.
+4. In Patch, bind your macro to the matching F-key under **Settings → Channels & Macros → [channel] → [macro] → Key binding**.
 
 **Limit:** 12 bindings (F1–F12). Can conflict with other apps using the same F-keys on the same machine.
 
@@ -43,11 +43,11 @@ directly to Patch — including full messages with priority and payload.
 ### Option C — MIDI (requires MIDI trigger feature, planned)
 
 Several Stream Deck plugins (e.g. *MIDI for Stream Deck*) let buttons send MIDI
-Note On events. Once MIDI-triggered shortcuts are implemented in Patch, you can
-bind any shortcut to a MIDI note number and Stream Deck buttons will fire it
+Note On events. Once MIDI-triggered macros are implemented in Patch, you can
+bind any macro to a MIDI note number and Stream Deck buttons will fire it
 automatically.
 
-See [TODO.md](../TODO.md) — "MIDI-triggered shortcuts" — for status.
+See [TODO.md](../TODO.md) — "MIDI-triggered macros" — for status.
 
 ---
 
@@ -57,7 +57,7 @@ Companion integrates directly with Patch via the **Generic OSC** module. You can
 
 - Send messages to any channel from a Companion button
 - Flash a channel: `/patch/channel/{id}/flash`  
-- Trigger any shortcut payload by sending the corresponding `/patch/channel/{id}/message`
+- Trigger any macro payload by sending the corresponding `/patch/channel/{id}/message`
 
 See [OSC Integration](osc-integration.md) for the full packet format and argument list.
 
@@ -92,5 +92,5 @@ examples, and a TouchDesigner snippet.
 
 A dedicated Elgato Stream Deck plugin that shows live Patch status on the LCD
 buttons — channel names, message counts, flash animations, online peer indicators —
-and fires shortcuts directly without middleware. Planned as a future standalone
+and fires macros directly without middleware. Planned as a future standalone
 project. Track status in [TODO.md](../TODO.md).

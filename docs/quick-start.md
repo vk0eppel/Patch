@@ -69,19 +69,19 @@ Flash is also triggered automatically on incoming Critical messages by default (
 
 ---
 
-## 6. Shortcut messages
+## 6. Macros
 
-Each channel has a strip of one-tap shortcut buttons above the input field for common callouts — for example, **CLEAR**, **HOLD**, **BATTERY LOW** on the RF channel.
+Each channel has a panel of one-tap macro buttons for common callouts — for example, **CLEAR**, **HOLD**, **BATTERY LOW** on the RF channel. Toggle the panel with the keyboard icon in the channel header.
 
-On desktop, shortcuts can be bound to **F1–F12** and fire from any focus state (no need to click the button first).
+On desktop, macros can be bound to **F1–F12** and fire from any focus state (no need to click the button first).
 
-Shortcuts are configured in **Settings → Channels & Shortcuts**.
+Macros are configured in **Settings → Channels & Macros**.
 
 ---
 
 ## 7. Sessions
 
-A **session** is a saved snapshot of your channel layout (channels, shortcuts, static peers). Your PM can prepare a session before the show and distribute it as a `.toml` file.
+A **session** is a saved snapshot of your channel layout (channels, macros, static peers). Your PM can prepare a session before the show and distribute it as a `.toml` file.
 
 To load a session: tap the **folder icon** in the left sidebar → **Load from file…** or select a named preset.
 

@@ -245,7 +245,7 @@ A lightweight relay process (separate binary) that bridges two or more Patch
 instances across the internet — useful for remote production or multi-venue shows.
 Must not compromise the local-first, single-binary design for LAN deployments.
 
-### MIDI-triggered shortcuts
+### MIDI-triggered macros
 **Effort:** medium
 
 Bind a shortcut to a MIDI Note On or CC event so a pad, keyboard, or MIDI
