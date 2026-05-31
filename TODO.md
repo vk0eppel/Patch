@@ -209,14 +209,22 @@ Limitations: no offline queueing, no read receipts, conversation IDs are UUID-ba
 
 Two related features covering both directions of OSC interoperability:
 
-**Outbound — OSC macro shortcuts**
-A new shortcut type that fires an arbitrary OSC message to a configured address/port
-instead of (or in addition to) a Patch channel message. Useful for triggering QLab
-cues, Companion buttons, vMix overlays, or any other OSC-capable gear directly from
-the shortcuts panel.
-- Add `OscTarget { address: String, port: u16 }` and an optional `osc_macro` field to `ShortcutMessage` in `channel.rs`
-- Add `send_osc_macro(address, port, path, args)` to `api.rs` + `bridge_client.dart`
-- Extend the shortcut editor in `settings_screen.dart` with an OSC target section
+**Outbound — OSC macro**
+A macro that fires an arbitrary OSC message to a configured destination (address, port,
+OSC path) in addition to the normal Patch channel message sent to peers. Useful for
+triggering QLab cues, Companion buttons, vMix overlays, or any other OSC-capable gear
+directly from the macros panel.
+
+Infrastructure is mostly in place — `rosc` already encodes/sends OSC; the transport
+socket is available; the macro editor UI is already extensible.
+
+Implementation steps:
+- Add optional fields to `ShortcutMessage` in `channel.rs`: `osc_address: Option<String>`, `osc_port: Option<u16>`, `osc_path: Option<String>`, `osc_arg: Option<String>` (single string arg covers ~80% of QLab use cases; typed arg list can come later)
+- Add `send_osc_macro(address, port, path, arg: Option<String>)` to `api.rs`; encode via `rosc` and send a raw UDP packet via the existing transport socket
+- Regenerate FRB bindings; add `sendOscMacro()` to `bridge_client.dart`
+- Extend the macro editor in `settings_screen.dart` with an expandable "OSC Target" section (IP field, port field, OSC path field, optional arg field); show only when enabled via a toggle
+
+Design decision (resolve before starting): when a macro has an OSC target, it should fire **both** the Patch channel message to peers **and** the OSC packet to the target — dual action is the most useful live behaviour (crew gets the message AND QLab gets the trigger simultaneously).
 
 **Inbound — external OSC trigger → Patch message mapping**
 Allow an incoming OSC message on any address (e.g. `/rf/battery_low`) to be mapped
