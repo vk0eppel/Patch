@@ -19,7 +19,7 @@ use tokio::sync::OnceCell;
 use crate::discovery::Discovery;
 use crate::osc::codec::{encode_flash, encode_message};
 use crate::osc::types::{ChannelFlash, PatchMessage, Priority};
-use crate::state::channel::{Channel, ShortcutMessage};
+use crate::state::channel::{Channel, MacroMessage};
 use crate::state::session::{self, SessionConfig, SessionMeta};
 use crate::state::{config::StaticPeer, AppEvent, AppState, Config};
 use crate::transport::{list_interfaces, InterfaceInfo, Transport};
@@ -135,7 +135,7 @@ pub struct ConfigSnapshot {
     pub flash_on_critical: bool,
     pub flash_on_message: bool,
     pub flash_count: u8,
-    pub shortcuts_columns: u8,
+    pub macros_columns: u8,
 }
 
 pub async fn get_config() -> ConfigSnapshot {
@@ -148,7 +148,7 @@ pub async fn get_config() -> ConfigSnapshot {
         flash_on_critical: cfg.flash_on_critical,
         flash_on_message: cfg.flash_on_message,
         flash_count: cfg.flash_count,
-        shortcuts_columns: cfg.shortcuts_columns,
+        macros_columns: cfg.macros_columns,
     }
 }
 
@@ -183,8 +183,8 @@ pub async fn set_flash_count(count: u8) -> Result<()> {
     engine().state.set_flash_count(count).await
 }
 
-pub async fn set_shortcuts_columns(columns: u8) -> Result<()> {
-    engine().state.set_shortcuts_columns(columns).await
+pub async fn set_macros_columns(columns: u8) -> Result<()> {
+    engine().state.set_macros_columns(columns).await
 }
 
 pub async fn set_channel_flash(
@@ -231,7 +231,7 @@ pub async fn reset_channels() -> Result<()> {
     engine().state.reset_channels().await
 }
 
-pub async fn upsert_shortcut(
+pub async fn upsert_macro(
     channel_id: String,
     label: String,
     payload: String,
@@ -243,12 +243,12 @@ pub async fn upsert_shortcut(
         anyhow::bail!("label must be non-empty");
     }
     engine().state
-        .upsert_shortcut(&channel_id, ShortcutMessage { label, payload, key_binding, priority })
+        .upsert_macro(&channel_id, MacroMessage { label, payload, key_binding, priority })
         .await
 }
 
-pub async fn delete_shortcut(channel_id: String, label: String) -> Result<()> {
-    engine().state.delete_shortcut(&channel_id, &label).await
+pub async fn delete_macro(channel_id: String, label: String) -> Result<()> {
+    engine().state.delete_macro(&channel_id, &label).await
 }
 
 // ── Sessions ─────────────────────────────────────────────────────────────────

@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
 
-class ShortcutMessage {
+class MacroMessage {
   final String label;
   final String payload;
   final String? keyBinding;
   final int priority;
 
-  const ShortcutMessage({
+  const MacroMessage({
     required this.label,
     required this.payload,
     this.keyBinding,
     this.priority = 1,
   });
 
-  factory ShortcutMessage.fromJson(Map<String, dynamic> j) => ShortcutMessage(
+  factory MacroMessage.fromJson(Map<String, dynamic> j) => MacroMessage(
         label: j['label'] as String,
         payload: j['payload'] as String,
         keyBinding: j['key_binding'] as String?,
@@ -25,7 +25,7 @@ class PatchChannel {
   final String id;
   final String displayName;
   final Color color;
-  final List<ShortcutMessage> shortcuts;
+  final List<MacroMessage> macros;
   final bool flashOnCritical;
   final bool flashOnMessage;
   /// Per-channel pulse count override. null = use global setting.
@@ -35,7 +35,7 @@ class PatchChannel {
     required this.id,
     required this.displayName,
     required this.color,
-    this.shortcuts = const [],
+    this.macros = const [],
     this.flashOnCritical = true,
     this.flashOnMessage = false,
     this.flashCount,
@@ -47,8 +47,8 @@ class PatchChannel {
       id: j['id'] as String,
       displayName: j['display_name'] as String,
       color: Color(int.parse('FF$colorHex', radix: 16)),
-      shortcuts: (j['shortcuts'] as List<dynamic>? ?? [])
-          .map((s) => ShortcutMessage.fromJson(s as Map<String, dynamic>))
+      macros: (j['macros'] as List<dynamic>? ?? [])
+          .map((s) => MacroMessage.fromJson(s as Map<String, dynamic>))
           .toList(),
       flashOnCritical: (j['flash_on_critical'] as bool?) ?? true,
       flashOnMessage:  (j['flash_on_message']  as bool?) ?? false,

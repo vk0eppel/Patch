@@ -3,47 +3,47 @@ import 'package:flutter/material.dart';
 import '../models/channel.dart';
 import '../theme/patch_theme.dart';
 
-/// A shortcut paired with its channel context — used when aggregating shortcuts
-/// from multiple selected channels for display in [ShortcutsPanel].
-class ChannelShortcut {
+/// A macro paired with its channel context — used when aggregating macros
+/// from multiple selected channels for display in [MacrosPanel].
+class ChannelMacro {
   final String channelId;
   final Color channelColor;
-  final ShortcutMessage shortcut;
+  final MacroMessage macro;
 
-  const ChannelShortcut({
+  const ChannelMacro({
     required this.channelId,
     required this.channelColor,
-    required this.shortcut,
+    required this.macro,
   });
 }
 
-/// Vertical side panel showing all shortcuts as fixed-height buttons.
+/// Vertical side panel showing all macros as fixed-height buttons.
 ///
-/// Designed for show use: every shortcut is always visible with no scrolling.
+/// Designed for show use: every macro is always visible with no scrolling.
 /// The panel fills available height; buttons share that height equally so there
-/// is never any hidden content. Users curate the shortcut list before the show
+/// is never any hidden content. Users curate the macro list before the show
 /// to keep button sizes comfortable.
 ///
 /// [columns] (1 or 2) controls how many buttons appear per row. The preference
 /// is persisted via the Rust config and toggled with the [1] [2] control in the
 /// panel header.
 ///
-/// When [isMulti] is true (multiple channels selected), shortcuts are grouped
+/// When [isMulti] is true (multiple channels selected), macros are grouped
 /// by channel with a thin colour-coded divider and channel name label.
-class ShortcutsPanel extends StatelessWidget {
-  final List<ChannelShortcut> shortcuts;
+class MacrosPanel extends StatelessWidget {
+  final List<ChannelMacro> macros;
   final bool isMulti;
   final int columns;
   final ValueChanged<int> onColumnsChanged;
-  final ValueChanged<ChannelShortcut> onShortcut;
+  final ValueChanged<ChannelMacro> onMacro;
 
-  const ShortcutsPanel({
+  const MacrosPanel({
     super.key,
-    required this.shortcuts,
+    required this.macros,
     required this.isMulti,
     required this.columns,
     required this.onColumnsChanged,
-    required this.onShortcut,
+    required this.onMacro,
   });
 
   @override
@@ -75,7 +75,7 @@ class ShortcutsPanel extends StatelessWidget {
           ),
           const Divider(color: PatchTheme.border, height: 1),
           // ── Content ─────────────────────────────────────────────────────
-          if (shortcuts.isEmpty)
+          if (macros.isEmpty)
             const Expanded(
               child: Center(
                 child: Text(
@@ -85,16 +85,16 @@ class ShortcutsPanel extends StatelessWidget {
               ),
             )
           else if (!isMulti)
-            ..._buildFlatRows(shortcuts)
+            ..._buildFlatRows(macros)
           else
-            ..._buildGroupedRows(shortcuts),
+            ..._buildGroupedRows(macros),
         ],
       ),
     );
   }
 
   /// Chunk [items] into rows of [columns] each and wrap each row in an Expanded.
-  List<Widget> _rowsFrom(List<ChannelShortcut> items, {required bool showChannelBar}) {
+  List<Widget> _rowsFrom(List<ChannelMacro> items, {required bool showChannelBar}) {
     final rows = <Widget>[];
     for (var i = 0; i < items.length; i += columns) {
       final slice = items.sublist(i, min(i + columns, items.length));
@@ -107,10 +107,10 @@ class ShortcutsPanel extends StatelessWidget {
             for (var col = 0; col < columns; col++)
               Expanded(
                 child: col < slice.length
-                    ? _ShortcutButton(
-                        cs: slice[col],
+                    ? _MacroButton(
+                        cm: slice[col],
                         showChannelBar: showChannelBar,
-                        onTap: () => onShortcut(slice[col]),
+                        onTap: () => onMacro(slice[col]),
                       )
                     : const _EmptyCell(),
               ),
@@ -123,16 +123,16 @@ class ShortcutsPanel extends StatelessWidget {
   }
 
   /// Flat rows — single channel, no grouping.
-  List<Widget> _buildFlatRows(List<ChannelShortcut> items) =>
+  List<Widget> _buildFlatRows(List<ChannelMacro> items) =>
       _rowsFrom(items, showChannelBar: false);
 
   /// Rows grouped by channel with a full-width colour header per group.
-  List<Widget> _buildGroupedRows(List<ChannelShortcut> items) {
+  List<Widget> _buildGroupedRows(List<ChannelMacro> items) {
     final seen = <String>[];
-    final groups = <String, List<ChannelShortcut>>{};
-    for (final cs in items) {
-      if (!seen.contains(cs.channelId)) seen.add(cs.channelId);
-      groups.putIfAbsent(cs.channelId, () => []).add(cs);
+    final groups = <String, List<ChannelMacro>>{};
+    for (final cm in items) {
+      if (!seen.contains(cm.channelId)) seen.add(cm.channelId);
+      groups.putIfAbsent(cm.channelId, () => []).add(cm);
     }
 
     final widgets = <Widget>[];
@@ -240,21 +240,21 @@ class _EmptyCell extends StatelessWidget {
   }
 }
 
-// ── Individual shortcut button ─────────────────────────────────────────────────
+// ── Individual macro button ────────────────────────────────────────────────────
 
-class _ShortcutButton extends StatelessWidget {
-  final ChannelShortcut cs;
+class _MacroButton extends StatelessWidget {
+  final ChannelMacro cm;
   final bool showChannelBar;
   final VoidCallback onTap;
 
-  const _ShortcutButton({
-    required this.cs,
+  const _MacroButton({
+    required this.cm,
     required this.showChannelBar,
     required this.onTap,
   });
 
   Color get _bgColor {
-    return switch (cs.shortcut.priority) {
+    return switch (cm.macro.priority) {
       3 => PatchTheme.critical.withAlpha(30),
       2 => PatchTheme.warning.withAlpha(30),
       _ => PatchTheme.surfaceHigh,
@@ -262,7 +262,7 @@ class _ShortcutButton extends StatelessWidget {
   }
 
   Color get _borderColor {
-    return switch (cs.shortcut.priority) {
+    return switch (cm.macro.priority) {
       3 => PatchTheme.critical,
       2 => PatchTheme.warning,
       _ => PatchTheme.border,
@@ -280,7 +280,7 @@ class _ShortcutButton extends StatelessWidget {
           decoration: BoxDecoration(
             border: Border(
               left: showChannelBar
-                  ? BorderSide(color: cs.channelColor, width: 3)
+                  ? BorderSide(color: cm.channelColor, width: 3)
                   : BorderSide(color: _borderColor, width: 1),
               bottom: const BorderSide(color: PatchTheme.border, width: 1),
             ),
@@ -291,7 +291,7 @@ class _ShortcutButton extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                cs.shortcut.label,
+                cm.macro.label,
                 textAlign: TextAlign.center,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -301,10 +301,10 @@ class _ShortcutButton extends StatelessWidget {
                   letterSpacing: 0.8,
                 ),
               ),
-              if (cs.shortcut.keyBinding != null) ...[
+              if (cm.macro.keyBinding != null) ...[
                 const SizedBox(height: 2),
                 Text(
-                  cs.shortcut.keyBinding!,
+                  cm.macro.keyBinding!,
                   style: const TextStyle(
                     color: PatchTheme.textMuted,
                     fontSize: 9,

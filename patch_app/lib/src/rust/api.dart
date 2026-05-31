@@ -75,8 +75,8 @@ Future<void> setFlashOnMessage({required bool enabled}) =>
 Future<void> setFlashCount({required int count}) =>
     RustLib.instance.api.crateApiSetFlashCount(count: count);
 
-Future<void> setShortcutsColumns({required int columns}) =>
-    RustLib.instance.api.crateApiSetShortcutsColumns(columns: columns);
+Future<void> setMacrosColumns({required int columns}) =>
+    RustLib.instance.api.crateApiSetMacrosColumns(columns: columns);
 
 Future<void> setChannelFlash({
   required String channelId,
@@ -118,13 +118,13 @@ Future<void> deleteChannel({required String id}) =>
 
 Future<void> resetChannels() => RustLib.instance.api.crateApiResetChannels();
 
-Future<void> upsertShortcut({
+Future<void> upsertMacro({
   required String channelId,
   required String label,
   required String payload,
   required int priority,
   String? keyBinding,
-}) => RustLib.instance.api.crateApiUpsertShortcut(
+}) => RustLib.instance.api.crateApiUpsertMacro(
   channelId: channelId,
   label: label,
   payload: payload,
@@ -132,13 +132,11 @@ Future<void> upsertShortcut({
   keyBinding: keyBinding,
 );
 
-Future<void> deleteShortcut({
-  required String channelId,
-  required String label,
-}) => RustLib.instance.api.crateApiDeleteShortcut(
-  channelId: channelId,
-  label: label,
-);
+Future<void> deleteMacro({required String channelId, required String label}) =>
+    RustLib.instance.api.crateApiDeleteMacro(
+      channelId: channelId,
+      label: label,
+    );
 
 Future<SessionSaved> saveSession({required String name}) =>
     RustLib.instance.api.crateApiSaveSession(name: name);
@@ -179,7 +177,7 @@ class ConfigSnapshot {
   final bool flashOnCritical;
   final bool flashOnMessage;
   final int flashCount;
-  final int shortcutsColumns;
+  final int macrosColumns;
 
   const ConfigSnapshot({
     required this.clientName,
@@ -189,7 +187,7 @@ class ConfigSnapshot {
     required this.flashOnCritical,
     required this.flashOnMessage,
     required this.flashCount,
-    required this.shortcutsColumns,
+    required this.macrosColumns,
   });
 
   @override
@@ -201,7 +199,7 @@ class ConfigSnapshot {
       flashOnCritical.hashCode ^
       flashOnMessage.hashCode ^
       flashCount.hashCode ^
-      shortcutsColumns.hashCode;
+      macrosColumns.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -215,7 +213,7 @@ class ConfigSnapshot {
           flashOnCritical == other.flashOnCritical &&
           flashOnMessage == other.flashOnMessage &&
           flashCount == other.flashCount &&
-          shortcutsColumns == other.shortcutsColumns;
+          macrosColumns == other.macrosColumns;
 }
 
 @freezed

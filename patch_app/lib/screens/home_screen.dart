@@ -13,7 +13,7 @@ import '../widgets/message_list.dart';
 import '../widgets/message_input.dart';
 import '../widgets/peers_panel.dart';
 import '../widgets/sessions_dialog.dart';
-import '../widgets/shortcuts_panel.dart' show ShortcutsPanel, ChannelShortcut;
+import '../widgets/macros_panel.dart' show MacrosPanel, ChannelMacro;
 import 'settings_screen.dart';
 
 /// Root screen — channel tab strip on the left, message area on the right.
@@ -61,13 +61,13 @@ class _HomeScreenState extends State<HomeScreen> {
     LogicalKeyboardKey.f12: 'F12',
   };
 
-  static const double _kShortcutColumnWidth = 160.0;
+  static const double _kMacroColumnWidth = 160.0;
   static const double _kPeersPanelWidth = 160.0;
 
   List<PeerInfo> _peers = [];
   bool _showPeers = false;
-  bool _showShortcuts = false;
-  int _shortcutsColumns = 1;
+  bool _showMacros = false;
+  int _macrosColumns = 1;
   StreamSubscription<Map<String, dynamic>>? _eventSub;
 
   // ── Derived state ───────────────────────────────────────────────────────────
@@ -93,12 +93,12 @@ class _HomeScreenState extends State<HomeScreen> {
     return {for (final c in _selectedChannels) c.id: c.color};
   }
 
-  /// Shortcuts from all selected channels, each tagged with their channel.
-  List<ChannelShortcut> get _aggregatedShortcuts {
+  /// Macros from all selected channels, each tagged with their channel.
+  List<ChannelMacro> get _aggregatedMacros {
     return [
       for (final ch in _selectedChannels)
-        for (final s in ch.shortcuts)
-          ChannelShortcut(channelId: ch.id, channelColor: ch.color, shortcut: s),
+        for (final s in ch.macros)
+          ChannelMacro(channelId: ch.id, channelColor: ch.color, macro: s),
     ];
   }
 
@@ -127,12 +127,12 @@ class _HomeScreenState extends State<HomeScreen> {
     if (event is! KeyDownEvent) return false;
     final label = _fKeyLabels[event.logicalKey];
     if (label == null) return false;
-    for (final cs in _aggregatedShortcuts) {
-      if (cs.shortcut.keyBinding == label) {
+    for (final cs in _aggregatedMacros) {
+      if (cs.macro.keyBinding == label) {
         widget.bridge.sendMessage(
           channelId: cs.channelId,
-          payload: cs.shortcut.payload,
-          priority: cs.shortcut.priority,
+          payload: cs.macro.payload,
+          priority: cs.macro.priority,
         );
         return true; // consumed
       }
@@ -242,8 +242,8 @@ class _HomeScreenState extends State<HomeScreen> {
               (event['data']['flash_on_message'] as bool?) ?? false;
           _globalFlashCount =
               (event['data']['flash_count'] as int?) ?? 4;
-          _shortcutsColumns =
-              (event['data']['shortcuts_columns'] as int?) ?? 1;
+          _macrosColumns =
+              (event['data']['macros_columns'] as int?) ?? 1;
         });
 
       case 'session_saved':
@@ -336,34 +336,34 @@ class _HomeScreenState extends State<HomeScreen> {
                     selectedChannels: _selectedChannels,
                     messages: _combinedMessages,
                     channelColors: _channelColors,
-                    aggregatedShortcuts: _aggregatedShortcuts,
+                    aggregatedMacros: _aggregatedMacros,
                     bridge: widget.bridge,
                     showPeers: _showPeers,
                     onTogglePeers: () =>
                         setState(() => _showPeers = !_showPeers),
-                    showShortcuts: _showShortcuts,
-                    onToggleShortcuts: () =>
-                        setState(() => _showShortcuts = !_showShortcuts),
+                    showMacros: _showMacros,
+                    onToggleMacros: () =>
+                        setState(() => _showMacros = !_showMacros),
                     flashNotify: _flashNotify,
                     flashColor: _flashColor,
                     flashPulseCount: _flashPulseCount,
                   ),
           ),
-          if (_showShortcuts)
+          if (_showMacros)
             SizedBox(
-              width: _kShortcutColumnWidth * _shortcutsColumns,
-              child: ShortcutsPanel(
-                shortcuts: _aggregatedShortcuts,
+              width: _kMacroColumnWidth * _macrosColumns,
+              child: MacrosPanel(
+                macros: _aggregatedMacros,
                 isMulti: _selectedIds.length > 1,
-                columns: _shortcutsColumns,
+                columns: _macrosColumns,
                 onColumnsChanged: (n) {
-                  setState(() => _shortcutsColumns = n);
-                  widget.bridge.setShortcutsColumns(n);
+                  setState(() => _macrosColumns = n);
+                  widget.bridge.setMacrosColumns(n);
                 },
-                onShortcut: (cs) => widget.bridge.sendMessage(
-                  channelId: cs.channelId,
-                  payload: cs.shortcut.payload,
-                  priority: cs.shortcut.priority,
+                onMacro: (cm) => widget.bridge.sendMessage(
+                  channelId: cm.channelId,
+                  payload: cm.macro.payload,
+                  priority: cm.macro.priority,
                 ),
               ),
             ),
@@ -509,12 +509,12 @@ class _ChannelView extends StatelessWidget {
   final List<PatchChannel> selectedChannels;
   final List<PatchMessage> messages;
   final Map<String, Color> channelColors; // empty when single channel
-  final List<ChannelShortcut> aggregatedShortcuts;
+  final List<ChannelMacro> aggregatedMacros;
   final BridgeClient bridge;
   final bool showPeers;
   final VoidCallback onTogglePeers;
-  final bool showShortcuts;
-  final VoidCallback onToggleShortcuts;
+  final bool showMacros;
+  final VoidCallback onToggleMacros;
   final int flashNotify;
   final Color flashColor;
   final int flashPulseCount;
@@ -523,12 +523,12 @@ class _ChannelView extends StatelessWidget {
     required this.selectedChannels,
     required this.messages,
     required this.channelColors,
-    required this.aggregatedShortcuts,
+    required this.aggregatedMacros,
     required this.bridge,
     required this.showPeers,
     required this.onTogglePeers,
-    required this.showShortcuts,
-    required this.onToggleShortcuts,
+    required this.showMacros,
+    required this.onToggleMacros,
     required this.flashNotify,
     required this.flashColor,
     required this.flashPulseCount,
@@ -592,11 +592,11 @@ class _ChannelView extends StatelessWidget {
               IconButton(
                 icon: Icon(
                   Icons.keyboard_outlined,
-                  color: showShortcuts ? PatchTheme.accent : PatchTheme.textMuted,
+                  color: showMacros ? PatchTheme.accent : PatchTheme.textMuted,
                   size: 20,
                 ),
-                tooltip: showShortcuts ? 'Hide macros' : 'Show macros',
-                onPressed: onToggleShortcuts,
+                tooltip: showMacros ? 'Hide macros' : 'Show macros',
+                onPressed: onToggleMacros,
               ),
               IconButton(
                 icon: Icon(

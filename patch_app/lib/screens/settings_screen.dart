@@ -409,7 +409,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             style: TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeSmall),
           ),
           const SizedBox(height: 16),
-          ..._channels.map((ch) => _ChannelShortcutEditor(
+          ..._channels.map((ch) => _ChannelMacroEditor(
                 channel: ch,
                 bridge: widget.bridge,
                 onDelete: () => _confirmDeleteChannel(ch),
@@ -566,13 +566,13 @@ class _InterfacePicker extends StatelessWidget {
 
 // ── Per-channel shortcut editor ───────────────────────────────────────────────
 
-class _ChannelShortcutEditor extends StatelessWidget {
+class _ChannelMacroEditor extends StatelessWidget {
   final PatchChannel channel;
   final BridgeClient bridge;
   final VoidCallback onDelete;
   final VoidCallback onEdit;
 
-  const _ChannelShortcutEditor({
+  const _ChannelMacroEditor({
     required this.channel,
     required this.bridge,
     required this.onDelete,
@@ -622,7 +622,7 @@ class _ChannelShortcutEditor extends StatelessWidget {
                   icon: const Icon(Icons.add, size: 16),
                   label: const Text('Add'),
                   style: TextButton.styleFrom(foregroundColor: PatchTheme.accent),
-                  onPressed: () => _showShortcutDialog(context, channel, bridge),
+                  onPressed: () => _showMacroDialog(context, channel, bridge),
                 ),
                 IconButton(
                   icon: const Icon(Icons.edit_outlined, size: 16, color: PatchTheme.textMuted),
@@ -642,7 +642,7 @@ class _ChannelShortcutEditor extends StatelessWidget {
             ),
           ),
           // Shortcut list
-          if (channel.shortcuts.isEmpty)
+          if (channel.macros.isEmpty)
             const Padding(
               padding: EdgeInsets.all(14),
               child: Text(
@@ -651,11 +651,11 @@ class _ChannelShortcutEditor extends StatelessWidget {
               ),
             )
           else
-            ...channel.shortcuts.map((s) => _ShortcutRow(
+            ...channel.macros.map((s) => _MacroRow(
                   shortcut: s,
                   channelId: channel.id,
                   bridge: bridge,
-                  onEdit: () => _showShortcutDialog(context, channel, bridge, existing: s),
+                  onEdit: () => _showMacroDialog(context, channel, bridge, existing: s),
                 )),
           // Per-channel flash settings
           Container(
@@ -738,11 +738,11 @@ class _ChannelShortcutEditor extends StatelessWidget {
     );
   }
 
-  static void _showShortcutDialog(
+  static void _showMacroDialog(
     BuildContext context,
     PatchChannel channel,
     BridgeClient bridge, {
-    ShortcutMessage? existing,
+    MacroMessage? existing,
   }) {
     final labelCtrl = TextEditingController(text: existing?.label ?? '');
     final payloadCtrl = TextEditingController(text: existing?.payload ?? '');
@@ -821,7 +821,7 @@ class _ChannelShortcutEditor extends StatelessWidget {
                 final label = labelCtrl.text.trim();
                 final payload = payloadCtrl.text.trim();
                 if (label.isEmpty || payload.isEmpty) return;
-                bridge.upsertShortcut(
+                bridge.upsertMacro(
                   channelId: channel.id,
                   label: label,
                   payload: payload,
@@ -839,13 +839,13 @@ class _ChannelShortcutEditor extends StatelessWidget {
   }
 }
 
-class _ShortcutRow extends StatelessWidget {
-  final ShortcutMessage shortcut;
+class _MacroRow extends StatelessWidget {
+  final MacroMessage shortcut;
   final String channelId;
   final BridgeClient bridge;
   final VoidCallback onEdit;
 
-  const _ShortcutRow({
+  const _MacroRow({
     required this.shortcut,
     required this.channelId,
     required this.bridge,
@@ -920,7 +920,7 @@ class _ShortcutRow extends StatelessWidget {
           // Delete
           IconButton(
             icon: const Icon(Icons.delete_outline, size: 16, color: PatchTheme.textMuted),
-            onPressed: () => bridge.deleteShortcut(channelId: channelId, label: shortcut.label),
+            onPressed: () => bridge.deleteMacro(channelId: channelId, label: shortcut.label),
             tooltip: 'Delete',
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),

@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -44285217;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -2052681355;
 
 // Section: executor
 
@@ -121,6 +121,43 @@ fn wire__crate__api__delete_channel_impl(
         },
     )
 }
+fn wire__crate__api__delete_macro_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "delete_macro",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_channel_id = <String>::sse_decode(&mut deserializer);
+            let api_label = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || async move {
+                        let output_ok = crate::api::delete_macro(api_channel_id, api_label).await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__delete_session_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -151,44 +188,6 @@ fn wire__crate__api__delete_session_impl(
                         let output_ok = crate::api::delete_session(api_slug)?;
                         Ok(output_ok)
                     })(),
-                )
-            }
-        },
-    )
-}
-fn wire__crate__api__delete_shortcut_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "delete_shortcut",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_channel_id = <String>::sse_decode(&mut deserializer);
-            let api_label = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                    (move || async move {
-                        let output_ok =
-                            crate::api::delete_shortcut(api_channel_id, api_label).await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
                 )
             }
         },
@@ -961,7 +960,7 @@ fn wire__crate__api__set_interface_impl(
         },
     )
 }
-fn wire__crate__api__set_shortcuts_columns_impl(
+fn wire__crate__api__set_macros_columns_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -969,7 +968,7 @@ fn wire__crate__api__set_shortcuts_columns_impl(
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "set_shortcuts_columns",
+            debug_name: "set_macros_columns",
             port: Some(port_),
             mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
@@ -988,7 +987,7 @@ fn wire__crate__api__set_shortcuts_columns_impl(
             move |context| async move {
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                     (move || async move {
-                        let output_ok = crate::api::set_shortcuts_columns(api_columns).await?;
+                        let output_ok = crate::api::set_macros_columns(api_columns).await?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -1075,7 +1074,7 @@ fn wire__crate__api__upsert_channel_impl(
         },
     )
 }
-fn wire__crate__api__upsert_shortcut_impl(
+fn wire__crate__api__upsert_macro_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -1083,7 +1082,7 @@ fn wire__crate__api__upsert_shortcut_impl(
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "upsert_shortcut",
+            debug_name: "upsert_macro",
             port: Some(port_),
             mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
@@ -1106,7 +1105,7 @@ fn wire__crate__api__upsert_shortcut_impl(
             move |context| async move {
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                     (move || async move {
-                        let output_ok = crate::api::upsert_shortcut(
+                        let output_ok = crate::api::upsert_macro(
                             api_channel_id,
                             api_label,
                             api_payload,
@@ -1185,8 +1184,7 @@ impl SseDecode for crate::state::channel::Channel {
         let mut var_id = <String>::sse_decode(deserializer);
         let mut var_displayName = <String>::sse_decode(deserializer);
         let mut var_color = <String>::sse_decode(deserializer);
-        let mut var_shortcuts =
-            <Vec<crate::state::channel::ShortcutMessage>>::sse_decode(deserializer);
+        let mut var_macros = <Vec<crate::state::channel::MacroMessage>>::sse_decode(deserializer);
         let mut var_flashOnCritical = <bool>::sse_decode(deserializer);
         let mut var_flashOnMessage = <bool>::sse_decode(deserializer);
         let mut var_flashCount = <Option<u8>>::sse_decode(deserializer);
@@ -1194,7 +1192,7 @@ impl SseDecode for crate::state::channel::Channel {
             id: var_id,
             display_name: var_displayName,
             color: var_color,
-            shortcuts: var_shortcuts,
+            macros: var_macros,
             flash_on_critical: var_flashOnCritical,
             flash_on_message: var_flashOnMessage,
             flash_count: var_flashCount,
@@ -1226,7 +1224,7 @@ impl SseDecode for crate::api::ConfigSnapshot {
         let mut var_flashOnCritical = <bool>::sse_decode(deserializer);
         let mut var_flashOnMessage = <bool>::sse_decode(deserializer);
         let mut var_flashCount = <u8>::sse_decode(deserializer);
-        let mut var_shortcutsColumns = <u8>::sse_decode(deserializer);
+        let mut var_macrosColumns = <u8>::sse_decode(deserializer);
         return crate::api::ConfigSnapshot {
             client_name: var_clientName,
             osc_port: var_oscPort,
@@ -1235,7 +1233,7 @@ impl SseDecode for crate::api::ConfigSnapshot {
             flash_on_critical: var_flashOnCritical,
             flash_on_message: var_flashOnMessage,
             flash_count: var_flashCount,
-            shortcuts_columns: var_shortcutsColumns,
+            macros_columns: var_macrosColumns,
         };
     }
 }
@@ -1315,6 +1313,20 @@ impl SseDecode for Vec<crate::transport::InterfaceInfo> {
     }
 }
 
+impl SseDecode for Vec<crate::state::channel::MacroMessage> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::state::channel::MacroMessage>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::osc::types::PatchMessage> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1365,20 +1377,6 @@ impl SseDecode for Vec<crate::state::session::SessionMeta> {
     }
 }
 
-impl SseDecode for Vec<crate::state::channel::ShortcutMessage> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut len_ = <i32>::sse_decode(deserializer);
-        let mut ans_ = Vec::with_capacity(len_ as usize);
-        for idx_ in 0..len_ {
-            ans_.push(<crate::state::channel::ShortcutMessage>::sse_decode(
-                deserializer,
-            ));
-        }
-        return ans_;
-    }
-}
-
 impl SseDecode for Vec<crate::state::config::StaticPeer> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1388,6 +1386,22 @@ impl SseDecode for Vec<crate::state::config::StaticPeer> {
             ans_.push(<crate::state::config::StaticPeer>::sse_decode(deserializer));
         }
         return ans_;
+    }
+}
+
+impl SseDecode for crate::state::channel::MacroMessage {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_label = <String>::sse_decode(deserializer);
+        let mut var_payload = <String>::sse_decode(deserializer);
+        let mut var_keyBinding = <Option<String>>::sse_decode(deserializer);
+        let mut var_priority = <i32>::sse_decode(deserializer);
+        return crate::state::channel::MacroMessage {
+            label: var_label,
+            payload: var_payload,
+            key_binding: var_keyBinding,
+            priority: var_priority,
+        };
     }
 }
 
@@ -1591,22 +1605,6 @@ impl SseDecode for crate::api::SessionSaved {
     }
 }
 
-impl SseDecode for crate::state::channel::ShortcutMessage {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_label = <String>::sse_decode(deserializer);
-        let mut var_payload = <String>::sse_decode(deserializer);
-        let mut var_keyBinding = <Option<String>>::sse_decode(deserializer);
-        let mut var_priority = <i32>::sse_decode(deserializer);
-        return crate::state::channel::ShortcutMessage {
-            label: var_label,
-            payload: var_payload,
-            key_binding: var_keyBinding,
-            priority: var_priority,
-        };
-    }
-}
-
 impl SseDecode for crate::state::config::StaticPeer {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1665,8 +1663,8 @@ fn pde_ffi_dispatcher_primary_impl(
     match func_id {
         1 => wire__crate__api__add_static_peer_impl(port, ptr, rust_vec_len, data_len),
         2 => wire__crate__api__delete_channel_impl(port, ptr, rust_vec_len, data_len),
-        3 => wire__crate__api__delete_session_impl(port, ptr, rust_vec_len, data_len),
-        4 => wire__crate__api__delete_shortcut_impl(port, ptr, rust_vec_len, data_len),
+        3 => wire__crate__api__delete_macro_impl(port, ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__delete_session_impl(port, ptr, rust_vec_len, data_len),
         5 => wire__crate__api__export_layout_impl(port, ptr, rust_vec_len, data_len),
         6 => wire__crate__api__get_channels_impl(port, ptr, rust_vec_len, data_len),
         7 => wire__crate__api__get_config_impl(port, ptr, rust_vec_len, data_len),
@@ -1688,10 +1686,10 @@ fn pde_ffi_dispatcher_primary_impl(
         23 => wire__crate__api__set_flash_on_critical_impl(port, ptr, rust_vec_len, data_len),
         24 => wire__crate__api__set_flash_on_message_impl(port, ptr, rust_vec_len, data_len),
         25 => wire__crate__api__set_interface_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__set_shortcuts_columns_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__set_macros_columns_impl(port, ptr, rust_vec_len, data_len),
         27 => wire__crate__api__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
         28 => wire__crate__api__upsert_channel_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__upsert_shortcut_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__upsert_macro_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1717,7 +1715,7 @@ impl flutter_rust_bridge::IntoDart for crate::state::channel::Channel {
             self.id.into_into_dart().into_dart(),
             self.display_name.into_into_dart().into_dart(),
             self.color.into_into_dart().into_dart(),
-            self.shortcuts.into_into_dart().into_dart(),
+            self.macros.into_into_dart().into_dart(),
             self.flash_on_critical.into_into_dart().into_dart(),
             self.flash_on_message.into_into_dart().into_dart(),
             self.flash_count.into_into_dart().into_dart(),
@@ -1769,7 +1767,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::ConfigSnapshot {
             self.flash_on_critical.into_into_dart().into_dart(),
             self.flash_on_message.into_into_dart().into_dart(),
             self.flash_count.into_into_dart().into_dart(),
-            self.shortcuts_columns.into_into_dart().into_dart(),
+            self.macros_columns.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1820,6 +1818,29 @@ impl flutter_rust_bridge::IntoIntoDart<crate::transport::InterfaceInfo>
     for crate::transport::InterfaceInfo
 {
     fn into_into_dart(self) -> crate::transport::InterfaceInfo {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::state::channel::MacroMessage {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.label.into_into_dart().into_dart(),
+            self.payload.into_into_dart().into_dart(),
+            self.key_binding.into_into_dart().into_dart(),
+            self.priority.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::state::channel::MacroMessage
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::state::channel::MacroMessage>
+    for crate::state::channel::MacroMessage
+{
+    fn into_into_dart(self) -> crate::state::channel::MacroMessage {
         self
     }
 }
@@ -2014,29 +2035,6 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::SessionSaved> for crate::api:
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::state::channel::ShortcutMessage {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.label.into_into_dart().into_dart(),
-            self.payload.into_into_dart().into_dart(),
-            self.key_binding.into_into_dart().into_dart(),
-            self.priority.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::state::channel::ShortcutMessage
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::state::channel::ShortcutMessage>
-    for crate::state::channel::ShortcutMessage
-{
-    fn into_into_dart(self) -> crate::state::channel::ShortcutMessage {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::state::config::StaticPeer {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -2109,7 +2107,7 @@ impl SseEncode for crate::state::channel::Channel {
         <String>::sse_encode(self.id, serializer);
         <String>::sse_encode(self.display_name, serializer);
         <String>::sse_encode(self.color, serializer);
-        <Vec<crate::state::channel::ShortcutMessage>>::sse_encode(self.shortcuts, serializer);
+        <Vec<crate::state::channel::MacroMessage>>::sse_encode(self.macros, serializer);
         <bool>::sse_encode(self.flash_on_critical, serializer);
         <bool>::sse_encode(self.flash_on_message, serializer);
         <Option<u8>>::sse_encode(self.flash_count, serializer);
@@ -2135,7 +2133,7 @@ impl SseEncode for crate::api::ConfigSnapshot {
         <bool>::sse_encode(self.flash_on_critical, serializer);
         <bool>::sse_encode(self.flash_on_message, serializer);
         <u8>::sse_encode(self.flash_count, serializer);
-        <u8>::sse_encode(self.shortcuts_columns, serializer);
+        <u8>::sse_encode(self.macros_columns, serializer);
     }
 }
 
@@ -2208,6 +2206,16 @@ impl SseEncode for Vec<crate::transport::InterfaceInfo> {
     }
 }
 
+impl SseEncode for Vec<crate::state::channel::MacroMessage> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::state::channel::MacroMessage>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::osc::types::PatchMessage> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -2248,16 +2256,6 @@ impl SseEncode for Vec<crate::state::session::SessionMeta> {
     }
 }
 
-impl SseEncode for Vec<crate::state::channel::ShortcutMessage> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(self.len() as _, serializer);
-        for item in self {
-            <crate::state::channel::ShortcutMessage>::sse_encode(item, serializer);
-        }
-    }
-}
-
 impl SseEncode for Vec<crate::state::config::StaticPeer> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -2265,6 +2263,16 @@ impl SseEncode for Vec<crate::state::config::StaticPeer> {
         for item in self {
             <crate::state::config::StaticPeer>::sse_encode(item, serializer);
         }
+    }
+}
+
+impl SseEncode for crate::state::channel::MacroMessage {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.label, serializer);
+        <String>::sse_encode(self.payload, serializer);
+        <Option<String>>::sse_encode(self.key_binding, serializer);
+        <i32>::sse_encode(self.priority, serializer);
     }
 }
 
@@ -2422,16 +2430,6 @@ impl SseEncode for crate::api::SessionSaved {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.slug, serializer);
         <String>::sse_encode(self.name, serializer);
-    }
-}
-
-impl SseEncode for crate::state::channel::ShortcutMessage {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <String>::sse_encode(self.label, serializer);
-        <String>::sse_encode(self.payload, serializer);
-        <Option<String>>::sse_encode(self.key_binding, serializer);
-        <i32>::sse_encode(self.priority, serializer);
     }
 }
 

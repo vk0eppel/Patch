@@ -91,6 +91,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<InterfaceInfo> dco_decode_list_interface_info(dynamic raw);
 
   @protected
+  List<MacroMessage> dco_decode_list_macro_message(dynamic raw);
+
+  @protected
   List<PatchMessage> dco_decode_list_patch_message(dynamic raw);
 
   @protected
@@ -103,10 +106,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<SessionMeta> dco_decode_list_session_meta(dynamic raw);
 
   @protected
-  List<ShortcutMessage> dco_decode_list_shortcut_message(dynamic raw);
+  List<StaticPeer> dco_decode_list_static_peer(dynamic raw);
 
   @protected
-  List<StaticPeer> dco_decode_list_static_peer(dynamic raw);
+  MacroMessage dco_decode_macro_message(dynamic raw);
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
@@ -140,9 +143,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SessionSaved dco_decode_session_saved(dynamic raw);
-
-  @protected
-  ShortcutMessage dco_decode_shortcut_message(dynamic raw);
 
   @protected
   StaticPeer dco_decode_static_peer(dynamic raw);
@@ -236,6 +236,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<MacroMessage> sse_decode_list_macro_message(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<PatchMessage> sse_decode_list_patch_message(
     SseDeserializer deserializer,
   );
@@ -250,12 +255,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<SessionMeta> sse_decode_list_session_meta(SseDeserializer deserializer);
 
   @protected
-  List<ShortcutMessage> sse_decode_list_shortcut_message(
-    SseDeserializer deserializer,
-  );
+  List<StaticPeer> sse_decode_list_static_peer(SseDeserializer deserializer);
 
   @protected
-  List<StaticPeer> sse_decode_list_static_peer(SseDeserializer deserializer);
+  MacroMessage sse_decode_macro_message(SseDeserializer deserializer);
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
@@ -289,9 +292,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SessionSaved sse_decode_session_saved(SseDeserializer deserializer);
-
-  @protected
-  ShortcutMessage sse_decode_shortcut_message(SseDeserializer deserializer);
 
   @protected
   StaticPeer sse_decode_static_peer(SseDeserializer deserializer);
@@ -396,6 +396,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_macro_message(
+    List<MacroMessage> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_patch_message(
     List<PatchMessage> self,
     SseSerializer serializer,
@@ -417,16 +423,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_list_shortcut_message(
-    List<ShortcutMessage> self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_list_static_peer(
     List<StaticPeer> self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_macro_message(MacroMessage self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
@@ -460,12 +463,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_session_saved(SessionSaved self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_shortcut_message(
-    ShortcutMessage self,
-    SseSerializer serializer,
-  );
 
   @protected
   void sse_encode_static_peer(StaticPeer self, SseSerializer serializer);

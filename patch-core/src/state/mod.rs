@@ -121,9 +121,9 @@ impl AppState {
         cfg.save()
     }
 
-    pub async fn set_shortcuts_columns(&self, columns: u8) -> anyhow::Result<()> {
+    pub async fn set_macros_columns(&self, columns: u8) -> anyhow::Result<()> {
         let mut cfg = self.0.config.write().await;
-        cfg.shortcuts_columns = columns.clamp(1, 2);
+        cfg.macros_columns = columns.clamp(1, 2);
         cfg.save()
     }
 
@@ -286,7 +286,7 @@ impl AppState {
         peers
     }
 
-    // ── Channels & shortcuts ──────────────────────────────────────────────────
+    // ── Channels & macros ────────────────────────────────────────────────────
 
     pub async fn get_channels(&self) -> Vec<channel::Channel> {
         let mut channels: Vec<_> = self.0.channels.read().await.values().cloned().collect();
@@ -327,22 +327,22 @@ impl AppState {
         Ok(())
     }
 
-    /// Add or replace a shortcut on a channel (matched by label).
-    pub async fn upsert_shortcut(
+    /// Add or replace a macro on a channel (matched by label).
+    pub async fn upsert_macro(
         &self,
         channel_id: &str,
-        shortcut: channel::ShortcutMessage,
+        macro_msg: channel::MacroMessage,
     ) -> anyhow::Result<()> {
         {
             let mut channels = self.0.channels.write().await;
             let ch = channels
                 .get_mut(channel_id)
                 .ok_or_else(|| anyhow::anyhow!("Channel '{}' not found", channel_id))?;
-            // Replace existing shortcut with same label, or append.
-            if let Some(pos) = ch.shortcuts.iter().position(|s| s.label == shortcut.label) {
-                ch.shortcuts[pos] = shortcut;
+            // Replace existing macro with same label, or append.
+            if let Some(pos) = ch.macros.iter().position(|s| s.label == macro_msg.label) {
+                ch.macros[pos] = macro_msg;
             } else {
-                ch.shortcuts.push(shortcut);
+                ch.macros.push(macro_msg);
             }
         }
         self.persist_channels().await?;
@@ -350,8 +350,8 @@ impl AppState {
         Ok(())
     }
 
-    /// Remove a shortcut from a channel by label.
-    pub async fn delete_shortcut(
+    /// Remove a macro from a channel by label.
+    pub async fn delete_macro(
         &self,
         channel_id: &str,
         label: &str,
@@ -361,14 +361,14 @@ impl AppState {
             let ch = channels
                 .get_mut(channel_id)
                 .ok_or_else(|| anyhow::anyhow!("Channel '{}' not found", channel_id))?;
-            ch.shortcuts.retain(|s| s.label != label);
+            ch.macros.retain(|s| s.label != label);
         }
         self.persist_channels().await?;
         self.publish(AppEvent::ChannelListUpdated).await;
         Ok(())
     }
 
-    /// Write current channel shortcuts back to patch.toml.
+    /// Write current channel macros back to patch.toml.
     async fn persist_channels(&self) -> anyhow::Result<()> {
         let channels: Vec<_> = self.0.channels.read().await.values().cloned().collect();
         let mut cfg = self.0.config.write().await;

@@ -171,7 +171,7 @@ class BridgeClient {
           'flash_on_critical': cfg.flashOnCritical,
           'flash_on_message': cfg.flashOnMessage,
           'flash_count': cfg.flashCount,
-          'shortcuts_columns': cfg.shortcutsColumns,
+          'macros_columns': cfg.macrosColumns,
         },
       });
     } catch (e) {
@@ -235,7 +235,7 @@ class BridgeClient {
     }
   }
 
-  Future<void> upsertShortcut({
+  Future<void> upsertMacro({
     required String channelId,
     required String label,
     required String payload,
@@ -243,7 +243,7 @@ class BridgeClient {
     int priority = 1,
   }) async {
     try {
-      await rust.upsertShortcut(
+      await rust.upsertMacro(
         channelId: channelId,
         label: label,
         payload: payload,
@@ -255,12 +255,12 @@ class BridgeClient {
     }
   }
 
-  Future<void> deleteShortcut({
+  Future<void> deleteMacro({
     required String channelId,
     required String label,
   }) async {
     try {
-      await rust.deleteShortcut(channelId: channelId, label: label);
+      await rust.deleteMacro(channelId: channelId, label: label);
     } catch (e) {
       _emitError(e);
     }
@@ -374,9 +374,9 @@ class BridgeClient {
     }
   }
 
-  Future<void> setShortcutsColumns(int columns) async {
+  Future<void> setMacrosColumns(int columns) async {
     try {
-      await rust.setShortcutsColumns(columns: columns);
+      await rust.setMacrosColumns(columns: columns);
       await getConfig();
     } catch (e) {
       _emitError(e);
@@ -420,13 +420,13 @@ Map<String, dynamic> _channelToMap(rust_channel.Channel c) => {
       'id': c.id,
       'display_name': c.displayName,
       'color': c.color,
-      'shortcuts': c.shortcuts.map(_shortcutToMap).toList(),
+      'macros': c.macros.map(_macroToMap).toList(),
       'flash_on_critical': c.flashOnCritical,
       'flash_on_message': c.flashOnMessage,
       'flash_count': c.flashCount,
     };
 
-Map<String, dynamic> _shortcutToMap(rust_channel.ShortcutMessage s) => {
+Map<String, dynamic> _macroToMap(rust_channel.MacroMessage s) => {
       'label': s.label,
       'payload': s.payload,
       'key_binding': s.keyBinding,

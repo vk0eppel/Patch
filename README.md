@@ -147,7 +147,7 @@ network_interface = "en0"      # Omit to bind all interfaces
 flash_on_critical = true       # Auto-flash on priority-3 messages (Settings → Behavior)
 flash_on_message = false       # Auto-flash on every message (Settings → Behavior)
 flash_count = 4                # Flash pulse count per event, 1–10 (Settings → Behavior)
-shortcuts_columns = 1          # Macros panel column count, 1–2 (toggle in panel header)
+macros_columns = 1             # Macros panel column count, 1–2 (toggle in panel header)
 
 heartbeat_interval_secs = 7
 peer_timeout_secs = 30

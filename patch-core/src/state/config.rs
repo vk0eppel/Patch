@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use uuid::Uuid;
 
-use super::channel::{Channel, ShortcutMessage};
+use super::channel::{Channel, MacroMessage};
 
 // ── Data directory resolution ────────────────────────────────────────────────
 //
@@ -66,9 +66,9 @@ pub struct Config {
     /// Number of flash pulses per flash event (1–10).
     #[serde(default = "default_four")]
     pub flash_count: u8,
-    /// Number of columns in the shortcuts panel (1–2).
+    /// Number of columns in the macros panel (1–2).
     #[serde(default = "default_one")]
-    pub shortcuts_columns: u8,
+    pub macros_columns: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,7 +92,7 @@ impl Default for Config {
             flash_on_critical: true,
             flash_on_message: false,
             flash_count: 4,
-            shortcuts_columns: 1,
+            macros_columns: 1,
         }
     }
 }
@@ -160,17 +160,17 @@ pub fn default_channels() -> Vec<Channel> {
         let mut ch = Channel::new(*id, *name, *color);
         match *id {
             "audio" => {
-                ch.shortcuts = vec![
-                    ShortcutMessage { label: "YES".into(),          payload: "Yes".into(),          key_binding: Some("F1".into()), priority: 1 },
-                    ShortcutMessage { label: "NO".into(),           payload: "No".into(),           key_binding: Some("F2".into()), priority: 1 },
-                    ShortcutMessage { label: "PROBLEM W/".into(),   payload: "Problem with:".into(),key_binding: Some("F3".into()), priority: 3 },
+                ch.macros = vec![
+                    MacroMessage { label: "YES".into(),          payload: "Yes".into(),          key_binding: Some("F1".into()), priority: 1 },
+                    MacroMessage { label: "NO".into(),           payload: "No".into(),           key_binding: Some("F2".into()), priority: 1 },
+                    MacroMessage { label: "PROBLEM W/".into(),   payload: "Problem with:".into(),key_binding: Some("F3".into()), priority: 3 },
                 ];
             }
             "rf" => {
-                ch.shortcuts = vec![
-                    ShortcutMessage { label: "CLEAR".into(),       payload: "Channel clear".into(),          key_binding: Some("F1".into()), priority: 1 },
-                    ShortcutMessage { label: "HOLD".into(),        payload: "HOLD — do not transmit".into(), key_binding: Some("F2".into()), priority: 2 },
-                    ShortcutMessage { label: "LOW BATT".into(),    payload: "Battery low — swap now".into(), key_binding: Some("F3".into()), priority: 3 },
+                ch.macros = vec![
+                    MacroMessage { label: "CLEAR".into(),       payload: "Channel clear".into(),          key_binding: Some("F1".into()), priority: 1 },
+                    MacroMessage { label: "HOLD".into(),        payload: "HOLD — do not transmit".into(), key_binding: Some("F2".into()), priority: 2 },
+                    MacroMessage { label: "LOW BATT".into(),    payload: "Battery low — swap now".into(), key_binding: Some("F3".into()), priority: 3 },
                 ];
             }
             _ => {}

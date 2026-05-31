@@ -136,7 +136,7 @@ Shows old channels (`foh`, `mon`, `video`, `rf`) instead of the current defaults
 - Hoist to `static final` constants at the class level (e.g. `static final _slugRegex = RegExp(r'[^a-z0-9-]+')`)
 
 ### ~~`width: 220` peers panel hardcoded~~ ✅ Done
-Now `static const double _kPeersPanelWidth = 160.0` and `static const double _kShortcutColumnWidth = 160.0` in `home_screen.dart`. Shortcuts panel width scales as `_kShortcutColumnWidth * _shortcutsColumns`.
+Now `static const double _kPeersPanelWidth = 160.0` and `static const double _kMacroColumnWidth = 160.0` in `home_screen.dart`. Macros panel width scales as `_kMacroColumnWidth * _macrosColumns`.
 
 ### Hardcoded channel-strip width
 **File:** `patch_app/lib/screens/home_screen.dart` — `_ChannelStrip.build()`
@@ -152,7 +152,7 @@ Comment says "Shift+Enter inserts a newline (future use)" but `maxLines: 1` make
 this impossible as written. Either remove the comment or implement multi-line input.
 
 ### Macros panel header may overflow in 1-column mode
-**File:** `patch_app/lib/widgets/shortcuts_panel.dart` — header `Container`
+**File:** `patch_app/lib/widgets/macros_panel.dart` — header `Container`
 **Effort:** trivial
 
 The header `Row` contains `Text('MACROS')` (~50 px at 12 px + letterSpacing 1.5),
@@ -219,7 +219,7 @@ Infrastructure is mostly in place — `rosc` already encodes/sends OSC; the tran
 socket is available; the macro editor UI is already extensible.
 
 Implementation steps:
-- Add optional fields to `ShortcutMessage` in `channel.rs`: `osc_address: Option<String>`, `osc_port: Option<u16>`, `osc_path: Option<String>`, `osc_arg: Option<String>` (single string arg covers ~80% of QLab use cases; typed arg list can come later)
+- Add optional fields to `MacroMessage` in `channel.rs`: `osc_address: Option<String>`, `osc_port: Option<u16>`, `osc_path: Option<String>`, `osc_arg: Option<String>` (single string arg covers ~80% of QLab use cases; typed arg list can come later)
 - Add `send_osc_macro(address, port, path, arg: Option<String>)` to `api.rs`; encode via `rosc` and send a raw UDP packet via the existing transport socket
 - Regenerate FRB bindings; add `sendOscMacro()` to `bridge_client.dart`
 - Extend the macro editor in `settings_screen.dart` with an expandable "OSC Target" section (IP field, port field, OSC path field, optional arg field); show only when enabled via a toggle
@@ -251,7 +251,7 @@ Must not compromise the local-first, single-binary design for LAN deployments.
 Bind a shortcut to a MIDI Note On or CC event so a pad, keyboard, or MIDI
 footswitch can fire it without touching the screen or keyboard.
 
-- Add `midi_note: Option<u8>` and `midi_cc: Option<u8>` to `ShortcutMessage` in
+- Add `midi_note: Option<u8>` and `midi_cc: Option<u8>` to `MacroMessage` in
   `patch-core/src/state/channel.rs` (both `#[serde(default)]` — no migration needed)
 - Add `midir` crate to `patch-core/Cargo.toml` (CoreMIDI on macOS/iOS, WinMM on Windows, ALSA on Linux)
 - New `patch-core/src/midi/mod.rs`: `spawn_blocking` listener; on Note On or CC, iterate all channel shortcuts and fire matches via the existing `send_message` path
@@ -345,7 +345,7 @@ Contextual help for crew members who won't read external docs. Target areas:
 ## ✅ Verified — No Action Needed
 
 - All Cargo + pubspec dependencies are current; lockfile is consistent.
-- FRB generated bindings are up to date (last regenerated 2026-05-28; `shortcuts_columns` added to `ConfigSnapshot`).
+- FRB generated bindings are up to date (last regenerated 2026-06-01; renamed `shortcuts_columns` → `macros_columns`, `ShortcutMessage` → `MacroMessage`).
 - `analysis_options.yaml` correctly excludes `lib/src/rust/**` and `cargokit/**`.
 - Flash animation uses timer-based `setState` (not `AnimationController`) — intentional, per CLAUDE.md.
 - Self-discovery is filtered in two places (`discovery/mod.rs` + `transport/mod.rs`) — both guards are required.

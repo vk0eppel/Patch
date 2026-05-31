@@ -11,8 +11,8 @@ pub struct Channel {
     pub display_name: String,
     /// Hex colour for UI differentiation (e.g. "#E53935").
     pub color: String,
-    /// Pre-configured shortcut messages for this channel.
-    pub shortcuts: Vec<ShortcutMessage>,
+    /// Pre-configured macro messages for this channel.
+    pub macros: Vec<MacroMessage>,
     /// Flash this channel's message box when a critical (priority 3) message arrives.
     #[serde(default = "default_true")]
     pub flash_on_critical: bool,
@@ -30,7 +30,7 @@ impl Channel {
             id: id.into(),
             display_name: display_name.into(),
             color: color.into(),
-            shortcuts: Vec::new(),
+            macros: Vec::new(),
             flash_on_critical: true,
             flash_on_message: false,
             flash_count: None,
@@ -38,14 +38,14 @@ impl Channel {
     }
 }
 
-/// A one-tap/keyboard shortcut message.
+/// A one-tap/keyboard macro message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ShortcutMessage {
+pub struct MacroMessage {
     /// Short label shown on the button (e.g. "HOLD", "CLEAR", "BACK IN 5").
     pub label: String,
     /// The message text that will be sent.
     pub payload: String,
-    /// Optional keyboard shortcut (e.g. "F1", "ctrl+1").
+    /// Optional key binding (e.g. "F1", "ctrl+1").
     pub key_binding: Option<String>,
     /// Priority override — defaults to Info.
     pub priority: i32,

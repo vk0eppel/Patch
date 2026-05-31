@@ -17,8 +17,8 @@ class Channel {
   /// Hex colour for UI differentiation (e.g. "#E53935").
   final String color;
 
-  /// Pre-configured shortcut messages for this channel.
-  final List<ShortcutMessage> shortcuts;
+  /// Pre-configured macro messages for this channel.
+  final List<MacroMessage> macros;
 
   /// Flash this channel's message box when a critical (priority 3) message arrives.
   final bool flashOnCritical;
@@ -33,7 +33,7 @@ class Channel {
     required this.id,
     required this.displayName,
     required this.color,
-    required this.shortcuts,
+    required this.macros,
     required this.flashOnCritical,
     required this.flashOnMessage,
     this.flashCount,
@@ -44,7 +44,7 @@ class Channel {
       id.hashCode ^
       displayName.hashCode ^
       color.hashCode ^
-      shortcuts.hashCode ^
+      macros.hashCode ^
       flashOnCritical.hashCode ^
       flashOnMessage.hashCode ^
       flashCount.hashCode;
@@ -57,27 +57,27 @@ class Channel {
           id == other.id &&
           displayName == other.displayName &&
           color == other.color &&
-          shortcuts == other.shortcuts &&
+          macros == other.macros &&
           flashOnCritical == other.flashOnCritical &&
           flashOnMessage == other.flashOnMessage &&
           flashCount == other.flashCount;
 }
 
-/// A one-tap/keyboard shortcut message.
-class ShortcutMessage {
+/// A one-tap/keyboard macro message.
+class MacroMessage {
   /// Short label shown on the button (e.g. "HOLD", "CLEAR", "BACK IN 5").
   final String label;
 
   /// The message text that will be sent.
   final String payload;
 
-  /// Optional keyboard shortcut (e.g. "F1", "ctrl+1").
+  /// Optional key binding (e.g. "F1", "ctrl+1").
   final String? keyBinding;
 
   /// Priority override — defaults to Info.
   final int priority;
 
-  const ShortcutMessage({
+  const MacroMessage({
     required this.label,
     required this.payload,
     this.keyBinding,
@@ -94,7 +94,7 @@ class ShortcutMessage {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is ShortcutMessage &&
+      other is MacroMessage &&
           runtimeType == other.runtimeType &&
           label == other.label &&
           payload == other.payload &&

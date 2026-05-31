@@ -71,7 +71,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -44285217;
+  int get rustContentHash => -2052681355;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -91,12 +91,12 @@ abstract class RustLibApi extends BaseApi {
 
   Future<void> crateApiDeleteChannel({required String id});
 
-  Future<void> crateApiDeleteSession({required String slug});
-
-  Future<void> crateApiDeleteShortcut({
+  Future<void> crateApiDeleteMacro({
     required String channelId,
     required String label,
   });
+
+  Future<void> crateApiDeleteSession({required String slug});
 
   Future<void> crateApiExportLayout({
     required String path,
@@ -158,7 +158,7 @@ abstract class RustLibApi extends BaseApi {
 
   Future<void> crateApiSetInterface({String? name});
 
-  Future<void> crateApiSetShortcutsColumns({required int columns});
+  Future<void> crateApiSetMacrosColumns({required int columns});
 
   Stream<PatchAppEvent> crateApiSubscribeEvents();
 
@@ -168,7 +168,7 @@ abstract class RustLibApi extends BaseApi {
     String? color,
   });
 
-  Future<void> crateApiUpsertShortcut({
+  Future<void> crateApiUpsertMacro({
     required String channelId,
     required String label,
     required String payload,
@@ -250,6 +250,40 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "delete_channel", argNames: ["id"]);
 
   @override
+  Future<void> crateApiDeleteMacro({
+    required String channelId,
+    required String label,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(channelId, serializer);
+          sse_encode_String(label, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 3,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiDeleteMacroConstMeta,
+        argValues: [channelId, label],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiDeleteMacroConstMeta => const TaskConstMeta(
+    debugName: "delete_macro",
+    argNames: ["channelId", "label"],
+  );
+
+  @override
   Future<void> crateApiDeleteSession({required String slug}) {
     return handler.executeNormal(
       NormalTask(
@@ -259,7 +293,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 3,
+            funcId: 4,
             port: port_,
           );
         },
@@ -276,40 +310,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiDeleteSessionConstMeta =>
       const TaskConstMeta(debugName: "delete_session", argNames: ["slug"]);
-
-  @override
-  Future<void> crateApiDeleteShortcut({
-    required String channelId,
-    required String label,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(channelId, serializer);
-          sse_encode_String(label, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 4,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiDeleteShortcutConstMeta,
-        argValues: [channelId, label],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiDeleteShortcutConstMeta => const TaskConstMeta(
-    debugName: "delete_shortcut",
-    argNames: ["channelId", "label"],
-  );
 
   @override
   Future<void> crateApiExportLayout({
@@ -934,7 +934,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "set_interface", argNames: ["name"]);
 
   @override
-  Future<void> crateApiSetShortcutsColumns({required int columns}) {
+  Future<void> crateApiSetMacrosColumns({required int columns}) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
@@ -951,18 +951,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeSuccessData: sse_decode_unit,
           decodeErrorData: sse_decode_AnyhowException,
         ),
-        constMeta: kCrateApiSetShortcutsColumnsConstMeta,
+        constMeta: kCrateApiSetMacrosColumnsConstMeta,
         argValues: [columns],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiSetShortcutsColumnsConstMeta =>
-      const TaskConstMeta(
-        debugName: "set_shortcuts_columns",
-        argNames: ["columns"],
-      );
+  TaskConstMeta get kCrateApiSetMacrosColumnsConstMeta => const TaskConstMeta(
+    debugName: "set_macros_columns",
+    argNames: ["columns"],
+  );
 
   @override
   Stream<PatchAppEvent> crateApiSubscribeEvents() {
@@ -1033,7 +1032,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
-  Future<void> crateApiUpsertShortcut({
+  Future<void> crateApiUpsertMacro({
     required String channelId,
     required String label,
     required String payload,
@@ -1060,15 +1059,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeSuccessData: sse_decode_unit,
           decodeErrorData: sse_decode_AnyhowException,
         ),
-        constMeta: kCrateApiUpsertShortcutConstMeta,
+        constMeta: kCrateApiUpsertMacroConstMeta,
         argValues: [channelId, label, payload, priority, keyBinding],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiUpsertShortcutConstMeta => const TaskConstMeta(
-    debugName: "upsert_shortcut",
+  TaskConstMeta get kCrateApiUpsertMacroConstMeta => const TaskConstMeta(
+    debugName: "upsert_macro",
     argNames: ["channelId", "label", "payload", "priority", "keyBinding"],
   );
 
@@ -1150,7 +1149,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       id: dco_decode_String(arr[0]),
       displayName: dco_decode_String(arr[1]),
       color: dco_decode_String(arr[2]),
-      shortcuts: dco_decode_list_shortcut_message(arr[3]),
+      macros: dco_decode_list_macro_message(arr[3]),
       flashOnCritical: dco_decode_bool(arr[4]),
       flashOnMessage: dco_decode_bool(arr[5]),
       flashCount: dco_decode_opt_box_autoadd_u_8(arr[6]),
@@ -1184,7 +1183,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       flashOnCritical: dco_decode_bool(arr[4]),
       flashOnMessage: dco_decode_bool(arr[5]),
       flashCount: dco_decode_u_8(arr[6]),
-      shortcutsColumns: dco_decode_u_8(arr[7]),
+      macrosColumns: dco_decode_u_8(arr[7]),
     );
   }
 
@@ -1237,6 +1236,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<MacroMessage> dco_decode_list_macro_message(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_macro_message).toList();
+  }
+
+  @protected
   List<PatchMessage> dco_decode_list_patch_message(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_patch_message).toList();
@@ -1261,15 +1266,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  List<ShortcutMessage> dco_decode_list_shortcut_message(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return (raw as List<dynamic>).map(dco_decode_shortcut_message).toList();
-  }
-
-  @protected
   List<StaticPeer> dco_decode_list_static_peer(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_static_peer).toList();
+  }
+
+  @protected
+  MacroMessage dco_decode_macro_message(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return MacroMessage(
+      label: dco_decode_String(arr[0]),
+      payload: dco_decode_String(arr[1]),
+      keyBinding: dco_decode_opt_String(arr[2]),
+      priority: dco_decode_i_32(arr[3]),
+    );
   }
 
   @protected
@@ -1420,20 +1433,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  ShortcutMessage dco_decode_shortcut_message(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
-    return ShortcutMessage(
-      label: dco_decode_String(arr[0]),
-      payload: dco_decode_String(arr[1]),
-      keyBinding: dco_decode_opt_String(arr[2]),
-      priority: dco_decode_i_32(arr[3]),
-    );
-  }
-
-  @protected
   StaticPeer dco_decode_static_peer(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -1560,7 +1559,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_id = sse_decode_String(deserializer);
     var var_displayName = sse_decode_String(deserializer);
     var var_color = sse_decode_String(deserializer);
-    var var_shortcuts = sse_decode_list_shortcut_message(deserializer);
+    var var_macros = sse_decode_list_macro_message(deserializer);
     var var_flashOnCritical = sse_decode_bool(deserializer);
     var var_flashOnMessage = sse_decode_bool(deserializer);
     var var_flashCount = sse_decode_opt_box_autoadd_u_8(deserializer);
@@ -1568,7 +1567,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       id: var_id,
       displayName: var_displayName,
       color: var_color,
-      shortcuts: var_shortcuts,
+      macros: var_macros,
       flashOnCritical: var_flashOnCritical,
       flashOnMessage: var_flashOnMessage,
       flashCount: var_flashCount,
@@ -1598,7 +1597,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_flashOnCritical = sse_decode_bool(deserializer);
     var var_flashOnMessage = sse_decode_bool(deserializer);
     var var_flashCount = sse_decode_u_8(deserializer);
-    var var_shortcutsColumns = sse_decode_u_8(deserializer);
+    var var_macrosColumns = sse_decode_u_8(deserializer);
     return ConfigSnapshot(
       clientName: var_clientName,
       oscPort: var_oscPort,
@@ -1607,7 +1606,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       flashOnCritical: var_flashOnCritical,
       flashOnMessage: var_flashOnMessage,
       flashCount: var_flashCount,
-      shortcutsColumns: var_shortcutsColumns,
+      macrosColumns: var_macrosColumns,
     );
   }
 
@@ -1677,6 +1676,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<MacroMessage> sse_decode_list_macro_message(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <MacroMessage>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_macro_message(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<PatchMessage> sse_decode_list_patch_message(
     SseDeserializer deserializer,
   ) {
@@ -1722,20 +1735,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  List<ShortcutMessage> sse_decode_list_shortcut_message(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    var len_ = sse_decode_i_32(deserializer);
-    var ans_ = <ShortcutMessage>[];
-    for (var idx_ = 0; idx_ < len_; ++idx_) {
-      ans_.add(sse_decode_shortcut_message(deserializer));
-    }
-    return ans_;
-  }
-
-  @protected
   List<StaticPeer> sse_decode_list_static_peer(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -1745,6 +1744,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       ans_.add(sse_decode_static_peer(deserializer));
     }
     return ans_;
+  }
+
+  @protected
+  MacroMessage sse_decode_macro_message(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_label = sse_decode_String(deserializer);
+    var var_payload = sse_decode_String(deserializer);
+    var var_keyBinding = sse_decode_opt_String(deserializer);
+    var var_priority = sse_decode_i_32(deserializer);
+    return MacroMessage(
+      label: var_label,
+      payload: var_payload,
+      keyBinding: var_keyBinding,
+      priority: var_priority,
+    );
   }
 
   @protected
@@ -1919,21 +1933,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  ShortcutMessage sse_decode_shortcut_message(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_label = sse_decode_String(deserializer);
-    var var_payload = sse_decode_String(deserializer);
-    var var_keyBinding = sse_decode_opt_String(deserializer);
-    var var_priority = sse_decode_i_32(deserializer);
-    return ShortcutMessage(
-      label: var_label,
-      payload: var_payload,
-      keyBinding: var_keyBinding,
-      priority: var_priority,
-    );
-  }
-
-  @protected
   StaticPeer sse_decode_static_peer(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_address = sse_decode_String(deserializer);
@@ -2069,7 +2068,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.id, serializer);
     sse_encode_String(self.displayName, serializer);
     sse_encode_String(self.color, serializer);
-    sse_encode_list_shortcut_message(self.shortcuts, serializer);
+    sse_encode_list_macro_message(self.macros, serializer);
     sse_encode_bool(self.flashOnCritical, serializer);
     sse_encode_bool(self.flashOnMessage, serializer);
     sse_encode_opt_box_autoadd_u_8(self.flashCount, serializer);
@@ -2096,7 +2095,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.flashOnCritical, serializer);
     sse_encode_bool(self.flashOnMessage, serializer);
     sse_encode_u_8(self.flashCount, serializer);
-    sse_encode_u_8(self.shortcutsColumns, serializer);
+    sse_encode_u_8(self.macrosColumns, serializer);
   }
 
   @protected
@@ -2155,6 +2154,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_macro_message(
+    List<MacroMessage> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_macro_message(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_patch_message(
     List<PatchMessage> self,
     SseSerializer serializer,
@@ -2198,18 +2209,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_list_shortcut_message(
-    List<ShortcutMessage> self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.length, serializer);
-    for (final item in self) {
-      sse_encode_shortcut_message(item, serializer);
-    }
-  }
-
-  @protected
   void sse_encode_list_static_peer(
     List<StaticPeer> self,
     SseSerializer serializer,
@@ -2219,6 +2218,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     for (final item in self) {
       sse_encode_static_peer(item, serializer);
     }
+  }
+
+  @protected
+  void sse_encode_macro_message(MacroMessage self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.label, serializer);
+    sse_encode_String(self.payload, serializer);
+    sse_encode_opt_String(self.keyBinding, serializer);
+    sse_encode_i_32(self.priority, serializer);
   }
 
   @protected
@@ -2349,18 +2357,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.slug, serializer);
     sse_encode_String(self.name, serializer);
-  }
-
-  @protected
-  void sse_encode_shortcut_message(
-    ShortcutMessage self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(self.label, serializer);
-    sse_encode_String(self.payload, serializer);
-    sse_encode_opt_String(self.keyBinding, serializer);
-    sse_encode_i_32(self.priority, serializer);
   }
 
   @protected
