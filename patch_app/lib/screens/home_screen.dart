@@ -591,11 +591,11 @@ class _ChannelView extends StatelessWidget {
               const SizedBox(width: 8),
               IconButton(
                 icon: Icon(
-                  Icons.bolt,
+                  Icons.keyboard_outlined,
                   color: showShortcuts ? PatchTheme.accent : PatchTheme.textMuted,
                   size: 20,
                 ),
-                tooltip: showShortcuts ? 'Hide shortcuts' : 'Show shortcuts',
+                tooltip: showShortcuts ? 'Hide macros' : 'Show macros',
                 onPressed: onToggleShortcuts,
               ),
               IconButton(

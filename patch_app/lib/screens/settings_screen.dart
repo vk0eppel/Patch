@@ -116,7 +116,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (_) => AlertDialog(
         title: Text('Delete ${channel.displayName}?'),
         content: const Text(
-          'This will remove the channel and all its shortcuts. This cannot be undone.',
+          'This will remove the channel and all its macros. This cannot be undone.',
           style: TextStyle(color: PatchTheme.textSecondary),
         ),
         actions: [
@@ -387,7 +387,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // ── Channels & shortcuts ─────────────────────────────────────────
           Row(
             children: [
-              Expanded(child: _SectionHeader('Channels & Shortcuts')),
+              Expanded(child: _SectionHeader('Channels & Macros')),
               TextButton.icon(
                 icon: const Icon(Icons.add, size: 16),
                 label: const Text('New channel'),
@@ -398,14 +398,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   existingIds: _channels.map((c) => c.id).toSet(),
                 ),
               ),
-              _resetButton('Channels & Shortcuts', () {
+              _resetButton('Channels & Macros', () {
                 widget.bridge.resetChannels();
               }),
             ],
           ),
           const SizedBox(height: 4),
           const Text(
-            'Edit a channel\'s name and colour, manage its one-tap shortcuts, or create a new channel.',
+            'Edit a channel\'s name and colour, manage its one-tap macros, or create a new channel.',
             style: TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeSmall),
           ),
           const SizedBox(height: 16),
@@ -646,7 +646,7 @@ class _ChannelShortcutEditor extends StatelessWidget {
             const Padding(
               padding: EdgeInsets.all(14),
               child: Text(
-                'No shortcuts yet',
+                'No macros yet',
                 style: TextStyle(color: PatchTheme.textMuted, fontSize: PatchTheme.fontSizeSmall),
               ),
             )
@@ -753,7 +753,7 @@ class _ChannelShortcutEditor extends StatelessWidget {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: Text(existing == null ? 'New Shortcut' : 'Edit Shortcut'),
+          title: Text(existing == null ? 'New Macro' : 'Edit Macro'),
           content: SizedBox(
             width: double.infinity,
             child: Column(

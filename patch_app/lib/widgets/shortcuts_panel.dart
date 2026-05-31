@@ -60,7 +60,7 @@ class ShortcutsPanel extends StatelessWidget {
             child: Row(
               children: [
                 const Text(
-                  'SHORTCUTS',
+                  'MACROS',
                   style: TextStyle(
                     color: PatchTheme.textSecondary,
                     fontSize: PatchTheme.fontSizeSmall,
@@ -79,7 +79,7 @@ class ShortcutsPanel extends StatelessWidget {
             const Expanded(
               child: Center(
                 child: Text(
-                  'No shortcuts',
+                  'No macros',
                   style: TextStyle(color: PatchTheme.textMuted),
                 ),
               ),
