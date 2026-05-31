@@ -92,7 +92,7 @@ patch/
         │   └── patch_theme.dart     # Dark palette, typography, component themes
         ├── screens/
         │   ├── home_screen.dart     # Channel strip + multi-channel view + peers panel + flash layer
-        │   └── settings_screen.dart # Identity, NIC picker, behavior, channels & shortcuts
+        │   └── settings_screen.dart # Identity, NIC picker, behavior, channels & macros
         └── widgets/
             ├── channel_tab.dart     # Sidebar tab with color dot
             ├── flash_button.dart    # Animated FLASH/page button
@@ -228,10 +228,10 @@ Each channel has:
 
 Channels can be created and deleted at runtime. Changes are persisted to `patch.toml` immediately.
 
-### Shortcut messages
-Per-channel shortcut buttons appear in a **vertical side panel** on the right side of the message area (toggled with the ⚡ icon in the `_ChannelView` header). The panel shows all shortcuts simultaneously with no scroll — buttons share the panel height equally. Users configure 1 or 2 columns (`shortcuts_columns` in `patch.toml`, toggled in the panel header with [1][2] buttons); each column is 160 px wide so the panel grows from 160 px to 320 px when switching to 2 columns. The panel is implemented in `shortcuts_panel.dart`, which also exports the `ChannelShortcut` type used by `home_screen.dart`.
-Each shortcut has a `label`, `payload`, optional `key_binding` (e.g. `"F1"`), and `priority`.
-Shortcuts can be created, edited, and deleted in the settings screen.
+### Macros (ShortcutMessage)
+Per-channel macro buttons appear in a **vertical side panel** on the right side of the message area (toggled with the keyboard icon in the `_ChannelView` header). The panel shows all macros simultaneously with no scroll — buttons share the panel height equally. Users configure 1 or 2 columns (`shortcuts_columns` in `patch.toml`, toggled in the panel header with [1][2] buttons); each column is 160 px wide so the panel grows from 160 px to 320 px when switching to 2 columns. The panel is implemented in `shortcuts_panel.dart`, which also exports the `ChannelShortcut` type used by `home_screen.dart`.
+Each macro has a `label`, `payload`, optional `key_binding` (e.g. `"F1"`), and `priority`.
+Macros can be created, edited, and deleted in the Settings screen (Channels & Macros section).
 
 ---
 
@@ -401,15 +401,15 @@ Patch UI is designed for live environments:
 - large `HH:MM:SS` timestamps on every message
 - channel color-coded throughout
 - critical messages visually distinct (red left border + background tint)
-- keyboard-first on desktop (Enter to send, F1–F12 fire bound shortcuts from any focus state)
+- keyboard-first on desktop (Enter to send, F1–F12 fire bound macros from any focus state)
 - touch-first on iPad
 - **multi-channel view**: tap to select exclusively, long-press to toggle into multi-select; combined feed sorted by timestamp; channel colour dot on each message row
 - **flash**: channel tab pulses N× scale animation (default 4, configurable 1–10); message box border + background tint pulses N× in the channel colour (`_FlashLayer` inside `_ChannelView` Stack, receives `pulseCount`); triggers determined by OR of global + per-channel flags
 - **NIC picker**: Settings → Network Interface; dropdown shows only real NICs (loopback, virtual/tunnel, and link-local IPv6 interfaces filtered out); "Auto" binds all; change persists to `patch.toml`, takes effect on next restart
 - **Behavior settings**: Settings → Behavior — global flash defaults ("Flash on every message", "Flash on critical messages", "Flash pulses" 1–5 segmented picker); Settings → channel editor footer — per-channel overrides for the same flags (either global or channel flag being on is sufficient to trigger; "–" in the pulse picker = use global)
-- **reset to defaults**: each Settings section has a `↺` icon button that shows a confirm dialog then restores factory defaults for that section only — Identity resets name to system username (`Platform.environment['USER']`); Behavior resets flash flags to `flash_on_critical=true / flash_on_message=false / flash_count=4`; Static Peers removes all entries; Channels & Shortcuts calls `reset_channels()` which replaces all channels with the seeded defaults. `reset_channels()` in `state/mod.rs` delegates to `apply_session(default_channels())` and emits `ChannelListUpdated`. `state/config.rs::default_channels()` is `pub` so it can be called from `mod.rs`.
+- **reset to defaults**: each Settings section has a `↺` icon button that shows a confirm dialog then restores factory defaults for that section only — Identity resets name to system username (`Platform.environment['USER']`); Behavior resets flash flags to `flash_on_critical=true / flash_on_message=false / flash_count=4`; Static Peers removes all entries; Channels & Macros calls `reset_channels()` which replaces all channels with the seeded defaults. `reset_channels()` in `state/mod.rs` delegates to `apply_session(default_channels())` and emits `ChannelListUpdated`. `state/config.rs::default_channels()` is `pub` so it can be called from `mod.rs`.
 - **sessions**: folder icon in the left sidebar opens `SessionsDialog` — load/save named presets or import/export `.toml` files; Settings screen no longer contains a Sessions section
-- **shortcuts panel**: `shortcuts_panel.dart` — toggleable via ⚡ icon in `_ChannelView` header; vertical layout, all shortcuts always visible, no scroll; 1 or 2 columns (`_kShortcutColumnWidth = 160.0` per column, so panel is 160 or 320 px); column count persisted to `patch.toml` as `shortcuts_columns`; [1][2] toggle in panel header; multi-channel mode groups shortcuts by channel with a colored divider; when single channel, no channel bar on buttons; `Material(clipBehavior: Clip.hardEdge)` prevents overflow errors when many shortcuts are squeezed into a small window; `ConstrainedBox(minHeight: 40)` sets a floor on row height
+- **macros panel**: `shortcuts_panel.dart` — toggleable via keyboard icon (`Icons.keyboard_outlined`) in `_ChannelView` header; vertical layout, all macros always visible, no scroll; 1 or 2 columns (`_kShortcutColumnWidth = 160.0` per column, so panel is 160 or 320 px); column count persisted to `patch.toml` as `shortcuts_columns`; [1][2] toggle in panel header; multi-channel mode groups macros by channel with a colored divider; when single channel, no channel bar on buttons; `Material(clipBehavior: Clip.hardEdge)` prevents overflow errors when many macros are squeezed into a small window; `ConstrainedBox(minHeight: 40)` sets a floor on row height
 - **header alignment**: `PatchTheme.headerHeight = 80.0` is applied to all four top-section headers (channel strip image, `_ChannelView` header container, ShortcutsPanel header, PeersPanel header) so their dividers land on the same horizontal line
 - **peers panel**: 160 px wide (`_kPeersPanelWidth`); header is "PEERS" (not "ONLINE"); dot is green if heard from within 35 s, gray if stale or ManualIp (configured-only); peers persist for the full session and never auto-expire; static peers always appear even before first contact (gray dot with 📌 icon)
 - **iPhone layout**: dialog `AlertDialog` content uses `SizedBox(width: double.infinity)` — never a hardcoded pixel width. The `AlertDialog` widget constrains its content to `screenWidth - margins` automatically; fixed widths (360–380 px) exceeded iPhone SE's available space and caused right-overflow errors. The channel-name `Text` in the `_ChannelView` header is wrapped in `Expanded` with `overflow: TextOverflow.ellipsis`; the `Spacer` lives only in the multi-channel branch so buttons always sit at the right edge of the header (`Flexible` was previously used but split remaining space 50/50 with the `Spacer`, pushing buttons toward center). Key `Text` nodes in tight layouts (`channel_tab.dart`, `peers_panel.dart` IP line) carry `overflow: TextOverflow.ellipsis` to truncate gracefully instead of clipping silently.

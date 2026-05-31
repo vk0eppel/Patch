@@ -151,19 +151,17 @@ Now `static const double _kPeersPanelWidth = 160.0` and `static const double _kS
 Comment says "Shift+Enter inserts a newline (future use)" but `maxLines: 1` makes
 this impossible as written. Either remove the comment or implement multi-line input.
 
-### Shortcuts panel header overflows in 1-column mode
+### Macros panel header may overflow in 1-column mode
 **File:** `patch_app/lib/widgets/shortcuts_panel.dart` — header `Container`
 **Effort:** trivial
 
-The header `Row` contains `Text('SHORTCUTS')` (~80 px at 12 px + letterSpacing 1.5),
+The header `Row` contains `Text('MACROS')` (~50 px at 12 px + letterSpacing 1.5),
 a `Spacer`, and `_ColumnToggle` (56 px), inside 12 px horizontal padding → 136 px inner
-width in 1-column mode. Flutter's text measurement rounds up, leaving no room for the
-`Spacer` → RenderFlex overflow on the right edge.
-
-Options (pick one when addressing):
-- Wrap `Text` in `Flexible(child: Text(..., overflow: TextOverflow.ellipsis))` — minimal change, label clips gracefully
-- Reduce header horizontal padding from 12 to 6 px — gives 12 px of breathing room, no visual change
-- Remove the "SHORTCUTS" label; keep only the `_ColumnToggle` in the header — also a good opportunity to reduce `_kShortcutColumnWidth` to ~120 px if buttons feel too wide
+width in 1-column mode. The rename from "SHORTCUTS" (~80 px) to "MACROS" (~50 px) reduced
+pressure significantly (~6 px of breathing room). Verify in a running build — may now be
+fine. If overflow persists:
+- Wrap `Text` in `Flexible(child: Text(..., overflow: TextOverflow.ellipsis))` — minimal change
+- Reduce header horizontal padding from 12 to 6 px — gives 12 px extra breathing room
 
 ---
 

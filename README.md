@@ -24,7 +24,7 @@ Inspired by [Wavetool](https://wavetool.fi/) chat and [SideChain's TheaterChat](
 - **Multi-channel view** — tap to focus a channel, long-press to add it to the view; combined feed sorted by timestamp with per-message channel colour dots
 - **Flash / page** — one-button high-priority alert per channel; channel tab pulses + message box border lights up in the channel colour; auto-flash configurable globally (Settings → Behavior) and per-channel (Settings → channel editor)
 - **Configurable flash count** — set how many times the channel pulses per flash event (1–5 in Settings → Behavior; per-channel override in channel editor; default 4)
-- **Shortcut messages** — per-channel one-tap buttons for common callouts (HOLD, CLEAR, BATTERY LOW…), optionally bound to F-keys; shown in a vertical side panel (⚡ toggle) with 1 or 2 columns; all shortcuts always visible — no scroll, no accidental fires on touch
+- **Macros** — per-channel one-tap buttons for common callouts (HOLD, CLEAR, BATTERY LOW…), optionally bound to F-keys; shown in a vertical side panel (keyboard icon toggle) with 1 or 2 columns; all macros always visible — no scroll, no accidental fires on touch
 - **Session presets** — save and restore named channel layouts; accessible from the folder icon in the sidebar; import/export `.toml` files to share layouts across machines
 - **Hybrid discovery** — mDNS/Bonjour auto-discovery + OSC beacon broadcast every 7s + manual static IP for AP-isolated or VLAN-segmented show networks
 - **Static peer management** — add/remove known peers by IP from the Settings screen; static peers are always contacted regardless of discovery state, bypassing AP isolation
@@ -32,7 +32,7 @@ Inspired by [Wavetool](https://wavetool.fi/) chat and [SideChain's TheaterChat](
 - **Priority levels** — info / warning / critical; critical messages are visually distinct and require ACK
 - **Message deduplication** — UUID per message; never see the same message twice
 - **Dark, high-contrast UI** — readable from a stage desk at 2m
-- **Keyboard-first** — Enter to send, F1–F12 for shortcuts (binding configurable per shortcut; fires from any focus state)
+- **Keyboard-first** — Enter to send, F1–F12 for macros (binding configurable per macro; fires from any focus state)
 - **Cross-platform** — macOS, Windows, Linux, iOS, iPad (Flutter UI + Rust engine, single binary)
 
 ---
@@ -147,7 +147,7 @@ network_interface = "en0"      # Omit to bind all interfaces
 flash_on_critical = true       # Auto-flash on priority-3 messages (Settings → Behavior)
 flash_on_message = false       # Auto-flash on every message (Settings → Behavior)
 flash_count = 4                # Flash pulse count per event, 1–10 (Settings → Behavior)
-shortcuts_columns = 1          # Shortcuts panel column count, 1–2 (toggle in panel header)
+shortcuts_columns = 1          # Macros panel column count, 1–2 (toggle in panel header)
 
 heartbeat_interval_secs = 7
 peer_timeout_secs = 30
@@ -170,14 +170,14 @@ label = "Monitor World"
 - [x] Priority levels with visual differentiation
 - [x] Message deduplication by UUID
 - [x] Single-binary build via `flutter_rust_bridge` + cargokit (no more TCP bridge)
-- [x] Settings screen — display name, NIC picker, shortcuts, channel management
+- [x] Settings screen — display name, NIC picker, macros, channel management
 - [x] Session presets — save / load / delete named channel layouts; sidebar folder icon (not Settings); import/export `.toml` files
 - [x] Multi-channel view — combined feed, long-press to add channels
 - [x] Flash animation — channel tab pulse + message box border/tint (configurable pulse count)
 - [x] Auto-flash on critical messages — global default in Settings → Behavior
 - [x] Per-channel flash settings — override "flash on message", "flash on critical", and pulse count per channel
 - [x] Configurable flash pulse count — 1–10 globally (default 4), per-channel override
-- [x] F-key bindings for shortcuts (F1–F12, fires from any focus state)
+- [x] F-key bindings for macros (F1–F12, fires from any focus state)
 - [x] Platform data directory (`~/Library/Application Support/Patch/`, `%APPDATA%\Patch\`, etc.) with legacy `./patch.toml` migration
 - [x] iOS / macOS Local Network permission strings in Info.plist (`NSLocalNetworkUsageDescription` + `NSBonjourServices`)
 - [x] Settings screen — static peer management via UI (add/remove peers by address + port + label)
