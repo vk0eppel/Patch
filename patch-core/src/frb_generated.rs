@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -2052681355;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 680116124;
 
 // Section: executor
 
@@ -924,6 +924,42 @@ fn wire__crate__api__set_flash_on_message_impl(
         },
     )
 }
+fn wire__crate__api__set_hide_keyboard_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "set_hide_keyboard",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_enabled = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || async move {
+                        let output_ok = crate::api::set_hide_keyboard(api_enabled).await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__set_interface_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1225,6 +1261,7 @@ impl SseDecode for crate::api::ConfigSnapshot {
         let mut var_flashOnMessage = <bool>::sse_decode(deserializer);
         let mut var_flashCount = <u8>::sse_decode(deserializer);
         let mut var_macrosColumns = <u8>::sse_decode(deserializer);
+        let mut var_hideKeyboard = <bool>::sse_decode(deserializer);
         return crate::api::ConfigSnapshot {
             client_name: var_clientName,
             osc_port: var_oscPort,
@@ -1234,6 +1271,7 @@ impl SseDecode for crate::api::ConfigSnapshot {
             flash_on_message: var_flashOnMessage,
             flash_count: var_flashCount,
             macros_columns: var_macrosColumns,
+            hide_keyboard: var_hideKeyboard,
         };
     }
 }
@@ -1685,11 +1723,12 @@ fn pde_ffi_dispatcher_primary_impl(
         22 => wire__crate__api__set_flash_count_impl(port, ptr, rust_vec_len, data_len),
         23 => wire__crate__api__set_flash_on_critical_impl(port, ptr, rust_vec_len, data_len),
         24 => wire__crate__api__set_flash_on_message_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__set_interface_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__set_macros_columns_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__upsert_channel_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__upsert_macro_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__set_hide_keyboard_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__set_interface_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__set_macros_columns_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__upsert_channel_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__upsert_macro_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1768,6 +1807,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::ConfigSnapshot {
             self.flash_on_message.into_into_dart().into_dart(),
             self.flash_count.into_into_dart().into_dart(),
             self.macros_columns.into_into_dart().into_dart(),
+            self.hide_keyboard.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -2134,6 +2174,7 @@ impl SseEncode for crate::api::ConfigSnapshot {
         <bool>::sse_encode(self.flash_on_message, serializer);
         <u8>::sse_encode(self.flash_count, serializer);
         <u8>::sse_encode(self.macros_columns, serializer);
+        <bool>::sse_encode(self.hide_keyboard, serializer);
     }
 }
 

@@ -136,6 +136,7 @@ pub struct ConfigSnapshot {
     pub flash_on_message: bool,
     pub flash_count: u8,
     pub macros_columns: u8,
+    pub hide_keyboard: bool,
 }
 
 pub async fn get_config() -> ConfigSnapshot {
@@ -149,6 +150,7 @@ pub async fn get_config() -> ConfigSnapshot {
         flash_on_message: cfg.flash_on_message,
         flash_count: cfg.flash_count,
         macros_columns: cfg.macros_columns,
+        hide_keyboard: cfg.hide_keyboard,
     }
 }
 
@@ -185,6 +187,10 @@ pub async fn set_flash_count(count: u8) -> Result<()> {
 
 pub async fn set_macros_columns(columns: u8) -> Result<()> {
     engine().state.set_macros_columns(columns).await
+}
+
+pub async fn set_hide_keyboard(enabled: bool) -> Result<()> {
+    engine().state.set_hide_keyboard(enabled).await
 }
 
 pub async fn set_channel_flash(

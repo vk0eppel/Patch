@@ -68,6 +68,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _showPeers = false;
   bool _showMacros = false;
   int _macrosColumns = 1;
+  bool _hideKeyboard = true;
   StreamSubscription<Map<String, dynamic>>? _eventSub;
 
   // ── Derived state ───────────────────────────────────────────────────────────
@@ -244,6 +245,8 @@ class _HomeScreenState extends State<HomeScreen> {
               (event['data']['flash_count'] as int?) ?? 4;
           _macrosColumns =
               (event['data']['macros_columns'] as int?) ?? 1;
+          _hideKeyboard =
+              (event['data']['hide_keyboard'] as bool?) ?? true;
         });
 
       case 'session_saved':
@@ -303,6 +306,7 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
     });
+    if (_hideKeyboard) FocusScope.of(context).unfocus();
   }
 
   // ── Build ───────────────────────────────────────────────────────────────────
@@ -338,6 +342,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     flashNotify: _flashNotify,
                     flashColor: _flashColor,
                     flashPulseCount: _flashPulseCount,
+                    hideKeyboard: _hideKeyboard,
                   ),
           ),
           if (_showMacros)
@@ -506,6 +511,7 @@ class _ChannelView extends StatelessWidget {
   final int flashNotify;
   final Color flashColor;
   final int flashPulseCount;
+  final bool hideKeyboard;
 
   const _ChannelView({
     required this.selectedChannels,
@@ -520,6 +526,7 @@ class _ChannelView extends StatelessWidget {
     required this.flashNotify,
     required this.flashColor,
     required this.flashPulseCount,
+    required this.hideKeyboard,
   });
 
   bool get _isMulti => selectedChannels.length > 1;
@@ -610,7 +617,7 @@ class _ChannelView extends StatelessWidget {
         const Divider(color: PatchTheme.border, height: 1),
 
         // ── Input ─────────────────────────────────────────────────────────
-        MessageInput(onSend: _sendMessage),
+        MessageInput(onSend: _sendMessage, hideKeyboard: hideKeyboard),
       ],
     );
 

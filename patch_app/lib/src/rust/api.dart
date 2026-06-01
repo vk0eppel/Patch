@@ -78,6 +78,9 @@ Future<void> setFlashCount({required int count}) =>
 Future<void> setMacrosColumns({required int columns}) =>
     RustLib.instance.api.crateApiSetMacrosColumns(columns: columns);
 
+Future<void> setHideKeyboard({required bool enabled}) =>
+    RustLib.instance.api.crateApiSetHideKeyboard(enabled: enabled);
+
 Future<void> setChannelFlash({
   required String channelId,
   bool? flashOnCritical,
@@ -178,6 +181,7 @@ class ConfigSnapshot {
   final bool flashOnMessage;
   final int flashCount;
   final int macrosColumns;
+  final bool hideKeyboard;
 
   const ConfigSnapshot({
     required this.clientName,
@@ -188,6 +192,7 @@ class ConfigSnapshot {
     required this.flashOnMessage,
     required this.flashCount,
     required this.macrosColumns,
+    required this.hideKeyboard,
   });
 
   @override
@@ -199,7 +204,8 @@ class ConfigSnapshot {
       flashOnCritical.hashCode ^
       flashOnMessage.hashCode ^
       flashCount.hashCode ^
-      macrosColumns.hashCode;
+      macrosColumns.hashCode ^
+      hideKeyboard.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -213,7 +219,8 @@ class ConfigSnapshot {
           flashOnCritical == other.flashOnCritical &&
           flashOnMessage == other.flashOnMessage &&
           flashCount == other.flashCount &&
-          macrosColumns == other.macrosColumns;
+          macrosColumns == other.macrosColumns &&
+          hideKeyboard == other.hideKeyboard;
 }
 
 @freezed

@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../theme/patch_theme.dart';
 
 /// Text input bar at the bottom of each channel view.
-/// Enter sends. Shift+Enter inserts a newline (future use).
+/// Enter sends. When [hideKeyboard] is true the field does not auto-focus,
+/// preventing the software keyboard from appearing on channel switch.
 class MessageInput extends StatefulWidget {
   final ValueChanged<String> onSend;
-  const MessageInput({super.key, required this.onSend});
+  final bool hideKeyboard;
+
+  const MessageInput({
+    super.key,
+    required this.onSend,
+    this.hideKeyboard = false,
+  });
 
   @override
   State<MessageInput> createState() => _MessageInputState();
@@ -21,7 +27,7 @@ class _MessageInputState extends State<MessageInput> {
     if (text.isEmpty) return;
     widget.onSend(text);
     _ctrl.clear();
-    _focus.requestFocus();
+    if (!widget.hideKeyboard) _focus.requestFocus();
   }
 
   @override
@@ -46,20 +52,18 @@ class _MessageInputState extends State<MessageInput> {
                 color: PatchTheme.textPrimary,
                 fontSize: PatchTheme.fontSizeMedium,
               ),
-              decoration: const InputDecoration(
-                hintText: 'Type a message…',
+              decoration: InputDecoration(
+                hintText: widget.hideKeyboard ? 'Tap to type…' : 'Type a message…',
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,
                 filled: false,
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               ),
-              // Single-line so Enter triggers onSubmitted rather than a newline.
-              // maxLines: 1 is required for onSubmitted to fire on desktop.
               maxLines: 1,
               textInputAction: TextInputAction.send,
               onSubmitted: (_) => _send(),
-              autofocus: true,
+              autofocus: !widget.hideKeyboard,
             ),
           ),
           const SizedBox(width: 8),

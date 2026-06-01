@@ -172,6 +172,7 @@ class BridgeClient {
           'flash_on_message': cfg.flashOnMessage,
           'flash_count': cfg.flashCount,
           'macros_columns': cfg.macrosColumns,
+          'hide_keyboard': cfg.hideKeyboard,
         },
       });
     } catch (e) {
@@ -369,6 +370,15 @@ class BridgeClient {
     try {
       await rust.setFlashCount(count: count);
       _emit({'event': 'config_updated', 'flash_count': count});
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
+  Future<void> setHideKeyboard(bool enabled) async {
+    try {
+      await rust.setHideKeyboard(enabled: enabled);
+      await getConfig();
     } catch (e) {
       _emitError(e);
     }

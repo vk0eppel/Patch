@@ -71,7 +71,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -2052681355;
+  int get rustContentHash => 680116124;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -155,6 +155,8 @@ abstract class RustLibApi extends BaseApi {
   Future<void> crateApiSetFlashOnCritical({required bool enabled});
 
   Future<void> crateApiSetFlashOnMessage({required bool enabled});
+
+  Future<void> crateApiSetHideKeyboard({required bool enabled});
 
   Future<void> crateApiSetInterface({String? name});
 
@@ -906,6 +908,36 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  Future<void> crateApiSetHideKeyboard({required bool enabled}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_bool(enabled, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 25,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiSetHideKeyboardConstMeta,
+        argValues: [enabled],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSetHideKeyboardConstMeta => const TaskConstMeta(
+    debugName: "set_hide_keyboard",
+    argNames: ["enabled"],
+  );
+
+  @override
   Future<void> crateApiSetInterface({String? name}) {
     return handler.executeNormal(
       NormalTask(
@@ -915,7 +947,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 25,
+            funcId: 26,
             port: port_,
           );
         },
@@ -943,7 +975,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 26,
+            funcId: 27,
             port: port_,
           );
         },
@@ -975,7 +1007,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 27,
+              funcId: 28,
               port: port_,
             );
           },
@@ -1011,7 +1043,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 28,
+            funcId: 29,
             port: port_,
           );
         },
@@ -1051,7 +1083,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 29,
+            funcId: 30,
             port: port_,
           );
         },
@@ -1173,8 +1205,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ConfigSnapshot dco_decode_config_snapshot(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
     return ConfigSnapshot(
       clientName: dco_decode_String(arr[0]),
       oscPort: dco_decode_u_16(arr[1]),
@@ -1184,6 +1216,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       flashOnMessage: dco_decode_bool(arr[5]),
       flashCount: dco_decode_u_8(arr[6]),
       macrosColumns: dco_decode_u_8(arr[7]),
+      hideKeyboard: dco_decode_bool(arr[8]),
     );
   }
 
@@ -1598,6 +1631,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_flashOnMessage = sse_decode_bool(deserializer);
     var var_flashCount = sse_decode_u_8(deserializer);
     var var_macrosColumns = sse_decode_u_8(deserializer);
+    var var_hideKeyboard = sse_decode_bool(deserializer);
     return ConfigSnapshot(
       clientName: var_clientName,
       oscPort: var_oscPort,
@@ -1607,6 +1641,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       flashOnMessage: var_flashOnMessage,
       flashCount: var_flashCount,
       macrosColumns: var_macrosColumns,
+      hideKeyboard: var_hideKeyboard,
     );
   }
 
@@ -2096,6 +2131,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.flashOnMessage, serializer);
     sse_encode_u_8(self.flashCount, serializer);
     sse_encode_u_8(self.macrosColumns, serializer);
+    sse_encode_bool(self.hideKeyboard, serializer);
   }
 
   @protected

@@ -69,6 +69,9 @@ pub struct Config {
     /// Number of columns in the macros panel (1–2).
     #[serde(default = "default_one")]
     pub macros_columns: u8,
+    /// Hide the software keyboard on channel switch (iOS/Android). Default on.
+    #[serde(default = "default_true")]
+    pub hide_keyboard: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,6 +96,7 @@ impl Default for Config {
             flash_on_message: false,
             flash_count: 4,
             macros_columns: 1,
+            hide_keyboard: true,
         }
     }
 }

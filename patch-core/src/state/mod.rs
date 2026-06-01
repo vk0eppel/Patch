@@ -127,6 +127,12 @@ impl AppState {
         cfg.save()
     }
 
+    pub async fn set_hide_keyboard(&self, enabled: bool) -> anyhow::Result<()> {
+        let mut cfg = self.0.config.write().await;
+        cfg.hide_keyboard = enabled;
+        cfg.save()
+    }
+
     /// Update per-channel flash flags. `None` means "leave unchanged".
     pub async fn set_channel_flash(
         &self,

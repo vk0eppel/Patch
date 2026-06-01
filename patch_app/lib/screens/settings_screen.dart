@@ -32,6 +32,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _flashOnCritical = true;
   bool _flashOnMessage = false;
   int _flashCount = 4;
+  bool _hideKeyboard = true;
 
   // Network interfaces
   List<Map<String, String>> _interfaces = [];
@@ -68,6 +69,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _flashOnCritical = (data['flash_on_critical'] as bool?) ?? true;
           _flashOnMessage = (data['flash_on_message'] as bool?) ?? false;
           _flashCount = (data['flash_count'] as int?) ?? 4;
+          _hideKeyboard = (data['hide_keyboard'] as bool?) ?? true;
           _staticPeers = List<Map<String, dynamic>>.from(
             (data['static_peers'] as List<dynamic>? ?? [])
                 .map((p) => Map<String, dynamic>.from(p as Map)),
@@ -308,10 +310,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _flashOnCritical = true;
                 _flashOnMessage = false;
                 _flashCount = 4;
+                _hideKeyboard = true;
               });
               widget.bridge.setFlashOnCritical(true);
               widget.bridge.setFlashOnMessage(false);
               widget.bridge.setFlashCount(4);
+              widget.bridge.setHideKeyboard(true);
             }),
           ]),
           const SizedBox(height: 4),
@@ -382,9 +386,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
 
+          if (Platform.isIOS || Platform.isAndroid) ...[
+            const SizedBox(height: 8),
+            SwitchListTile(
+              title: const Text(
+                'Hide keyboard on channel switch',
+                style: TextStyle(color: PatchTheme.textPrimary, fontSize: PatchTheme.fontSizeSmall),
+              ),
+              subtitle: const Text(
+                'Keeps the software keyboard hidden until you tap the input field',
+                style: TextStyle(color: PatchTheme.textSecondary, fontSize: 11),
+              ),
+              value: _hideKeyboard,
+              activeThumbColor: PatchTheme.accent,
+              contentPadding: EdgeInsets.zero,
+              onChanged: (val) {
+                setState(() => _hideKeyboard = val);
+                widget.bridge.setHideKeyboard(val);
+              },
+            ),
+          ],
+
           const SizedBox(height: 32),
 
-          // ── Channels & shortcuts ─────────────────────────────────────────
+          // ── Channels & macros ─────────────────────────────────────────
           Row(
             children: [
               Expanded(child: _SectionHeader('Channels & Macros')),
