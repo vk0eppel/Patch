@@ -557,8 +557,7 @@ class _ChannelView extends StatelessWidget {
             children: [
               // Channel dot(s) + name(s)
               if (_isMulti) ...[
-                _MultiChannelLabel(channels: selectedChannels),
-                const Spacer(),
+                Expanded(child: _MultiChannelLabel(channels: selectedChannels)),
               ] else ...[
                 Container(
                   width: 10,
@@ -637,7 +636,6 @@ class _MultiChannelLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
         // Up to 4 stacked dots
         SizedBox(
@@ -663,15 +661,18 @@ class _MultiChannelLabel extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
-        Text(
-          channels.length <= 3
-              ? channels.map((c) => c.displayName).join(' · ')
-              : '${channels.length} channels',
-          style: const TextStyle(
-            color: PatchTheme.textPrimary,
-            fontSize: PatchTheme.fontSizeLarge,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.0,
+        Expanded(
+          child: Text(
+            channels.length <= 3
+                ? channels.map((c) => c.displayName).join(' · ')
+                : '${channels.length} channels',
+            style: const TextStyle(
+              color: PatchTheme.textPrimary,
+              fontSize: PatchTheme.fontSizeLarge,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.0,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],

@@ -236,15 +236,26 @@ impl AppState {
         self.publish(AppEvent::PeerUpdated(presence)).await;
     }
 
-    /// Update the network address of a known peer (called from transport on receive,
-    /// and from mDNS resolution). No-op if the peer isn't in the registry yet —
-    /// it will be populated when their presence packet arrives.
+    /// Update the network address and last_seen of a known peer (called from
+    /// transport on receive and from mDNS resolution). Emits PeerUpdated so
+    /// the Flutter side refreshes the dot colour. No-op if the peer isn't in
+    /// the registry yet — it will be populated when their presence packet arrives.
     pub async fn touch_peer_address(&self, peer_id: Uuid, address: String, port: u16) {
-        let mut peers = self.0.peers.write().await;
-        if let Some(peer) = peers.get_mut(&peer_id) {
+        let presence = {
+            let mut peers = self.0.peers.write().await;
+            let Some(peer) = peers.get_mut(&peer_id) else { return };
             peer.address = address;
             peer.osc_port = port;
-        }
+            peer.last_seen = chrono::Utc::now();
+            // Build a PeerPresence to carry through the event bus.
+            PeerPresence {
+                peer_id: peer.peer_id,
+                peer_name: peer.peer_name.clone(),
+                channels: peer.channels.clone(),
+                timestamp: peer.last_seen,
+            }
+        };
+        self.publish(AppEvent::PeerUpdated(presence)).await;
     }
 
     pub async fn has_peer(&self, peer_id: Uuid) -> bool {

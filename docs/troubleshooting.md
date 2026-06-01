@@ -64,7 +64,7 @@ Peers never auto-expire in Patch — they stay in the panel for the full session
 - A Patch restart on that device (the peer re-registers within one heartbeat)
 - A session load that replaced the channel list (peers are unaffected)
 
-If a peer's dot turns grey, it means no heartbeat has been received in the last 35 seconds — but the peer is still remembered and will turn green again when contact is restored.
+If a peer's dot turns grey, it means no packet (message, flash, or heartbeat) has been received from them in the last 35 seconds — but the peer is still remembered and will turn green again as soon as any packet arrives from them.
 
 ---
 

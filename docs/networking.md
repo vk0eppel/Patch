@@ -15,10 +15,10 @@ Patch uses three discovery methods simultaneously. All three can be active at th
 | **Static IP** | Manually configured address:port entries that are always contacted | 📌 |
 
 Peers appear in the **PEERS panel** with:
-- 🟢 **Green dot** — heard from within the last 35 seconds
-- ⚫ **Grey dot** — stale (no recent heartbeat) or manually configured (static IP)
+- 🟢 **Green dot** — heard from within the last 35 seconds (any packet: message, flash, or heartbeat)
+- ⚫ **Grey dot** — no recent activity, or manually configured (static IP)
 
-Peers are remembered for the full app session and never auto-removed. If a grey-dot peer comes back online, their dot turns green again within one heartbeat interval (≤ 7 seconds).
+Peers are remembered for the full app session and never auto-removed. If a grey-dot peer sends or receives any message, their dot turns green immediately.
 
 ---
 

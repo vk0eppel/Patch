@@ -20,7 +20,7 @@ Patch finds other devices automatically using two methods:
 - **mDNS / Bonjour** — works on most local networks with no setup.
 - **OSC beacon** — broadcasts a presence packet every 7 seconds; works as a fallback when mDNS is blocked.
 
-Once a peer is online, they appear in the **PEERS panel** (right side of the screen) with a green dot. A grey dot means they haven't been heard from recently but are still remembered for the session.
+Once a peer is online, they appear in the **PEERS panel** (right side of the screen) with a green dot. A grey dot means no packet has arrived from them in the last 35 seconds — they are still remembered and will turn green as soon as they send any message or heartbeat.
 
 > **On AP-isolated networks** (common in touring venues), devices on the same Wi-Fi AP can't see each other's broadcasts. Ask your PM or network engineer for the IP addresses of other Patch devices and add them under **Settings → Static Peers**.
 
