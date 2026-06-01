@@ -286,9 +286,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     setState(() {
       _flashCounts[channelId] = (_flashCounts[channelId] ?? 0) + 1;
-      _flashNotify++;
-      _flashColor = ch.color;
-      _flashPulseCount = ch.flashCount ?? _globalFlashCount;
+      // Only pulse the main screen overlay when the channel is selected.
+      if (_selectedIds.contains(channelId)) {
+        _flashNotify++;
+        _flashColor = ch.color;
+        _flashPulseCount = ch.flashCount ?? _globalFlashCount;
+      }
     });
   }
 

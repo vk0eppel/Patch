@@ -97,9 +97,7 @@ class _MessageTile extends StatelessWidget {
                 ? PatchTheme.warning.withAlpha(15)
                 : Colors.transparent,
         borderRadius: BorderRadius.circular(4),
-        border: isCritical || isWarning
-            ? Border(left: BorderSide(color: _priorityColor, width: 3))
-            : null,
+        border: Border(left: BorderSide(color: _priorityColor, width: 3)),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),

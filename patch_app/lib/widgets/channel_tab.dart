@@ -32,7 +32,6 @@ class ChannelTab extends StatefulWidget {
 class _ChannelTabState extends State<ChannelTab>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
-  late final Animation<double> _scale;
   late final Animation<double> _glow;
 
   int _remainingPulses = 0;
@@ -44,18 +43,6 @@ class _ChannelTabState extends State<ChannelTab>
       vsync: this,
       duration: const Duration(milliseconds: 350),
     );
-
-    // Scale: snap up, ease back down
-    _scale = TweenSequence([
-      TweenSequenceItem(
-          tween: Tween(begin: 1.0, end: 1.35)
-              .chain(CurveTween(curve: Curves.easeOut)),
-          weight: 30),
-      TweenSequenceItem(
-          tween: Tween(begin: 1.35, end: 1.0)
-              .chain(CurveTween(curve: Curves.elasticOut)),
-          weight: 70),
-    ]).animate(_ctrl);
 
     // Glow: bright flash in first half, fade in second half
     _glow = TweenSequence([
@@ -96,9 +83,7 @@ class _ChannelTabState extends State<ChannelTab>
       child: AnimatedBuilder(
         animation: _ctrl,
         builder: (_, child) {
-          return Transform.scale(
-            scale: _scale.value,
-            child: AnimatedContainer(
+          return AnimatedContainer(
               duration: const Duration(milliseconds: 120),
               margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               padding: const EdgeInsets.symmetric(vertical: 10),
@@ -120,7 +105,7 @@ class _ChannelTabState extends State<ChannelTab>
                     Colors.white,
                     _glow.value * 0.7,
                   )!,
-                  width: widget.isSelected || _glow.value > 0 ? 1.5 : 0,
+                  width: 1.5,
                 ),
                 boxShadow: _glow.value > 0
                     ? [
@@ -134,8 +119,7 @@ class _ChannelTabState extends State<ChannelTab>
                     : null,
               ),
               child: child,
-            ),
-          );
+            );
         },
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -159,8 +143,7 @@ class _ChannelTabState extends State<ChannelTab>
                     ? PatchTheme.textPrimary
                     : PatchTheme.textSecondary,
                 fontSize: 10,
-                fontWeight:
-                    widget.isSelected ? FontWeight.w700 : FontWeight.w400,
+                fontWeight: FontWeight.w600,
                 letterSpacing: 0.5,
               ),
             ),
