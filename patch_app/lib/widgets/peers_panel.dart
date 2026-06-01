@@ -1,11 +1,37 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../models/message.dart';
 import '../theme/patch_theme.dart';
 
 /// Collapsible right panel showing online peers.
-class PeersPanel extends StatelessWidget {
+///
+/// Rebuilds every 10 s so dot colours (based on DateTime.now()) stay accurate
+/// without waiting for an external event to trigger a Flutter rebuild.
+class PeersPanel extends StatefulWidget {
   final List<PeerInfo> peers;
   const PeersPanel({super.key, required this.peers});
+
+  @override
+  State<PeersPanel> createState() => _PeersPanelState();
+}
+
+class _PeersPanelState extends State<PeersPanel> {
+  late final Timer _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +56,7 @@ class PeersPanel extends StatelessWidget {
           ),
           const Divider(color: PatchTheme.border, height: 1),
           Expanded(
-            child: peers.isEmpty
+            child: widget.peers.isEmpty
                 ? const Center(
                     child: Text(
                       'No peers',
@@ -39,8 +65,8 @@ class PeersPanel extends StatelessWidget {
                   )
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(vertical: 4),
-                    itemCount: peers.length,
-                    itemBuilder: (ctx, i) => _PeerTile(peer: peers[i]),
+                    itemCount: widget.peers.length,
+                    itemBuilder: (ctx, i) => _PeerTile(peer: widget.peers[i]),
                   ),
           ),
         ],
@@ -48,6 +74,7 @@ class PeersPanel extends StatelessWidget {
     );
   }
 }
+
 
 class _PeerTile extends StatelessWidget {
   final PeerInfo peer;
