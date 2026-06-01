@@ -21,7 +21,7 @@ Inspired by [Wavetool](https://wavetool.fi/) chat and [SideChain's TheaterChat](
 - **Single binary, all platforms** — Rust engine is linked into the Flutter app as a `cdylib`/`staticlib` via `flutter_rust_bridge`. One process, one icon, no sidecar
 - **OSC-native transport** — messages travel as OSC packets; unicast to known peers, broadcast only for presence/discovery
 - **Logical channels** — FOH, MON, RF, LIGHTING, VIDEO, STAGE, PRODUCTION — create and delete at runtime
-- **Multi-channel view** — tap to focus a channel, long-press to add it to the view; combined feed sorted by timestamp with per-message channel colour dots
+- **Multi-channel view** — tap any channel tab to toggle it in or out of the view; combined feed sorted by timestamp with per-message channel colour dots; at least one channel always remains selected
 - **Flash / page** — one-button high-priority alert per channel; channel tab pulses + message box border lights up in the channel colour; auto-flash configurable globally (Settings → Behavior) and per-channel (Settings → channel editor)
 - **Configurable flash count** — set how many times the channel pulses per flash event (1–5 in Settings → Behavior; per-channel override in channel editor; default 4)
 - **Macros** — per-channel one-tap buttons for common callouts (HOLD, CLEAR, BATTERY LOW…), optionally bound to F-keys; shown in a vertical side panel (keyboard icon toggle) with 1 or 2 columns; all macros always visible — no scroll, no accidental fires on touch
@@ -172,7 +172,7 @@ label = "Monitor World"
 - [x] Single-binary build via `flutter_rust_bridge` + cargokit (no more TCP bridge)
 - [x] Settings screen — display name, NIC picker, macros, channel management
 - [x] Session presets — save / load / delete named channel layouts; sidebar folder icon (not Settings); import/export `.toml` files
-- [x] Multi-channel view — combined feed, long-press to add channels
+- [x] Multi-channel view — tap to toggle channels; combined feed sorted by timestamp
 - [x] Flash animation — channel tab pulse + message box border/tint (configurable pulse count)
 - [x] Auto-flash on critical messages — global default in Settings → Behavior
 - [x] Per-channel flash settings — override "flash on message", "flash on critical", and pulse count per channel

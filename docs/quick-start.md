@@ -33,7 +33,7 @@ Once a peer is online, they appear in the **PEERS panel** (right side of the scr
 Channels are your departments: AUDIO, RF, LIGHTING, VIDEO, STAGE, etc. Each channel has its own message feed and colour.
 
 - **Tap** a channel tab to focus it.
-- **Long-press** a channel tab to add it to a multi-channel view (combined feed, sorted by time).
+- **Tap** a channel tab to toggle it in or out of the view. Multiple channels can be active at once — their feeds are combined and sorted by time. At least one channel is always selected.
 
 The default channels are seeded on first run. Your production manager may load a custom session with show-specific channels before the gig — see [Channels & Sessions](channels-and-sessions.md).
 

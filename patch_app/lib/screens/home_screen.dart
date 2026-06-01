@@ -291,15 +291,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── Channel selection ───────────────────────────────────────────────────────
 
-  /// Tap — select exclusively.
-  void _selectOnly(String id) {
-    setState(() => _selectedIds = {id});
-    if (!_messages.containsKey(id)) {
-      widget.bridge.getMessages(id);
-    }
-  }
-
-  /// Long press — toggle into/out of multi-selection.
+  /// Tap — toggle channel in/out of selection. At least one channel stays selected.
   void _toggleChannel(String id) {
     setState(() {
       if (_selectedIds.contains(id)) {
@@ -325,8 +317,7 @@ class _HomeScreenState extends State<HomeScreen> {
             selectedIds: _selectedIds,
             flashCounts: _flashCounts,
             globalFlashCount: _globalFlashCount,
-            onTap: _selectOnly,
-            onLongPress: _toggleChannel,
+            onTap: _toggleChannel,
             bridge: widget.bridge,
           ),
           Expanded(
@@ -386,7 +377,6 @@ class _ChannelStrip extends StatelessWidget {
   final Map<String, int> flashCounts;
   final int globalFlashCount;
   final ValueChanged<String> onTap;
-  final ValueChanged<String> onLongPress;
   final BridgeClient bridge;
 
   const _ChannelStrip({
@@ -395,7 +385,6 @@ class _ChannelStrip extends StatelessWidget {
     required this.flashCounts,
     required this.globalFlashCount,
     required this.onTap,
-    required this.onLongPress,
     required this.bridge,
   });
 
@@ -427,7 +416,6 @@ class _ChannelStrip extends StatelessWidget {
                   flashCount: flashCounts[ch.id] ?? 0,
                   pulseCount: ch.flashCount ?? globalFlashCount,
                   onTap: () => onTap(ch.id),
-                  onLongPress: () => onLongPress(ch.id),
                 );
               },
             ),
