@@ -23,7 +23,7 @@ Inspired by [Wavetool](https://wavetool.fi/) chat and [SideChain's TheaterChat](
 - **Logical channels** — FOH, MON, RF, LIGHTING, VIDEO, STAGE, PRODUCTION — create and delete at runtime
 - **Multi-channel view** — tap any channel tab to toggle it in or out of the view; combined feed sorted by timestamp with per-message channel colour dots; at least one channel always remains selected
 - **Flash / page** — one-button high-priority alert per channel; channel tab pulses + message box border lights up in the channel colour; auto-flash configurable globally (Settings → Behavior) and per-channel (Settings → channel editor)
-- **Configurable flash count** — set how many times the channel pulses per flash event (1–5 in Settings → Behavior; per-channel override in channel editor; default 4)
+- **Configurable flash count** — set how many times the channel pulses per flash event (3–7 in Settings → Behavior; per-channel override in channel editor; default 4)
 - **Macros** — per-channel one-tap buttons for common callouts (HOLD, CLEAR, BATTERY LOW…), optionally bound to F-keys; shown in a vertical side panel (keyboard icon toggle) with 1 or 2 columns (set in Settings → Behavior); all macros always visible — no scroll, no accidental fires on touch
 - **Session presets** — save and restore named channel layouts; accessible from the folder icon in the sidebar; import/export `.toml` files to share layouts across machines
 - **Hybrid discovery** — mDNS/Bonjour auto-discovery + OSC beacon broadcast every 7s + manual static IP for AP-isolated or VLAN-segmented show networks
@@ -149,7 +149,7 @@ osc_port = 9000
 network_interface = "en0"      # Omit to bind all interfaces
 flash_on_critical = true       # Auto-flash on priority-3 messages (Settings → Behavior)
 flash_on_message = false       # Auto-flash on every message (Settings → Behavior)
-flash_count = 4                # Flash pulse count per event, 1–10 (Settings → Behavior)
+flash_count = 4                # Flash pulse count per event, 3–7 (Settings → Behavior)
 macros_columns = 1             # Macros panel column count, 1–2 (Settings → Behavior)
 
 heartbeat_interval_secs = 7
@@ -179,7 +179,7 @@ label = "Monitor World"
 - [x] Flash animation — channel tab pulse + message box border/tint (configurable pulse count)
 - [x] Auto-flash on critical messages — global default in Settings → Behavior
 - [x] Per-channel flash settings — override "flash on message", "flash on critical", and pulse count per channel
-- [x] Configurable flash pulse count — 1–10 globally (default 4), per-channel override
+- [x] Configurable flash pulse count — 3–7 globally (default 4), per-channel override
 - [x] F-key bindings for macros (F1–F12, fires from any focus state)
 - [x] Platform data directory (`~/Library/Application Support/Patch/`, `%APPDATA%\Patch\`, etc.) with legacy `./patch.toml` migration
 - [x] iOS / macOS Local Network permission strings in Info.plist (`NSLocalNetworkUsageDescription` + `NSBonjourServices`)

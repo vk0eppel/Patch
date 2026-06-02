@@ -129,7 +129,7 @@ get_config() -> ConfigSnapshot
 set_client_name(name)
 set_interface(name: Option<String>)
 set_flash_on_critical(enabled) / set_flash_on_message(enabled)
-set_flash_count(count: u8)                                        // global pulse count (1–10, default 4)
+set_flash_count(count: u8)                                        // global pulse count (3–7, default 4)
 set_macros_columns(columns: u8)                                   // macros panel column count (1–2, default 1)
 set_channel_flash(channel_id, flash_on_critical: Option<bool>, flash_on_message: Option<bool>, flash_count: Option<u8>)
 add_static_peer(address, port, label)
@@ -303,7 +303,7 @@ heartbeat_interval_secs = 7
 peer_timeout_secs = 30
 flash_on_critical = true    # Auto-flash channel when priority-3 message arrives
 flash_on_message = false    # Auto-flash on every incoming message
-flash_count = 4             # Flash pulse count per event (1–10, default 4)
+flash_count = 4             # Flash pulse count per event (3–7, default 4)
 macros_columns = 1          # Macros panel column count (1–2, default 1)
 
 [[static_peers]]
@@ -349,7 +349,7 @@ A single `flutter run` builds and links the Rust engine into the host binary via
 - `Priority` uses manual `Serialize`/`Deserialize` impls to emit integers (not variant name strings). The Dart-side façade reads `priority.index` from the FRB-generated `Priority` enum when converting back to the legacy event Map shape.
 - Flash fires `AppEvent::ChannelFlash` locally after sending, so the sender always sees their own flash without needing to receive it back over the network.
 - Flash animation uses timer-based `setState` + `Future.delayed` (not `AnimationController`/`TweenSequence`) in `_FlashLayer` — the `TweenSequence` approach proved visually unreliable on macOS. Don't revert to it.
-- Flash pulse count is configurable (default 4, range 1–10). `_FlashLayer` accepts a `pulseCount` param and loops that many times; `ChannelTab` accepts a `pulseCount` param and sets `_remainingPulses = pulseCount - 1`. The resolved count at flash time is stored in `_flashPulseCount` on `_HomeScreenState` and passes through `_ChannelView`. Per-channel override (`ch.flashCount`) takes priority over the global `_globalFlashCount`.
+- Flash pulse count is configurable (default 4, range 3–7). `_FlashLayer` accepts a `pulseCount` param and loops that many times; `ChannelTab` accepts a `pulseCount` param and sets `_remainingPulses = pulseCount - 1`. The resolved count at flash time is stored in `_flashPulseCount` on `_HomeScreenState` and passes through `_ChannelView`. Per-channel override (`ch.flashCount`) takes priority over the global `_globalFlashCount`.
 - Auto-flash on message/critical: `_dispatch` ORs global flags (`_flashOnMessage`, `_flashOnCritical`) with per-channel flags (`ch.flashOnMessage`, `ch.flashOnCritical`). Global flags are read via `get_config` on startup; `config_updated` events trigger a `getConfig()` refresh so changes in Settings take effect immediately without restart. Per-channel flags are stored on `Channel` (serde defaults: `flash_on_critical=true`, `flash_on_message=false`) and updated via `set_channel_flash`.
 - Sessions panel: `SessionsDialog` is opened from the folder icon in `_ChannelStrip` (not Settings). It subscribes to bridge events directly and calls `listSessions()` on open. File import/export uses the `file_picker` package (`pubspec.yaml`). `export_layout` / `import_layout` in `api.rs` serialize/deserialize `SessionConfig` TOML to/from arbitrary paths.
 - F-key bindings: `HardwareKeyboard.instance.addHandler` is registered in `_HomeScreenState.initState` and removed in `dispose`. It intercepts `KeyDownEvent` before the `TextField` sees it, maps `LogicalKeyboardKey.f1`–`f12` → `"F1"`–`"F12"`, and fires the first matching shortcut across all selected channels. Keys not bound to a shortcut are not consumed.
@@ -408,9 +408,9 @@ Patch UI is designed for live environments:
 - keyboard-first on desktop (Enter to send, F1–F12 fire bound macros from any focus state)
 - touch-first on iPad
 - **multi-channel view**: tap any channel tab to toggle it in/out of the selection; at least one channel always remains selected; combined feed sorted by timestamp; channel colour dot on each message row
-- **flash**: channel tab pulses N× scale animation (default 4, configurable 1–10); message box border + background tint pulses N× in the channel colour (`_FlashLayer` inside `_ChannelView` Stack, receives `pulseCount`); triggers determined by OR of global + per-channel flags
+- **flash**: channel tab pulses N× scale animation (default 4, configurable 3–7); message box border + background tint pulses N× in the channel colour (`_FlashLayer` inside `_ChannelView` Stack, receives `pulseCount`); triggers determined by OR of global + per-channel flags
 - **NIC picker**: Settings → Network Interface; dropdown shows only real NICs (loopback, virtual/tunnel, and link-local IPv6 interfaces filtered out); "Auto" binds all; change persists to `patch.toml`, takes effect on next restart
-- **Behavior settings**: Settings → Behavior — global flash defaults ("Flash on every message", "Flash on critical messages", "Flash pulses" 1–5 segmented picker); Settings → channel editor footer — per-channel overrides for the same flags (either global or channel flag being on is sufficient to trigger; "–" in the pulse picker = use global)
+- **Behavior settings**: Settings → Behavior — global flash defaults ("Flash on every message", "Flash on critical messages", "Flash pulses" 3–7 picker); Settings → channel editor footer — per-channel overrides for the same flags (either global or channel flag being on is sufficient to trigger; "–" in the pulse picker = use global)
 - **reset to defaults**: each Settings section has a `↺` icon button that shows a confirm dialog then restores factory defaults for that section only — Identity resets name to system username (`Platform.environment['USER']`); Behavior resets flash flags to `flash_on_critical=true / flash_on_message=false / flash_count=4`; Static Peers removes all entries; Channels & Macros calls `reset_channels()` which replaces all channels with the seeded defaults. `reset_channels()` in `state/mod.rs` delegates to `apply_session(default_channels())` and emits `ChannelListUpdated`. `state/config.rs::default_channels()` is `pub` so it can be called from `mod.rs`.
 - **sessions**: folder icon in the left sidebar opens `SessionsDialog` — load/save named presets or import/export `.toml` files; Settings screen no longer contains a Sessions section
 - **macros panel**: `macros_panel.dart` — toggleable via keyboard icon (`Icons.keyboard_outlined`) in `_ChannelView` header (button moves into the panel's own header when panel is open, aligned above its column); vertical layout, all macros always visible, no scroll; 1 or 2 columns (`_kMacroColumnWidth = 160.0` per column, so panel is 160 or 320 px); column count set in **Settings → Behavior → Macros panel columns** (SegmentedButton 1/2), persisted to `patch.toml` as `macros_columns`; multi-channel mode groups macros by channel with a colored divider; when single channel, no channel bar on buttons; `Material(clipBehavior: Clip.hardEdge)` prevents overflow errors when many macros are squeezed into a small window; `ConstrainedBox(minHeight: 40)` sets a floor on row height

@@ -86,7 +86,7 @@ global setting enables.
 |---|---|---|
 | Flash on critical messages | ✅ On | Global — Settings → Behavior |
 | Flash on every message | ❌ Off | Global — Settings → Behavior |
-| Flash pulse count | 4 | Global default; overridable per channel (1–10) |
+| Flash pulse count | 4 | Global default; overridable per channel (3–7) |
 
 Flash pulse count shows **–** in the channel editor when the global value is in use; pick a number to set a per-channel override.
 
