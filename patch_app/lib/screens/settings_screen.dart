@@ -33,6 +33,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _flashOnMessage = false;
   int _flashCount = 4;
   bool _hideKeyboard = true;
+  int _macrosColumns = 1;
 
   // Network interfaces
   List<Map<String, String>> _interfaces = [];
@@ -70,6 +71,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _flashOnMessage = (data['flash_on_message'] as bool?) ?? false;
           _flashCount = (data['flash_count'] as int?) ?? 4;
           _hideKeyboard = (data['hide_keyboard'] as bool?) ?? true;
+          _macrosColumns = (data['macros_columns'] as int?) ?? 1;
           _staticPeers = List<Map<String, dynamic>>.from(
             (data['static_peers'] as List<dynamic>? ?? [])
                 .map((p) => Map<String, dynamic>.from(p as Map)),
@@ -316,11 +318,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _flashOnMessage = false;
                 _flashCount = 4;
                 _hideKeyboard = true;
+                _macrosColumns = 1;
               });
               widget.bridge.setFlashOnCritical(true);
               widget.bridge.setFlashOnMessage(false);
               widget.bridge.setFlashCount(4);
               widget.bridge.setHideKeyboard(true);
+              widget.bridge.setMacrosColumns(1);
             }),
           ]),
           const SizedBox(height: 4),
@@ -387,6 +391,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   setState(() => _flashCount = val);
                   widget.bridge.setFlashCount(val);
                 },
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Macros panel columns',
+                      style: TextStyle(
+                        color: PatchTheme.textPrimary,
+                        fontSize: PatchTheme.fontSizeSmall,
+                      ),
+                    ),
+                    Text(
+                      'Number of columns in the macros side panel',
+                      style: TextStyle(color: PatchTheme.textSecondary, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(value: 1, label: Text('1')),
+                  ButtonSegment(value: 2, label: Text('2')),
+                ],
+                selected: {_macrosColumns},
+                onSelectionChanged: (s) {
+                  final val = s.first;
+                  setState(() => _macrosColumns = val);
+                  widget.bridge.setMacrosColumns(val);
+                },
+                style: SegmentedButton.styleFrom(
+                  foregroundColor: PatchTheme.textSecondary,
+                  selectedForegroundColor: PatchTheme.accent,
+                  selectedBackgroundColor: PatchTheme.accent.withAlpha(30),
+                  side: const BorderSide(color: PatchTheme.border),
+                ),
               ),
             ],
           ),

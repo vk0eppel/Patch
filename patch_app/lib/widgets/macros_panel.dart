@@ -34,16 +34,16 @@ class MacrosPanel extends StatelessWidget {
   final List<ChannelMacro> macros;
   final bool isMulti;
   final int columns;
-  final ValueChanged<int> onColumnsChanged;
   final ValueChanged<ChannelMacro> onMacro;
+  final VoidCallback? onClose;
 
   const MacrosPanel({
     super.key,
     required this.macros,
     required this.isMulti,
     required this.columns,
-    required this.onColumnsChanged,
     required this.onMacro,
+    this.onClose,
   });
 
   @override
@@ -59,6 +59,13 @@ class MacrosPanel extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
+                if (onClose != null)
+                  IconButton(
+                    icon: const Icon(Icons.keyboard_outlined, size: 18),
+                    color: PatchTheme.accent,
+                    tooltip: 'Hide macros',
+                    onPressed: onClose,
+                  ),
                 const Text(
                   'MACROS',
                   style: TextStyle(
@@ -69,7 +76,6 @@ class MacrosPanel extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                _ColumnToggle(current: columns, onChanged: onColumnsChanged),
               ],
             ),
           ),
@@ -143,50 +149,6 @@ class MacrosPanel extends StatelessWidget {
       widgets.addAll(_rowsFrom(group, showChannelBar: true));
     }
     return widgets;
-  }
-}
-
-// ── Column toggle ─────────────────────────────────────────────────────────────
-
-class _ColumnToggle extends StatelessWidget {
-  final int current;
-  final ValueChanged<int> onChanged;
-
-  const _ColumnToggle({required this.current, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [1, 2].map((n) {
-        final active = current == n;
-        return GestureDetector(
-          onTap: () => onChanged(n),
-          child: Container(
-            width: 24,
-            height: 24,
-            margin: const EdgeInsets.only(left: 4),
-            decoration: BoxDecoration(
-              color: active ? PatchTheme.accent.withAlpha(30) : Colors.transparent,
-              border: Border.all(
-                color: active ? PatchTheme.accent : PatchTheme.textMuted,
-                width: 1,
-              ),
-              borderRadius: BorderRadius.circular(3),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              '$n',
-              style: TextStyle(
-                color: active ? PatchTheme.accent : PatchTheme.textMuted,
-                fontSize: PatchTheme.fontSizeSmall,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        );
-      }).toList(),
-    );
   }
 }
 

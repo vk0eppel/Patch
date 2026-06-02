@@ -24,7 +24,7 @@ Inspired by [Wavetool](https://wavetool.fi/) chat and [SideChain's TheaterChat](
 - **Multi-channel view** — tap any channel tab to toggle it in or out of the view; combined feed sorted by timestamp with per-message channel colour dots; at least one channel always remains selected
 - **Flash / page** — one-button high-priority alert per channel; channel tab pulses + message box border lights up in the channel colour; auto-flash configurable globally (Settings → Behavior) and per-channel (Settings → channel editor)
 - **Configurable flash count** — set how many times the channel pulses per flash event (1–5 in Settings → Behavior; per-channel override in channel editor; default 4)
-- **Macros** — per-channel one-tap buttons for common callouts (HOLD, CLEAR, BATTERY LOW…), optionally bound to F-keys; shown in a vertical side panel (keyboard icon toggle) with 1 or 2 columns; all macros always visible — no scroll, no accidental fires on touch
+- **Macros** — per-channel one-tap buttons for common callouts (HOLD, CLEAR, BATTERY LOW…), optionally bound to F-keys; shown in a vertical side panel (keyboard icon toggle) with 1 or 2 columns (set in Settings → Behavior); all macros always visible — no scroll, no accidental fires on touch
 - **Session presets** — save and restore named channel layouts; accessible from the folder icon in the sidebar; import/export `.toml` files to share layouts across machines
 - **Hybrid discovery** — mDNS/Bonjour auto-discovery + OSC beacon broadcast every 7s + manual static IP for AP-isolated or VLAN-segmented show networks
 - **Static peer management** — add/remove known peers by IP from the Settings screen; static peers are always contacted regardless of discovery state, bypassing AP isolation
@@ -150,7 +150,7 @@ network_interface = "en0"      # Omit to bind all interfaces
 flash_on_critical = true       # Auto-flash on priority-3 messages (Settings → Behavior)
 flash_on_message = false       # Auto-flash on every message (Settings → Behavior)
 flash_count = 4                # Flash pulse count per event, 1–10 (Settings → Behavior)
-macros_columns = 1             # Macros panel column count, 1–2 (toggle in panel header)
+macros_columns = 1             # Macros panel column count, 1–2 (Settings → Behavior)
 
 heartbeat_interval_secs = 7
 peer_timeout_secs = 30

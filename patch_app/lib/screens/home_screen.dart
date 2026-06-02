@@ -366,15 +366,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 macros: _aggregatedMacros,
                 isMulti: _selectedIds.length > 1,
                 columns: _macrosColumns,
-                onColumnsChanged: (n) {
-                  setState(() => _macrosColumns = n);
-                  widget.bridge.setMacrosColumns(n);
-                },
                 onMacro: (cm) => widget.bridge.sendMessage(
                   channelId: cm.channelId,
                   payload: cm.macro.payload,
                   priority: cm.macro.priority,
                 ),
+                onClose: () => setState(() => _showMacros = false),
               ),
             ),
           if (_showPeers)
@@ -383,6 +380,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: PeersPanel(
                 peers: _peers,
                 onClearStale: () => widget.bridge.clearStalePeers(),
+                onClose: () => setState(() => _showPeers = false),
               ),
             ),
         ],
@@ -650,25 +648,18 @@ class _ChannelView extends StatelessWidget {
                 ),
               ],
               FlashButton(onFlash: _sendFlash),
-              const SizedBox(width: 8),
-              IconButton(
-                icon: Icon(
-                  Icons.keyboard_outlined,
-                  color: showMacros ? PatchTheme.accent : PatchTheme.textMuted,
-                  size: 20,
+              if (!showMacros)
+                IconButton(
+                  icon: const Icon(Icons.keyboard_outlined, color: PatchTheme.textMuted, size: 20),
+                  tooltip: 'Show macros',
+                  onPressed: onToggleMacros,
                 ),
-                tooltip: showMacros ? 'Hide macros' : 'Show macros',
-                onPressed: onToggleMacros,
-              ),
-              IconButton(
-                icon: Icon(
-                  Icons.people,
-                  color: showPeers ? PatchTheme.accent : PatchTheme.textMuted,
-                  size: 20,
+              if (!showPeers)
+                IconButton(
+                  icon: const Icon(Icons.people, color: PatchTheme.textMuted, size: 20),
+                  tooltip: 'Show peers',
+                  onPressed: onTogglePeers,
                 ),
-                tooltip: showPeers ? 'Hide peers' : 'Show peers',
-                onPressed: onTogglePeers,
-              ),
             ],
           ),
         ),

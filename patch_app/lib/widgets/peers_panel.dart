@@ -11,7 +11,8 @@ import '../theme/patch_theme.dart';
 class PeersPanel extends StatefulWidget {
   final List<PeerInfo> peers;
   final VoidCallback? onClearStale;
-  const PeersPanel({super.key, required this.peers, this.onClearStale});
+  final VoidCallback? onClose;
+  const PeersPanel({super.key, required this.peers, this.onClearStale, this.onClose});
 
   @override
   State<PeersPanel> createState() => _PeersPanelState();
@@ -46,6 +47,13 @@ class _PeersPanelState extends State<PeersPanel> {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
+                if (widget.onClose != null)
+                  IconButton(
+                    icon: const Icon(Icons.people, size: 18),
+                    color: PatchTheme.accent,
+                    tooltip: 'Hide peers',
+                    onPressed: widget.onClose,
+                  ),
                 const Expanded(
                   child: Text(
                     'PEERS',
