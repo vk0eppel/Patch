@@ -10,7 +10,8 @@ import '../theme/patch_theme.dart';
 /// without waiting for an external event to trigger a Flutter rebuild.
 class PeersPanel extends StatefulWidget {
   final List<PeerInfo> peers;
-  const PeersPanel({super.key, required this.peers});
+  final VoidCallback? onClearStale;
+  const PeersPanel({super.key, required this.peers, this.onClearStale});
 
   @override
   State<PeersPanel> createState() => _PeersPanelState();
@@ -43,15 +44,27 @@ class _PeersPanelState extends State<PeersPanel> {
           Container(
             height: PatchTheme.headerHeight,
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            alignment: Alignment.centerLeft,
-            child: const Text(
-              'PEERS',
-              style: TextStyle(
-                color: PatchTheme.textSecondary,
-                fontSize: PatchTheme.fontSizeSmall,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.5,
-              ),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'PEERS',
+                    style: TextStyle(
+                      color: PatchTheme.textSecondary,
+                      fontSize: PatchTheme.fontSizeSmall,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                ),
+                if (widget.onClearStale != null)
+                  IconButton(
+                    icon: const Icon(Icons.person_remove_outlined, size: 16),
+                    color: PatchTheme.textMuted,
+                    tooltip: 'Clear inactive peers',
+                    onPressed: widget.onClearStale,
+                  ),
+              ],
             ),
           ),
           const Divider(color: PatchTheme.border, height: 1),

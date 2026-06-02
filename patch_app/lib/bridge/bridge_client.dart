@@ -202,6 +202,16 @@ class BridgeClient {
     }
   }
 
+  /// Remove dynamic peers (OscBeacon / Mdns) not heard from within [maxAgeSecs].
+  /// ManualIp / static peers are never removed.
+  Future<void> clearStalePeers({int maxAgeSecs = 60}) async {
+    try {
+      await rust.clearStalePeers(maxAgeSecs: BigInt.from(maxAgeSecs));
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
   Future<void> addStaticPeer(String address, int port, {String? label}) async {
     try {
       await rust.addStaticPeer(address: address, port: port, label: label);

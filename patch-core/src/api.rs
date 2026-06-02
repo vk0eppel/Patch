@@ -212,6 +212,16 @@ pub async fn remove_static_peer(address: String, port: u16) -> Result<()> {
     engine().state.remove_static_peer(&address, port).await
 }
 
+/// Remove dynamic (OscBeacon / Mdns) peers not heard from within `max_age_secs`.
+/// ManualIp / static peers are never removed.
+pub async fn clear_stale_peers(max_age_secs: u64) -> Result<()> {
+    let removed = engine().state.clear_stale_peers(max_age_secs).await;
+    for id in removed {
+        engine().state.publish(AppEvent::PeerExpired(id)).await;
+    }
+    Ok(())
+}
+
 pub async fn upsert_channel(id: String, display_name: Option<String>, color: Option<String>) -> Result<()> {
     // Validate that the id is safe to embed in an OSC address path.
     if id.is_empty() || id.chars().any(|c| !matches!(c, 'a'..='z' | '0'..='9' | '_' | '-')) {

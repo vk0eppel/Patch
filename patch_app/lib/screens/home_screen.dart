@@ -380,7 +380,10 @@ class _HomeScreenState extends State<HomeScreen> {
           if (_showPeers)
             SizedBox(
               width: _kPeersPanelWidth,
-              child: PeersPanel(peers: _peers),
+              child: PeersPanel(
+                peers: _peers,
+                onClearStale: () => widget.bridge.clearStalePeers(),
+              ),
             ),
         ],
       ),

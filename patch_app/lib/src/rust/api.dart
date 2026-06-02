@@ -106,6 +106,11 @@ Future<void> addStaticPeer({
 Future<void> removeStaticPeer({required String address, required int port}) =>
     RustLib.instance.api.crateApiRemoveStaticPeer(address: address, port: port);
 
+/// Remove dynamic (OscBeacon / Mdns) peers not heard from within `max_age_secs`.
+/// ManualIp / static peers are never removed.
+Future<void> clearStalePeers({required BigInt maxAgeSecs}) =>
+    RustLib.instance.api.crateApiClearStalePeers(maxAgeSecs: maxAgeSecs);
+
 Future<void> upsertChannel({
   required String id,
   String? displayName,

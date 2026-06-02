@@ -271,6 +271,25 @@ impl AppState {
         self.publish(AppEvent::PeerUpdated(presence)).await;
     }
 
+    /// Remove dynamic (OscBeacon / Mdns) peers not heard from within `max_age_secs`.
+    /// ManualIp / static peers are never removed.
+    /// Returns the IDs of removed peers so callers can emit PeerExpired events.
+    pub async fn clear_stale_peers(&self, max_age_secs: u64) -> Vec<Uuid> {
+        let mut peers = self.0.peers.write().await;
+        let mut removed = Vec::new();
+        peers.retain(|id, p| {
+            let is_manual = matches!(p.discovery_mode, peer::DiscoveryMode::ManualIp);
+            let is_stale = p.is_stale(max_age_secs as i64);
+            if !is_manual && is_stale {
+                removed.push(*id);
+                false
+            } else {
+                true
+            }
+        });
+        removed
+    }
+
     pub async fn has_peer(&self, peer_id: Uuid) -> bool {
         self.0.peers.read().await.contains_key(&peer_id)
     }

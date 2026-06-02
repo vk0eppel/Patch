@@ -18,7 +18,9 @@ Peers appear in the **PEERS panel** with:
 - 🟢 **Green dot** — heard from within the last 35 seconds (any packet: message, flash, or heartbeat)
 - ⚫ **Grey dot** — no recent activity, or manually configured (static IP)
 
-Peers are remembered for the full app session and never auto-removed. If a grey-dot peer sends or receives any message, their dot turns green immediately.
+Peers are remembered for the full app session and never auto-expire automatically. If a grey-dot peer sends or receives any message, their dot turns green immediately.
+
+To clean up the list after a show or when moving between networks, tap the **👤 (person remove) button** in the PEERS panel header. This removes all grey-dot dynamic peers (mDNS / OSC beacon) that haven't been heard from in the last 60 seconds. Manually configured static peers are never removed by this action.
 
 ---
 

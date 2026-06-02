@@ -278,16 +278,8 @@ Bitfocus Companion — see `docs/integrations.md`.
 ### ~~Clear chat history~~ ✅ Done
 `clear_messages(channel_id: Option<String>)` in `state/mod.rs` + `api.rs`. `clearMessages()` in `bridge_client.dart` emits `messages_cleared`. 🗑 button (`delete_sweep_outlined`) in `_ChannelView` header shows a confirm dialog scoped to the selected channel(s); home screen clears the local `_messages` map on the event.
 
-### Clear inactive dynamic peers
-**Effort:** small
-
-A button in the peers panel to remove stale dynamic peers (OscBeacon / Mdns entries
-whose `last_seen` exceeds a threshold, e.g. 60 s). ManualIp / static peers are never
-removed. Useful for post-show cleanup or when moving between network environments.
-
-Implementation:
-- Add `clear_stale_peers(max_age_secs: u64)` to `state/mod.rs` + `api.rs`
-- Add a ↺ or 🗑 button to the peers panel header; confirm dialog optional
+### ~~Clear inactive dynamic peers~~ ✅ Done
+`clear_stale_peers(max_age_secs: u64)` in `state/mod.rs` + `api.rs`; emits `PeerExpired` for each removed peer. `clearStalePeers({maxAgeSecs = 60})` in `bridge_client.dart`. `person_remove_outlined` icon button in the `PeersPanel` header (via `onClearStale` callback); ManualIp / static peers are never removed.
 
 ### Global shortcuts (shown on all channels)
 **Effort:** medium
