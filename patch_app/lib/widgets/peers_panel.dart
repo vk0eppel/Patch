@@ -59,7 +59,7 @@ class _PeersPanelState extends State<PeersPanel> {
             child: widget.peers.isEmpty
                 ? const Center(
                     child: Text(
-                      'No peers',
+                      'No peers yet',
                       style: TextStyle(color: PatchTheme.textMuted),
                     ),
                   )

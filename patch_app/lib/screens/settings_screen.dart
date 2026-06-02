@@ -203,6 +203,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               widget.bridge.setClientName(name);
             }),
           ]),
+          const SizedBox(height: 4),
+          const Text(
+            'Your display name as seen by other Patch users on the network.',
+            style: TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeSmall),
+          ),
           const SizedBox(height: 10),
           _UsernameField(
             controller: _nameCtrl,

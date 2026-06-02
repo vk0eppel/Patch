@@ -48,9 +48,19 @@ class _MessageListState extends State<MessageList> {
   Widget build(BuildContext context) {
     if (widget.messages.isEmpty) {
       return const Center(
-        child: Text(
-          'No messages yet',
-          style: TextStyle(color: PatchTheme.textMuted),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'No messages yet',
+              style: TextStyle(color: PatchTheme.textMuted),
+            ),
+            SizedBox(height: 6),
+            Text(
+              'Are you on the same network as your crew?',
+              style: TextStyle(color: PatchTheme.textMuted, fontSize: 11),
+            ),
+          ],
         ),
       );
     }

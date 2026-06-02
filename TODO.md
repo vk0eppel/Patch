@@ -317,28 +317,24 @@ Implementation approaches (TBD):
 - A synthetic `__global__` channel whose shortcuts are appended to every panel; messages sent on `__global__` reach all peers regardless of their channel subscriptions
 - Or: a top-level `global_shortcuts` field in `Config` (not attached to any channel), with a dedicated send path
 
-### Hide keyboard on iOS / iPad
-**Effort:** small
-
-Option to prevent the message input field from auto-focusing (and raising the iOS software
-keyboard) on channel switch or app open. In show mode on iPad, shortcuts are the primary
-input method; the keyboard appearing unexpectedly covers part of the UI.
-
-Implementation:
-- Add `hide_keyboard_on_switch: bool` to `Config` (serde default: false); expose in Settings → Behavior
-- In `_ChannelView`, when this setting is on, call `FocusScope.of(context).unfocus()` after channel selection changes
-- `MessageInput` widget should only auto-focus when the user explicitly taps the field
+### ~~Hide keyboard on iOS / iPad~~ ✅ Done
+`hide_keyboard: bool` (serde default: `true`) added to `Config` and `ConfigSnapshot`. Toggle in Settings → Behavior (iOS/Android only). `MessageInput` respects `hideKeyboard` param — no autofocus, hint changes to "Tap to type…". `FocusScope.unfocus()` called on channel tap when enabled.
 
 ### In-app help & contextual tooltips
 **Effort:** medium
 
-Contextual help for crew members who won't read external docs. Target areas:
-- First-run onboarding: name prompt, NIC picker explanation, "how to find peers"
-- Peers panel `?` tooltip explaining the three discovery modes (mDNS / OSC beacon / static IP) and what the green/gray dots mean
-- Settings sections: short description above each section header
-- Permission-denied SnackBar (already implemented) could link to a help page
-- Empty message list hint: "No messages yet — are you on the same network as your crew?"
-- Consider a `HelpTooltip` widget wrapping an `IconButton(icon: Icon(Icons.help_outline))` for reuse across screens
+Contextual help for crew members who won't read external docs. Remaining work:
+
+**Passive hints** ✅ Done (2026-06-02):
+- Settings → Identity subtitle: "Your display name as seen by other Patch users on the network."
+- Settings sections already have subtitles (Network Interface, Static Peers, Behavior, Channels & Macros)
+- Empty message list: "No messages yet / Are you on the same network as your crew?"
+
+**Still to do:**
+- First-run onboarding: name prompt on first launch if name is still the system default
+- Peers panel `?` tooltip or help text explaining discovery modes
+- Permission-denied SnackBar could link to a help page
+- Consider a `HelpTooltip` widget wrapping `IconButton(icon: Icon(Icons.help_outline))` for reuse
 
 ---
 
