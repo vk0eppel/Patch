@@ -1359,11 +1359,11 @@ class _FlashCountPicker extends StatelessWidget {
     final showGlobal = value == null;
     final options = <({int? v, String label})>[
       if (showGlobal) (v: null, label: '–'),
-      (v: 1, label: '1'),
-      (v: 2, label: '2'),
       (v: 3, label: '3'),
       (v: 4, label: '4'),
       (v: 5, label: '5'),
+      (v: 6, label: '6'),
+      (v: 7, label: '7'),
     ];
 
     return Row(

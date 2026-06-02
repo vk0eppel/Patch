@@ -114,10 +114,10 @@ impl AppState {
         cfg.save()
     }
 
-    /// Persist the global flash pulse count (clamped to 1–10).
+    /// Persist the global flash pulse count (clamped to 3–7).
     pub async fn set_flash_count(&self, count: u8) -> anyhow::Result<()> {
         let mut cfg = self.0.config.write().await;
-        cfg.flash_count = count.clamp(1, 10);
+        cfg.flash_count = count.clamp(3, 7);
         cfg.save()
     }
 
@@ -151,7 +151,7 @@ impl AppState {
             // flash_count: None = leave unchanged, Some(0) = clear override (use global),
             // Some(n) = set per-channel override to n.
             if let Some(v) = flash_count {
-                ch.flash_count = if v == 0 { None } else { Some(v.clamp(1, 10)) };
+                ch.flash_count = if v == 0 { None } else { Some(v.clamp(3, 7)) };
             }
         }
         self.persist_channels().await?;

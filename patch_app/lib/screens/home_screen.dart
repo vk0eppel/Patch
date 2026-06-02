@@ -792,7 +792,7 @@ class _FlashLayerState extends State<_FlashLayer> {
   }
 
   Future<void> _pulse() async {
-    final count = widget.pulseCount.clamp(1, 10);
+    final count = widget.pulseCount.clamp(3, 7);
     for (var i = 0; i < count; i++) {
       if (!mounted) return;
       setState(() => _lit = true);
