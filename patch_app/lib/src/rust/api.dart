@@ -119,6 +119,10 @@ Future<void> upsertChannel({
 Future<void> deleteChannel({required String id}) =>
     RustLib.instance.api.crateApiDeleteChannel(id: id);
 
+/// Clear the message buffer for a specific channel, or all channels when `channel_id` is `None`.
+Future<void> clearMessages({String? channelId}) =>
+    RustLib.instance.api.crateApiClearMessages(channelId: channelId);
+
 Future<void> resetChannels() => RustLib.instance.api.crateApiResetChannels();
 
 Future<void> upsertMacro({

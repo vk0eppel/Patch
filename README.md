@@ -30,6 +30,7 @@ Inspired by [Wavetool](https://wavetool.fi/) chat and [SideChain's TheaterChat](
 - **Static peer management** — add/remove known peers by IP from the Settings screen; static peers are always contacted regardless of discovery state, bypassing AP isolation
 - **Configurable identity** — set your display name and network interface from the settings screen; NIC picker filters out virtual/tunnel interfaces and shows only real NICs with IPv4 addresses; changes persist immediately
 - **Priority levels** — info / warning / critical; critical messages are visually distinct and require ACK
+- **Clear message history** — clear the buffer for the current channel(s) via the 🗑 button in the message area; confirm dialog prevents accidental clears; runtime only, nothing stored to disk
 - **Message deduplication** — UUID per message; never see the same message twice
 - **Dark, high-contrast UI** — readable from a stage desk at 2m
 - **Keyboard-first** — Enter to send, F1–F12 for macros (binding configurable per macro; fires from any focus state)

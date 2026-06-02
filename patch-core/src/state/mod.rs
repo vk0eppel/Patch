@@ -204,6 +204,19 @@ impl AppState {
         self.publish(AppEvent::MessageReceived(msg)).await;
     }
 
+    /// Clear messages for a specific channel, or all channels when `channel_id` is `None`.
+    pub async fn clear_messages(&self, channel_id: Option<&str>) {
+        let mut buf = self.0.messages.write().await;
+        match channel_id {
+            Some(id) => buf.retain(|m| m.channel_id != id),
+            None => buf.clear(),
+        }
+    }
+
+    pub async fn get_all_messages(&self) -> Vec<PatchMessage> {
+        self.0.messages.read().await.clone()
+    }
+
     pub async fn get_messages(&self, channel_id: &str, limit: usize) -> Vec<PatchMessage> {
         let buf = self.0.messages.read().await;
         buf.iter()

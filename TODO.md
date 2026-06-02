@@ -284,15 +284,8 @@ Implementation:
 - Add `exportMessages()` to `bridge_client.dart`
 - Add an export button in the `_ChannelView` header (or via a long-press menu on the channel name)
 
-### Clear chat history
-**Effort:** small
-
-Clear the in-memory message buffer for a specific channel, or all channels at once.
-No persistence impact — only affects the runtime buffer (messages are not stored to disk).
-
-Implementation:
-- Add `clear_messages(channel_id: Option<String>)` to `state/mod.rs` + `api.rs`
-- Button in the `_ChannelView` header (destructive action — show confirm dialog first)
+### ~~Clear chat history~~ ✅ Done
+`clear_messages(channel_id: Option<String>)` in `state/mod.rs` + `api.rs`. `clearMessages()` in `bridge_client.dart` emits `messages_cleared`. 🗑 button (`delete_sweep_outlined`) in `_ChannelView` header shows a confirm dialog scoped to the selected channel(s); home screen clears the local `_messages` map on the event.
 
 ### Clear inactive dynamic peers
 **Effort:** small

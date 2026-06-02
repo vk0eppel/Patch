@@ -231,6 +231,16 @@ class _HomeScreenState extends State<HomeScreen> {
       case 'channel_list_updated':
         widget.bridge.getChannels();
 
+      case 'messages_cleared':
+        final clearedId = event['channel_id'] as String?;
+        setState(() {
+          if (clearedId != null) {
+            _messages.remove(clearedId);
+          } else {
+            _messages.clear();
+          }
+        });
+
       case 'session_loaded':
         widget.bridge.getChannels();
         setState(() => _selectedIds = {});
@@ -546,6 +556,42 @@ class _ChannelView extends StatelessWidget {
     }
   }
 
+  void _confirmClear(BuildContext context) {
+    final label = selectedChannels.length == 1
+        ? selectedChannels.first.displayName
+        : '${selectedChannels.length} channels';
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Clear messages?'),
+        content: SizedBox(
+          width: double.infinity,
+          child: Text(
+            'This will clear the message history for $label. '
+            'Messages are not stored to disk — this cannot be undone.',
+            style: const TextStyle(color: PatchTheme.textSecondary),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: PatchTheme.critical),
+            onPressed: () {
+              for (final ch in selectedChannels) {
+                bridge.clearMessages(channelId: ch.id);
+              }
+              Navigator.pop(context);
+            },
+            child: const Text('Clear', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final content = Column(
@@ -611,9 +657,23 @@ class _ChannelView extends StatelessWidget {
 
         // ── Messages ──────────────────────────────────────────────────────
         Expanded(
-          child: MessageList(
-            messages: messages,
-            channelColors: _isMulti ? channelColors : null,
+          child: Stack(
+            children: [
+              MessageList(
+                messages: messages,
+                channelColors: _isMulti ? channelColors : null,
+              ),
+              Positioned(
+                top: 4,
+                right: 4,
+                child: IconButton(
+                  icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                  color: PatchTheme.textMuted,
+                  tooltip: 'Clear messages',
+                  onPressed: () => _confirmClear(context),
+                ),
+              ),
+            ],
           ),
         ),
         const Divider(color: PatchTheme.border, height: 1),

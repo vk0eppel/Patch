@@ -275,6 +275,16 @@ class BridgeClient {
     }
   }
 
+  /// Clear messages for [channelId], or all channels when null.
+  Future<void> clearMessages({String? channelId}) async {
+    try {
+      await rust.clearMessages(channelId: channelId);
+      _emit({'event': 'messages_cleared', 'channel_id': channelId});
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
   /// Reset all channels to factory defaults (AUDIO · RF · LIGHTING · VIDEO · STAGE).
   Future<void> resetChannels() async {
     try {

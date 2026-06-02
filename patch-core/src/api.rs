@@ -233,6 +233,12 @@ pub async fn delete_channel(id: String) -> Result<()> {
     engine().state.delete_channel(&id).await
 }
 
+/// Clear the message buffer for a specific channel, or all channels when `channel_id` is `None`.
+pub async fn clear_messages(channel_id: Option<String>) -> Result<()> {
+    engine().state.clear_messages(channel_id.as_deref()).await;
+    Ok(())
+}
+
 pub async fn reset_channels() -> Result<()> {
     engine().state.reset_channels().await
 }
