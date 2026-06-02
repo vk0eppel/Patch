@@ -123,6 +123,15 @@ Future<void> deleteChannel({required String id}) =>
 Future<void> clearMessages({String? channelId}) =>
     RustLib.instance.api.crateApiClearMessages(channelId: channelId);
 
+/// Export messages to a CSV file at `path`.
+/// When `channel_id` is `Some`, only that channel's messages are exported.
+/// When `None`, all channels are exported (a `channel` column is included).
+Future<void> exportMessages({String? channelId, required String path}) =>
+    RustLib.instance.api.crateApiExportMessages(
+      channelId: channelId,
+      path: path,
+    );
+
 Future<void> resetChannels() => RustLib.instance.api.crateApiResetChannels();
 
 Future<void> upsertMacro({

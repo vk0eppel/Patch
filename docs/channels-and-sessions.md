@@ -148,3 +148,20 @@ address = "192.168.1.50"
 port = 9000
 label = "Monitor World"
 ```
+
+---
+
+## Message history
+
+### Exporting messages
+
+Tap the **↓ (download) icon** in the top-right corner of the message area to export the current channel's messages to a CSV file.
+
+- **Single channel selected** — exports that channel's messages; columns: `timestamp, sender, priority, message`
+- **Multiple channels selected** — exports messages from all selected channels; columns: `timestamp, channel, sender, priority, message`
+
+The save dialog pre-fills the filename as `patch_<channel>.csv`. Open the file in any spreadsheet app or text editor.
+
+### Clearing messages
+
+Tap the **🗑 (delete sweep) icon** next to the export button to clear the message buffer for the current channel(s). A confirmation dialog appears before anything is deleted. This only affects the in-memory buffer — nothing is stored to disk, so clearing is permanent for that session.

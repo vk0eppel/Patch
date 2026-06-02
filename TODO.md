@@ -272,17 +272,8 @@ A dedicated Elgato Stream Deck plugin (Node.js, Elgato SDK) that:
 Note: Stream Deck already works with Patch today via F-key emulation or OSC through
 Bitfocus Companion — see `docs/integrations.md`.
 
-### Export chat history
-**Effort:** small
-
-Serialize the in-memory message buffer to a file (CSV or plain text: timestamp, channel,
-sender, priority, payload). Export can be per-channel or full log across all channels.
-Uses `file_picker` (already a dependency) for the save dialog, same pattern as session export.
-
-Implementation:
-- Add `export_messages(channel_id: Option<String>, path: String)` to `api.rs` — filters ring buffer and writes CSV/text via `std::fs`
-- Add `exportMessages()` to `bridge_client.dart`
-- Add an export button in the `_ChannelView` header (or via a long-press menu on the channel name)
+### ~~Export chat history~~ ✅ Done
+`export_messages(channel_id: Option<String>, path: String)` in `api.rs` writes RFC 4180 CSV (timestamp, [channel,] sender, priority, message). `exportMessages()` in `bridge_client.dart`. `download_outlined` button in message area (top-right, left of the clear button); `FilePicker.saveFile` pre-filled with `patch_<channel>.csv`; single-channel export omits the channel column; multi-channel selection includes it.
 
 ### ~~Clear chat history~~ ✅ Done
 `clear_messages(channel_id: Option<String>)` in `state/mod.rs` + `api.rs`. `clearMessages()` in `bridge_client.dart` emits `messages_cleared`. 🗑 button (`delete_sweep_outlined`) in `_ChannelView` header shows a confirm dialog scoped to the selected channel(s); home screen clears the local `_messages` map on the event.

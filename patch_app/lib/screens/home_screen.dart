@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -556,6 +557,21 @@ class _ChannelView extends StatelessWidget {
     }
   }
 
+  Future<void> _exportMessages(BuildContext context) async {
+    final label = selectedChannels.length == 1
+        ? selectedChannels.first.displayName.toLowerCase()
+        : 'all_channels';
+    final path = await FilePicker.platform.saveFile(
+      dialogTitle: 'Export Messages',
+      fileName: 'patch_$label.csv',
+      allowedExtensions: ['csv'],
+      type: FileType.custom,
+    );
+    if (path == null) return;
+    final channelId = selectedChannels.length == 1 ? selectedChannels.first.id : null;
+    bridge.exportMessages(channelId: channelId, path: path);
+  }
+
   void _confirmClear(BuildContext context) {
     final label = selectedChannels.length == 1
         ? selectedChannels.first.displayName
@@ -662,6 +678,16 @@ class _ChannelView extends StatelessWidget {
               MessageList(
                 messages: messages,
                 channelColors: _isMulti ? channelColors : null,
+              ),
+              Positioned(
+                top: 4,
+                right: 40,
+                child: IconButton(
+                  icon: const Icon(Icons.download_outlined, size: 18),
+                  color: PatchTheme.textMuted,
+                  tooltip: 'Export messages',
+                  onPressed: () => _exportMessages(context),
+                ),
               ),
               Positioned(
                 top: 4,

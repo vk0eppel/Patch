@@ -275,6 +275,16 @@ class BridgeClient {
     }
   }
 
+  /// Export messages to a CSV file at [path].
+  /// Pass [channelId] to export a single channel, or null for all channels.
+  Future<void> exportMessages({String? channelId, required String path}) async {
+    try {
+      await rust.exportMessages(channelId: channelId, path: path);
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
   /// Clear messages for [channelId], or all channels when null.
   Future<void> clearMessages({String? channelId}) async {
     try {

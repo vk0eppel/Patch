@@ -239,6 +239,54 @@ pub async fn clear_messages(channel_id: Option<String>) -> Result<()> {
     Ok(())
 }
 
+/// Export messages to a CSV file at `path`.
+/// When `channel_id` is `Some`, only that channel's messages are exported.
+/// When `None`, all channels are exported (a `channel` column is included).
+pub async fn export_messages(channel_id: Option<String>, path: String) -> Result<()> {
+    let msgs = engine().state.get_all_messages().await;
+    let filtered: Vec<_> = match channel_id.as_deref() {
+        Some(id) => msgs.into_iter().filter(|m| m.channel_id == id).collect(),
+        None     => msgs,
+    };
+
+    let include_channel = channel_id.is_none();
+    let mut out = String::new();
+
+    // Header
+    if include_channel {
+        out.push_str("timestamp,channel,sender,priority,message\n");
+    } else {
+        out.push_str("timestamp,sender,priority,message\n");
+    }
+
+    for m in &filtered {
+        let ts = m.timestamp.format("%Y-%m-%dT%H:%M:%S").to_string();
+        let priority = match m.priority {
+            crate::osc::types::Priority::Debug    => "debug",
+            crate::osc::types::Priority::Info     => "info",
+            crate::osc::types::Priority::Warning  => "warning",
+            crate::osc::types::Priority::Critical => "critical",
+        };
+        // Escape double-quotes in payload by doubling them (RFC 4180).
+        let payload = m.payload.replace('"', "\"\"");
+        let sender  = m.sender_name.replace('"', "\"\"");
+        if include_channel {
+            out.push_str(&format!(
+                "{},{},\"{}\",{},\"{}\"\n",
+                ts, m.channel_id, sender, priority, payload
+            ));
+        } else {
+            out.push_str(&format!(
+                "{},\"{}\",{},\"{}\"\n",
+                ts, sender, priority, payload
+            ));
+        }
+    }
+
+    std::fs::write(&path, out)?;
+    Ok(())
+}
+
 pub async fn reset_channels() -> Result<()> {
     engine().state.reset_channels().await
 }

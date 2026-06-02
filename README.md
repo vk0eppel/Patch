@@ -31,6 +31,7 @@ Inspired by [Wavetool](https://wavetool.fi/) chat and [SideChain's TheaterChat](
 - **Configurable identity** — set your display name and network interface from the settings screen; NIC picker filters out virtual/tunnel interfaces and shows only real NICs with IPv4 addresses; changes persist immediately
 - **Priority levels** — info / warning / critical; critical messages are visually distinct and require ACK
 - **Clear message history** — clear the buffer for the current channel(s) via the 🗑 button in the message area; confirm dialog prevents accidental clears; runtime only, nothing stored to disk
+- **Export message history** — export the current channel's messages (or all selected channels) to a CSV file via the ↓ button in the message area; columns: timestamp, sender, priority, message (channel column added for multi-channel exports)
 - **Message deduplication** — UUID per message; never see the same message twice
 - **Dark, high-contrast UI** — readable from a stage desk at 2m
 - **Keyboard-first** — Enter to send, F1–F12 for macros (binding configurable per macro; fires from any focus state)
@@ -184,6 +185,8 @@ label = "Monitor World"
 - [x] Settings screen — static peer management via UI (add/remove peers by address + port + label)
 - [x] Heartbeat broadcast wired through transport (presence sent every 7s)
 - [x] Peer display — correct name from mDNS TXT record, transport-resolved IP preserved across heartbeats, self-discovery filtered out
+- [x] Clear message history — per-channel or all channels, confirm dialog, runtime only
+- [x] Export message history — CSV via file picker, per-channel or multi-channel
 See [TODO.md](TODO.md) for pending work and known issues.
 
 ---
