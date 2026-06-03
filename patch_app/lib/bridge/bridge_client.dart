@@ -23,13 +23,22 @@ class BridgeClient {
   StreamSubscription<rust.PatchAppEvent>? _engineSub;
   bool _connected = false;
 
+  /// `RustLib.init()` may only be called once per process — FRB throws on a
+  /// second call. Tracked separately from [_connected] so a retry after a
+  /// failed `rust.init()` (e.g. socket bind error) doesn't re-init the lib.
+  static bool _rustLibInitialized = false;
+
   /// Stream of legacy-shaped events: `{"event": "<type>", ...}`.
   Stream<Map<String, dynamic>> get events => _eventController.stream;
 
   /// Boot the Rust engine and start forwarding events into [events].
+  /// Safe to call again after a failed attempt (used by the boot Retry path).
   Future<void> connect() async {
     if (_connected) return;
-    await RustLib.init();
+    if (!_rustLibInitialized) {
+      await RustLib.init();
+      _rustLibInitialized = true;
+    }
     await rust.init();
     _engineSub = rust.subscribeEvents().listen(_forwardEngineEvent);
     _connected = true;

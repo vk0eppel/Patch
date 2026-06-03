@@ -65,6 +65,10 @@ class _HomeScreenState extends State<HomeScreen> {
   static const double _kMacroColumnWidth = 160.0;
   static const double _kPeersPanelWidth = 160.0;
 
+  /// Mirror of the Rust ring buffer cap (`MAX_BUFFER` in `state/mod.rs`) so the
+  /// in-memory list doesn't grow unbounded over a long show.
+  static const int _kMaxMessagesPerChannel = 500;
+
   List<PeerInfo> _peers = [];
   bool _showPeers = false;
   bool _showMacros = false;
@@ -192,7 +196,11 @@ class _HomeScreenState extends State<HomeScreen> {
       case 'message':
         final msg = PatchMessage.fromJson(event['data'] as Map<String, dynamic>);
         setState(() {
-          _messages.putIfAbsent(msg.channelId, () => []).add(msg);
+          final list = _messages.putIfAbsent(msg.channelId, () => [])..add(msg);
+          // Keep the in-memory list bounded, mirroring the engine ring buffer.
+          if (list.length > _kMaxMessagesPerChannel) {
+            list.removeRange(0, list.length - _kMaxMessagesPerChannel);
+          }
         });
         // Flash if global OR per-channel flag is set.
         final ch = _channels.cast<PatchChannel?>()
@@ -284,7 +292,17 @@ class _HomeScreenState extends State<HomeScreen> {
         }
 
       case 'error':
-        debugPrint('Bridge error: ${event['message']}');
+        final msg = event['message'] as String? ?? 'Something went wrong';
+        debugPrint('Bridge error: $msg');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(msg),
+              backgroundColor: PatchTheme.critical,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
     }
   }
 
@@ -470,42 +488,55 @@ class _ChannelStrip extends StatelessWidget {
     );
   }
 
+  /// Same rule the engine enforces in `api.rs::upsert_channel`.
+  static final RegExp _slugRegex = RegExp(r'^[a-z0-9_-]+$');
+
   void _showAddChannel(BuildContext context, BridgeClient bridge) {
     final idCtrl = TextEditingController();
     final nameCtrl = TextEditingController();
+    String? idError;
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('New Channel'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: idCtrl,
-              decoration:
-                  const InputDecoration(hintText: 'ID (slug, e.g. "rf")'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: nameCtrl,
-              decoration:
-                  const InputDecoration(hintText: 'Display Name'),
+      builder: (_) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
+          title: const Text('New Channel'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: idCtrl,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'ID (slug, e.g. "rf")',
+                  errorText: idError,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(hintText: 'Display Name'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () {
+                final id = idCtrl.text.trim();
+                if (!_slugRegex.hasMatch(id)) {
+                  setLocal(() => idError =
+                      'Use only lowercase letters, digits, _ or -');
+                  return; // keep the dialog open with feedback
+                }
+                bridge.upsertChannel(id, nameCtrl.text.trim(), '#607D8B');
+                Navigator.pop(context);
+              },
+              child: const Text('Create'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              bridge.upsertChannel(
-                  idCtrl.text.trim(), nameCtrl.text.trim(), '#607D8B');
-              Navigator.pop(context);
-            },
-            child: const Text('Create'),
-          ),
-        ],
       ),
     );
   }
