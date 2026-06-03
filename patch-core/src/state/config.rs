@@ -151,6 +151,22 @@ fn whoami() -> String {
         .unwrap_or_else(|_| "crew".to_string())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The checked-in sample `patch.toml` must stay deserialisable into the
+    /// current `Config` schema (guards against field drift like the old
+    /// `shortcuts`/`bridge_port` leftovers).
+    #[test]
+    fn sample_patch_toml_deserializes() {
+        let raw = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/patch.toml"));
+        let cfg: Config = toml::from_str(raw).expect("sample patch.toml must deserialize");
+        assert_eq!(cfg.default_channels.len(), 5);
+        assert!(cfg.network_interface.is_none());
+    }
+}
+
 pub fn default_channels() -> Vec<Channel> {
     let specs = [
         ("audio",    "AUDIO",    "#E53935"),

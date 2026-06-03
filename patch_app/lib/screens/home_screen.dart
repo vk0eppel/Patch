@@ -410,6 +410,8 @@ class _HomeScreenState extends State<HomeScreen> {
 // ── Channel strip ─────────────────────────────────────────────────────────────
 
 class _ChannelStrip extends StatelessWidget {
+  static const double _kChannelStripWidth = 80.0;
+
   final List<PatchChannel> channels;
   final Set<String> selectedIds;
   final Map<String, int> flashCounts;
@@ -429,7 +431,7 @@ class _ChannelStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 80,
+      width: _kChannelStripWidth,
       color: PatchTheme.surface,
       child: Column(
         children: [
@@ -816,6 +818,10 @@ class _FlashLayer extends StatefulWidget {
 class _FlashLayerState extends State<_FlashLayer> {
   bool _lit = false;
 
+  /// Bumped on every pulse so a flash arriving mid-pulse cancels the in-flight
+  /// loop instead of running two overlapping `setState` cycles.
+  int _pulseGen = 0;
+
   @override
   void didUpdateWidget(_FlashLayer old) {
     super.didUpdateWidget(old);
@@ -823,12 +829,13 @@ class _FlashLayerState extends State<_FlashLayer> {
   }
 
   Future<void> _pulse() async {
+    final gen = ++_pulseGen; // invalidate any pulse still running
     final count = widget.pulseCount.clamp(3, 7);
     for (var i = 0; i < count; i++) {
-      if (!mounted) return;
+      if (!mounted || gen != _pulseGen) return;
       setState(() => _lit = true);
       await Future.delayed(const Duration(milliseconds: 200));
-      if (!mounted) return;
+      if (!mounted || gen != _pulseGen) return;
       setState(() => _lit = false);
       if (i < count - 1) await Future.delayed(const Duration(milliseconds: 150));
     }

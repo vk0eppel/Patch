@@ -460,3 +460,137 @@ impl AppState {
         cfg.save()
     }
 }
+
+// ── Tests ───────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::osc::types::Priority;
+
+    /// An in-memory state with no channels and no static peers. None of the
+    /// methods exercised here touch disk, so no `set_data_dir` is needed.
+    fn test_state() -> AppState {
+        let mut cfg = Config::default();
+        cfg.default_channels = Vec::new();
+        cfg.static_peers = Vec::new();
+        AppState::new(cfg)
+    }
+
+    fn msg(channel: &str) -> PatchMessage {
+        PatchMessage::new(Uuid::new_v4(), "tester", channel, Priority::Info, "hi")
+    }
+
+    fn presence(id: Uuid, when: chrono::DateTime<chrono::Utc>) -> PeerPresence {
+        PeerPresence { peer_id: id, peer_name: "p".into(), channels: Vec::new(), timestamp: when }
+    }
+
+    #[tokio::test]
+    async fn store_message_dedups_by_id() {
+        let st = test_state();
+        let m = msg("rf");
+        st.store_message(m.clone()).await;
+        st.store_message(m.clone()).await; // same id again (our UDP echo)
+        assert_eq!(st.get_all_messages().await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn store_message_evicts_oldest_on_overflow() {
+        let st = test_state();
+        let first = msg("rf");
+        st.store_message(first.clone()).await;
+        for _ in 0..MAX_BUFFER {
+            st.store_message(msg("rf")).await;
+        }
+        let all = st.get_all_messages().await;
+        assert_eq!(all.len(), MAX_BUFFER);
+        assert!(all.iter().all(|m| m.message_id != first.message_id)); // front evicted
+        // Eviction also drops the id from the dedup set, so it can re-arrive.
+        st.store_message(first.clone()).await;
+        assert!(st.get_all_messages().await.iter().any(|m| m.message_id == first.message_id));
+    }
+
+    #[tokio::test]
+    async fn clear_all_allows_re_receive() {
+        let st = test_state();
+        let m = msg("rf");
+        st.store_message(m.clone()).await;
+        st.clear_messages(None).await;
+        assert_eq!(st.get_all_messages().await.len(), 0);
+        st.store_message(m.clone()).await; // same id, accepted after clear
+        assert_eq!(st.get_all_messages().await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn clear_by_channel_rebuilds_dedup_set() {
+        let st = test_state();
+        let rf = msg("rf");
+        let audio = msg("audio");
+        st.store_message(rf.clone()).await;
+        st.store_message(audio.clone()).await;
+        st.clear_messages(Some("rf")).await;
+        let remaining = st.get_all_messages().await;
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].channel_id, "audio");
+        st.store_message(rf.clone()).await; // rf id was cleared from `seen`
+        assert_eq!(st.get_all_messages().await.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn get_peers_merges_static_with_stable_id() {
+        let mut cfg = Config::default();
+        cfg.default_channels = Vec::new();
+        cfg.static_peers = vec![config::StaticPeer {
+            address: "192.168.1.50".into(),
+            port: 9000,
+            label: Some("Monitor World".into()),
+        }];
+        let st = AppState::new(cfg);
+        let a = st.get_peers().await;
+        assert_eq!(a.len(), 1);
+        assert!(matches!(a[0].discovery_mode, peer::DiscoveryMode::ManualIp));
+        assert_eq!(a[0].address, "192.168.1.50");
+        let b = st.get_peers().await;
+        assert_eq!(a[0].peer_id, b[0].peer_id); // synthetic id stable across calls
+    }
+
+    #[tokio::test]
+    async fn get_peers_suppresses_static_when_dynamic_present() {
+        let mut cfg = Config::default();
+        cfg.default_channels = Vec::new();
+        cfg.static_peers = vec![config::StaticPeer {
+            address: "192.168.1.50".into(),
+            port: 9000,
+            label: None,
+        }];
+        let st = AppState::new(cfg);
+        let pid = Uuid::new_v4();
+        st.upsert_peer(presence(pid, chrono::Utc::now())).await;
+        st.touch_peer_address(pid, "192.168.1.50".into(), 9000).await;
+        let peers = st.get_peers().await;
+        assert_eq!(peers.len(), 1); // no synthetic duplicate
+        assert_eq!(peers[0].peer_id, pid);
+    }
+
+    #[tokio::test]
+    async fn clear_stale_removes_dynamic_keeps_manual() {
+        let st = test_state();
+        let old = chrono::Utc::now() - chrono::Duration::seconds(3600);
+        let now = chrono::Utc::now();
+
+        let stale_dyn = Uuid::new_v4();
+        st.upsert_peer(presence(stale_dyn, old)).await;
+        let fresh_dyn = Uuid::new_v4();
+        st.upsert_peer(presence(fresh_dyn, now)).await;
+        let stale_manual = Uuid::new_v4();
+        st.upsert_peer_with_mode(presence(stale_manual, old), peer::DiscoveryMode::ManualIp).await;
+
+        let removed = st.clear_stale_peers(60).await;
+        assert_eq!(removed, vec![stale_dyn]); // only the stale dynamic one
+
+        let ids: Vec<_> = st.get_peers().await.iter().map(|p| p.peer_id).collect();
+        assert!(ids.contains(&fresh_dyn));
+        assert!(ids.contains(&stale_manual)); // ManualIp never removed
+        assert!(!ids.contains(&stale_dyn));
+    }
+}

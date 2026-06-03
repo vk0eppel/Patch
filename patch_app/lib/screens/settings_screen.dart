@@ -1029,19 +1029,26 @@ const List<Color> _channelPalette = [
   Color(0xFF607D8B), // blue-grey (fallback for new channels)
 ];
 
+// Compiled once (lazily) instead of on every dialog open / keystroke.
+final RegExp _slugInvalidChars = RegExp(r'[^a-z0-9-]+');
+final RegExp _slugDashRuns = RegExp(r'-+');
+final RegExp _slugEdgeDashes = RegExp(r'^-|-$');
+final RegExp _hex6 = RegExp(r'^[0-9a-fA-F]{6}$');
+final RegExp _channelIdRegex = RegExp(r'^[a-z0-9][a-z0-9-]*$');
+
 String _slugify(String input) => input
     .toLowerCase()
     .trim()
-    .replaceAll(RegExp(r'[^a-z0-9-]+'), '-')
-    .replaceAll(RegExp(r'-+'), '-')
-    .replaceAll(RegExp(r'^-|-$'), '');
+    .replaceAll(_slugInvalidChars, '-')
+    .replaceAll(_slugDashRuns, '-')
+    .replaceAll(_slugEdgeDashes, '');
 
 String _colorToHex(Color c) =>
     '#${c.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
 
 Color? _hexToColor(String hex) {
   final s = hex.replaceFirst('#', '').trim();
-  if (!RegExp(r'^[0-9a-fA-F]{6}$').hasMatch(s)) return null;
+  if (!_hex6.hasMatch(s)) return null;
   return Color(int.parse('FF$s', radix: 16));
 }
 
@@ -1173,7 +1180,7 @@ void _showChannelDialog(
                   setDialogState(() => error = 'Name and ID are required');
                   return;
                 }
-                if (!RegExp(r'^[a-z0-9][a-z0-9-]*$').hasMatch(id)) {
+                if (!_channelIdRegex.hasMatch(id)) {
                   setDialogState(() => error =
                       'ID must be lowercase letters, digits, or hyphens, and start with a letter or digit.');
                   return;
