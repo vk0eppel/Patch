@@ -421,6 +421,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 segments: const [
                   ButtonSegment(value: 1, label: Text('1')),
                   ButtonSegment(value: 2, label: Text('2')),
+                  ButtonSegment(value: 3, label: Text('3')),
                 ],
                 selected: {_macrosColumns},
                 onSelectionChanged: (s) {
@@ -728,12 +729,32 @@ class _ChannelMacroEditor extends StatelessWidget {
               ),
             )
           else
-            ...channel.macros.map((s) => _MacroRow(
+            ReorderableListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              buildDefaultDragHandles: false, // each row carries its own handle
+              itemCount: channel.macros.length,
+              itemBuilder: (ctx, i) {
+                final s = channel.macros[i];
+                return _MacroRow(
+                  key: ValueKey('${channel.id}:${s.label}'),
                   shortcut: s,
                   channelId: channel.id,
                   bridge: bridge,
+                  index: i,
                   onEdit: () => _showMacroDialog(context, channel, bridge, existing: s),
-                )),
+                );
+              },
+              // onReorderItem is newer than the repo's supported Flutter range;
+              // onReorder works across all Flutter 3.x.
+              // ignore: deprecated_member_use
+              onReorder: (oldIndex, newIndex) {
+                if (newIndex > oldIndex) newIndex -= 1;
+                final labels = channel.macros.map((m) => m.label).toList();
+                labels.insert(newIndex, labels.removeAt(oldIndex));
+                bridge.reorderMacros(channel.id, labels);
+              },
+            ),
           // Per-channel flash settings
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
@@ -922,11 +943,16 @@ class _MacroRow extends StatelessWidget {
   final BridgeClient bridge;
   final VoidCallback onEdit;
 
+  /// Position in the channel's macro list — used to anchor the drag handle.
+  final int index;
+
   const _MacroRow({
+    super.key,
     required this.shortcut,
     required this.channelId,
     required this.bridge,
     required this.onEdit,
+    required this.index,
   });
 
   Color get _priorityColor => switch (shortcut.priority) {
@@ -944,6 +970,17 @@ class _MacroRow extends StatelessWidget {
       ),
       child: Row(
         children: [
+          // Drag handle — grab to reorder.
+          ReorderableDragStartListener(
+            index: index,
+            child: const Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: Tooltip(
+                message: 'Drag to reorder',
+                child: Icon(Icons.drag_handle, size: 16, color: PatchTheme.textMuted),
+              ),
+            ),
+          ),
           // Priority dot
           Container(
             width: 7, height: 7,

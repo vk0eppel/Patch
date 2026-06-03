@@ -371,6 +371,11 @@ pub async fn delete_macro(channel_id: String, label: String) -> Result<()> {
     engine().state.delete_macro(&channel_id, &label).await
 }
 
+/// Reorder a channel's macros to match `ordered_labels` (drag-to-reorder).
+pub async fn reorder_macros(channel_id: String, ordered_labels: Vec<String>) -> Result<()> {
+    engine().state.reorder_macros(&channel_id, ordered_labels).await
+}
+
 // ── Sessions ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

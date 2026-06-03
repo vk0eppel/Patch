@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::RwLock;
 use uuid::Uuid;
 
 use super::channel::{Channel, MacroMessage};
@@ -16,22 +16,32 @@ use super::channel::{Channel, MacroMessage};
 //
 // Tests and hosts can pin a specific directory via `set_data_dir`.
 
-static DATA_DIR_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
+static DATA_DIR_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
 
-/// Pin the data directory for this process (config + sessions). Must be called
-/// before `Config::load_or_default()`. Subsequent calls are ignored.
+/// Pin the data directory for this process (config + sessions). Production calls
+/// this at most once during `init`; the tests reset it per case (serialized via
+/// [`test_data_dir_guard`]) so each gets its own isolated temp directory.
 pub fn set_data_dir(path: PathBuf) {
-    let _ = DATA_DIR_OVERRIDE.set(path);
+    *DATA_DIR_OVERRIDE.write().unwrap() = Some(path);
 }
 
 /// Resolves to the directory that holds `patch.toml` and the `sessions/` subdir.
 pub fn data_dir() -> PathBuf {
-    if let Some(p) = DATA_DIR_OVERRIDE.get() {
+    if let Some(p) = DATA_DIR_OVERRIDE.read().unwrap().as_ref() {
         return p.clone();
     }
     dirs::data_dir()
         .map(|d| d.join("Patch"))
         .unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// Serializes disk-touching tests so the process-global data-dir override can be
+/// repointed at a per-test temp directory without races. Hold the returned guard
+/// for the duration of the test, then call [`set_data_dir`].
+#[cfg(test)]
+pub(crate) fn test_data_dir_guard() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 fn config_path() -> PathBuf {
@@ -66,7 +76,7 @@ pub struct Config {
     /// Number of flash pulses per flash event (3–7).
     #[serde(default = "default_four")]
     pub flash_count: u8,
-    /// Number of columns in the macros panel (1–2).
+    /// Number of columns in the macros panel (1–3).
     #[serde(default = "default_one")]
     pub macros_columns: u8,
     /// Hide the software keyboard on channel switch (iOS/Android). Default on.

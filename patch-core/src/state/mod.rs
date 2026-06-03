@@ -132,7 +132,7 @@ impl AppState {
     }
 
     pub async fn set_macros_columns(&self, columns: u8) -> anyhow::Result<()> {
-        self.0.config.write().await.macros_columns = columns.clamp(1, 2);
+        self.0.config.write().await.macros_columns = columns.clamp(1, 3);
         self.save_config().await
     }
 
@@ -433,6 +433,37 @@ impl AppState {
         Ok(())
     }
 
+    /// Reorder a channel's macros to match `ordered_labels`.
+    ///
+    /// Macros are pulled out in the given label order; any macro whose label is
+    /// not listed is appended at the end (never dropped), and labels that don't
+    /// match a macro are ignored. Labels are unique per channel.
+    pub async fn reorder_macros(
+        &self,
+        channel_id: &str,
+        ordered_labels: Vec<String>,
+    ) -> anyhow::Result<()> {
+        {
+            let mut channels = self.0.channels.write().await;
+            let ch = channels
+                .get_mut(channel_id)
+                .ok_or_else(|| anyhow::anyhow!("Channel '{}' not found", channel_id))?;
+            let mut remaining = std::mem::take(&mut ch.macros);
+            let mut reordered = Vec::with_capacity(remaining.len());
+            for label in &ordered_labels {
+                if let Some(pos) = remaining.iter().position(|m| &m.label == label) {
+                    reordered.push(remaining.remove(pos));
+                }
+            }
+            // Preserve any macros that weren't named in `ordered_labels`.
+            reordered.append(&mut remaining);
+            ch.macros = reordered;
+        }
+        self.persist_channels().await?;
+        self.publish(AppEvent::ChannelListUpdated).await;
+        Ok(())
+    }
+
     /// Remove a macro from a channel by label.
     pub async fn delete_macro(
         &self,
@@ -609,11 +640,54 @@ mod tests {
         assert!(!ids.contains(&stale_dyn));
     }
 
+    #[tokio::test]
+    async fn reorder_macros_applies_order_and_preserves_unlisted() {
+        use channel::{Channel, MacroMessage};
+        // upsert_channel/reorder_macros persist — pin a temp data dir.
+        let _guard = config::test_data_dir_guard();
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        config::set_data_dir(dir.clone());
+
+        let st = test_state();
+        let mut ch = Channel::new("rf", "RF", "#1E88E5");
+        ch.macros = ["a", "b", "c"]
+            .iter()
+            .map(|l| MacroMessage { label: l.to_string(), payload: l.to_string(), key_binding: None, priority: 1 })
+            .collect();
+        st.upsert_channel(ch).await;
+
+        // Permute, omit "b" (should be appended), include an unknown label (ignored).
+        st.reorder_macros("rf", vec!["c".into(), "a".into(), "ghost".into()])
+            .await
+            .unwrap();
+
+        let labels: Vec<String> = st
+            .get_channels()
+            .await
+            .into_iter()
+            .find(|c| c.id == "rf")
+            .unwrap()
+            .macros
+            .into_iter()
+            .map(|m| m.label)
+            .collect();
+        assert_eq!(labels, vec!["c", "a", "b"]); // c,a listed; b preserved at end
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn reorder_macros_unknown_channel_errors() {
+        let st = test_state();
+        assert!(st.reorder_macros("nope", vec!["x".into()]).await.is_err());
+    }
+
     /// Exercises the real save path (`save_config` → `spawn_blocking`) end to end:
     /// mutations must land in the on-disk `patch.toml`. The sole disk-touching
     /// test, so the process-global `set_data_dir` override is unambiguous.
     #[tokio::test]
     async fn config_mutations_persist_to_disk() {
+        let _guard = config::test_data_dir_guard();
         let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         config::set_data_dir(dir.clone());

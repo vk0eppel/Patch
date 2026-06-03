@@ -15,6 +15,7 @@ import 'state/session.dart';
 import 'transport.dart';
 part 'api.freezed.dart';
 
+// These functions are ignored because they are not marked as `pub`: `csv_escape`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `EngineHandle`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `engine`
@@ -158,6 +159,15 @@ Future<void> deleteMacro({required String channelId, required String label}) =>
       channelId: channelId,
       label: label,
     );
+
+/// Reorder a channel's macros to match `ordered_labels` (drag-to-reorder).
+Future<void> reorderMacros({
+  required String channelId,
+  required List<String> orderedLabels,
+}) => RustLib.instance.api.crateApiReorderMacros(
+  channelId: channelId,
+  orderedLabels: orderedLabels,
+);
 
 Future<SessionSaved> saveSession({required String name}) =>
     RustLib.instance.api.crateApiSaveSession(name: name);

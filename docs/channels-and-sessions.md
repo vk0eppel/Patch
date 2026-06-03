@@ -58,6 +58,10 @@ Macros are one-tap buttons that appear in a side panel on each channel. They're 
    - **Priority** — Info / Warning / Critical
    - **Key binding** — optional F1–F12 binding (desktop only)
 
+### Reordering macros
+
+In **Settings → Channels & Macros**, each macro row has a drag handle (**≡**) on the left. Drag it up or down to reorder the macros within that channel. The new order is reflected immediately in the macro side panel (and the column layout follows it) and is saved with your layout.
+
 ### F-key bindings
 
 On desktop, F1–F12 fire the first matching macro across all currently selected channels — no need to click the button. Key bindings are shown as a small badge on the macro button.

@@ -75,7 +75,7 @@ Each channel has a panel of one-tap macro buttons for common callouts — for ex
 
 On desktop, macros can be bound to **F1–F12** and fire from any focus state (no need to click the button first).
 
-Macros are configured in **Settings → Channels & Macros**.
+Macros are configured in **Settings → Channels & Macros** — drag the **≡** handle on a macro row to reorder them.
 
 ---
 

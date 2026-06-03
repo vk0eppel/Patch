@@ -130,13 +130,14 @@ set_client_name(name)
 set_interface(name: Option<String>)
 set_flash_on_critical(enabled) / set_flash_on_message(enabled)
 set_flash_count(count: u8)                                        // global pulse count (3–7, default 4)
-set_macros_columns(columns: u8)                                   // macros panel column count (1–2, default 1)
+set_macros_columns(columns: u8)                                   // macros panel column count (1–3, default 1)
 set_channel_flash(channel_id, flash_on_critical: Option<bool>, flash_on_message: Option<bool>, flash_count: Option<u8>)
 add_static_peer(address, port, label)
 remove_static_peer(address, port)
 upsert_channel(id, display_name, color) / delete_channel(id)
 reset_channels()                                                  // delete all channels, re-seed factory defaults
 upsert_macro(channel_id, label, payload, priority, key_binding) / delete_macro(channel_id, label)
+reorder_macros(channel_id, ordered_labels)                       // drag-to-reorder; unlisted labels kept, unknown ignored
 save_session(name) -> SessionSaved
 load_session(slug) -> SessionLoaded
 list_sessions() -> Vec<SessionMeta>
@@ -232,9 +233,9 @@ Each channel has:
 Channels can be created and deleted at runtime. Changes are persisted to `patch.toml` immediately.
 
 ### Macros (MacroMessage)
-Per-channel macro buttons appear in a **vertical side panel** on the right side of the message area (toggled with the keyboard icon in the `_ChannelView` header). The panel shows all macros simultaneously with no scroll — buttons share the panel height equally. Users configure 1 or 2 columns (`macros_columns` in `patch.toml`, set in **Settings → Behavior → Macros panel columns**); each column is 160 px wide so the panel grows from 160 px to 320 px when switching to 2 columns. The panel is implemented in `macros_panel.dart`, which also exports the `ChannelMacro` type used by `home_screen.dart`.
+Per-channel macro buttons appear in a **vertical side panel** on the right side of the message area (toggled with the keyboard icon in the `_ChannelView` header). The panel shows all macros simultaneously with no scroll — buttons share the panel height equally. Users configure 1, 2, or 3 columns (`macros_columns` in `patch.toml`, set in **Settings → Behavior → Macros panel columns**); each column is 160 px wide so the panel grows from 160 px (1 column) to 480 px (3 columns). The panel is implemented in `macros_panel.dart`, which also exports the `ChannelMacro` type used by `home_screen.dart`.
 Each macro has a `label`, `payload`, optional `key_binding` (e.g. `"F1"`), and `priority`.
-Macros can be created, edited, and deleted in the Settings screen (Channels & Macros section).
+Macros can be created, edited, deleted, and **drag-reordered** in the Settings screen (Channels & Macros section). Reordering goes through `reorder_macros` (a `ReorderableListView` in `_ChannelMacroEditor`, each `_MacroRow` carrying its own `ReorderableDragStartListener` handle); the panel and sidebar render in `Vec` order, so the new order flows through automatically and persists to `patch.toml`.
 
 ---
 
@@ -304,7 +305,7 @@ peer_timeout_secs = 30
 flash_on_critical = true    # Auto-flash channel when priority-3 message arrives
 flash_on_message = false    # Auto-flash on every incoming message
 flash_count = 4             # Flash pulse count per event (3–7, default 4)
-macros_columns = 1          # Macros panel column count (1–2, default 1)
+macros_columns = 1          # Macros panel column count (1–3, default 1)
 
 [[static_peers]]
 address = "192.168.1.50"
@@ -367,7 +368,7 @@ A single `flutter run` builds and links the Rust engine into the host binary via
 - `touch_peer_address` refreshes `last_seen`: every call (triggered by any received packet — message, flash, heartbeat, presence) now writes `peer.last_seen = Utc::now()` and emits `PeerUpdated`, so the Flutter side calls `getPeers()` and the dot turns green immediately. Previously only `upsert_peer` (called on the first-ever packet from a peer) updated `last_seen`; subsequent packets from a known peer never refreshed it, leaving the dot grey after inactivity even when messages were flowing.
 - `peer_expired` and `peer_updated` both call `getPeers()`: the `peer_expired` handler in `home_screen.dart` was changed from `removeWhere` to `getPeers()` so that a static-peer-backed entry immediately reappears as ManualIp (gray) rather than vanishing from the panel.
 - `config_updated` also calls `getPeers()`: since adding or removing a static peer emits `config_updated`, the peers panel is refreshed in the same handler so changes are reflected immediately without a separate event.
-- Macros panel layout constants: `_kMacroColumnWidth = 160.0` (per column); the `SizedBox` wrapping `MacrosPanel` in `home_screen.dart` is `width: _kMacroColumnWidth * _macrosColumns`, so the panel doubles from 160 to 320 px in 2-column mode and each button always gets a full 160 px — no overflow regardless of label length.
+- Macros panel layout constants: `_kMacroColumnWidth = 160.0` (per column); the `SizedBox` wrapping `MacrosPanel` in `home_screen.dart` is `width: _kMacroColumnWidth * _macrosColumns`, so the panel scales from 160 px (1 column) to 480 px (3 columns) and each button always gets a full 160 px — no overflow regardless of label length.
 - `PatchTheme.headerHeight = 80.0`: single constant under `// ── Layout` in `patch_theme.dart`; applied as a fixed `Container(height: ...)` to all four top areas so their bottom dividers land on the same line.
 - `bridge_client.dart::getConfig()` builds the config map manually from `ConfigSnapshot` fields. **Every new field added to `ConfigSnapshot` in Rust must also be added to this map.** Missing a field silently resets the Dart state variable to its `?? default` every time `getConfig()` fires.
 - `macros_panel.dart` exports both `MacrosPanel` and `ChannelMacro`; `home_screen.dart` imports it with `show MacrosPanel, ChannelMacro`.
@@ -423,7 +424,7 @@ Patch UI is designed for live environments:
 - **Behavior settings**: Settings → Behavior — global flash defaults ("Flash on every message", "Flash on critical messages", "Flash pulses" 3–7 picker); Settings → channel editor footer — per-channel overrides for the same flags (either global or channel flag being on is sufficient to trigger; "–" in the pulse picker = use global)
 - **reset to defaults**: each Settings section has a `↺` icon button that shows a confirm dialog then restores factory defaults for that section only — Identity resets name to system username (`Platform.environment['USER']`); Behavior resets flash flags to `flash_on_critical=true / flash_on_message=false / flash_count=4`; Static Peers removes all entries; Channels & Macros calls `reset_channels()` which replaces all channels with the seeded defaults. `reset_channels()` in `state/mod.rs` delegates to `apply_session(default_channels())` and emits `ChannelListUpdated`. `state/config.rs::default_channels()` is `pub` so it can be called from `mod.rs`.
 - **sessions**: folder icon in the left sidebar opens `SessionsDialog` — load/save named presets or import/export `.toml` files; Settings screen no longer contains a Sessions section
-- **macros panel**: `macros_panel.dart` — toggleable via keyboard icon (`Icons.keyboard_outlined`) in `_ChannelView` header (button moves into the panel's own header when panel is open, aligned above its column); vertical layout, all macros always visible, no scroll; 1 or 2 columns (`_kMacroColumnWidth = 160.0` per column, so panel is 160 or 320 px); column count set in **Settings → Behavior → Macros panel columns** (SegmentedButton 1/2), persisted to `patch.toml` as `macros_columns`; multi-channel mode groups macros by channel with a colored divider; when single channel, no channel bar on buttons; `Material(clipBehavior: Clip.hardEdge)` prevents overflow errors when many macros are squeezed into a small window; `ConstrainedBox(minHeight: 40)` sets a floor on row height
+- **macros panel**: `macros_panel.dart` — toggleable via keyboard icon (`Icons.keyboard_outlined`) in `_ChannelView` header (button moves into the panel's own header when panel is open, aligned above its column); vertical layout, all macros always visible, no scroll; 1, 2, or 3 columns (`_kMacroColumnWidth = 160.0` per column, so panel is 160/320/480 px); column count set in **Settings → Behavior → Macros panel columns** (SegmentedButton 1/2/3), persisted to `patch.toml` as `macros_columns`; multi-channel mode groups macros by channel with a colored divider; when single channel, no channel bar on buttons; `Material(clipBehavior: Clip.hardEdge)` prevents overflow errors when many macros are squeezed into a small window; `ConstrainedBox(minHeight: 40)` sets a floor on row height
 - **header alignment**: `PatchTheme.headerHeight = 80.0` is applied to all four top-section headers (channel strip image, `_ChannelView` header container, `MacrosPanel` header, `PeersPanel` header) so their dividers land on the same horizontal line
 - **peers panel**: 160 px wide (`_kPeersPanelWidth`); header is "PEERS" (not "ONLINE"); dot is green if any packet received within 35 s, gray if stale or ManualIp (configured-only); peers persist for the full session and never auto-expire; static peers always appear even before first contact (gray dot with 📌 icon); `PeersPanel` is a `StatefulWidget` with a `Timer.periodic(10s)` that calls `setState` to recompute dot colours accurately without waiting for an external event; `person_remove_outlined` button in the panel header calls `onClearStale` → `clearStalePeers(maxAgeSecs: 60)` — removes OscBeacon/Mdns peers not heard from in 60 s; ManualIp/static peers are never removed; `PeerExpired` is emitted per removed peer so the panel refreshes automatically
 - **clear messages**: `delete_sweep_outlined` icon button positioned at top-right of the message area (`Stack` + `Positioned`) — always visible regardless of which side panels are open. Shows a confirm dialog scoped to the selected channel(s). Clears Rust buffer via `clear_messages(channel_id)` and updates the local `_messages` map via the `messages_cleared` bridge event. The button is intentionally in the message frame, not the header toolbar, to separate it from the macros/peers panel toggles.

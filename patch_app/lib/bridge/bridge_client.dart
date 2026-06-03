@@ -286,6 +286,15 @@ class BridgeClient {
     }
   }
 
+  /// Reorder a channel's macros to match [labels] (drag-to-reorder).
+  Future<void> reorderMacros(String channelId, List<String> labels) async {
+    try {
+      await rust.reorderMacros(channelId: channelId, orderedLabels: labels);
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
   Future<void> deleteChannel(String id) async {
     try {
       await rust.deleteChannel(id: id);
