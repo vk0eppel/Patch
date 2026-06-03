@@ -25,7 +25,16 @@ class _MessageListState extends State<MessageList> {
   @override
   void didUpdateWidget(covariant MessageList oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.messages.length != oldWidget.messages.length) {
+    // Scroll when a new message lands at the tail — comparing the tail id rather
+    // than the length, because the list is capped (home_screen) so length stays
+    // pinned at the cap once full and a length check would stop firing. The
+    // length compare still covers clears/session loads (empty↔non-empty).
+    final oldLast =
+        oldWidget.messages.isNotEmpty ? oldWidget.messages.last.messageId : null;
+    final newLast =
+        widget.messages.isNotEmpty ? widget.messages.last.messageId : null;
+    if (newLast != oldLast ||
+        widget.messages.length != oldWidget.messages.length) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scrollCtrl.hasClients) {
           _scrollCtrl.animateTo(

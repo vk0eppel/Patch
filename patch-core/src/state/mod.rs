@@ -8,7 +8,7 @@ pub mod session;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, Mutex, RwLock};
 use uuid::Uuid;
 
 use crate::osc::types::{ChannelFlash, PatchMessage, PeerPresence};
@@ -44,6 +44,11 @@ struct Inner {
     pub messages: RwLock<MessageBuffer>,
     /// Event bus — clone a receiver to subscribe
     pub events: broadcast::Sender<AppEvent>,
+    /// Serializes config persistence so concurrent mutators can't write the
+    /// `patch.toml` out of order (which would let an earlier change clobber a
+    /// later one). Held only across the clone + offloaded write, never with the
+    /// config `RwLock`, so it doesn't block readers on the hot send path.
+    pub save_lock: Mutex<()>,
 }
 
 const MAX_BUFFER: usize = 500;
@@ -75,6 +80,7 @@ impl AppState {
             peers: RwLock::new(HashMap::new()),
             messages: RwLock::new(MessageBuffer::default()),
             events: tx,
+            save_lock: Mutex::new(()),
         }))
     }
 
@@ -94,12 +100,8 @@ impl AppState {
     // ── Client name ───────────────────────────────────────────────────────────
 
     pub async fn set_client_name(&self, name: String) -> anyhow::Result<()> {
-        let cfg = {
-            let mut cfg = self.0.config.write().await;
-            cfg.client_name = name.clone();
-            cfg.clone()
-        };
-        save_config(cfg).await?;
+        self.0.config.write().await.client_name = name.clone();
+        self.save_config().await?;
         self.publish(AppEvent::ClientNameChanged(name)).await;
         Ok(())
     }
@@ -107,60 +109,36 @@ impl AppState {
     /// Persist a new network interface selection (None = bind all).
     /// Takes effect on next restart — transport is already bound.
     pub async fn set_network_interface(&self, iface: Option<String>) -> anyhow::Result<()> {
-        let cfg = {
-            let mut cfg = self.0.config.write().await;
-            cfg.network_interface = iface;
-            cfg.clone()
-        };
-        save_config(cfg).await
+        self.0.config.write().await.network_interface = iface;
+        self.save_config().await
     }
 
     /// Persist the flash-on-critical setting.
     pub async fn set_flash_on_critical(&self, enabled: bool) -> anyhow::Result<()> {
-        let cfg = {
-            let mut cfg = self.0.config.write().await;
-            cfg.flash_on_critical = enabled;
-            cfg.clone()
-        };
-        save_config(cfg).await
+        self.0.config.write().await.flash_on_critical = enabled;
+        self.save_config().await
     }
 
     /// Persist the flash-on-every-message setting.
     pub async fn set_flash_on_message(&self, enabled: bool) -> anyhow::Result<()> {
-        let cfg = {
-            let mut cfg = self.0.config.write().await;
-            cfg.flash_on_message = enabled;
-            cfg.clone()
-        };
-        save_config(cfg).await
+        self.0.config.write().await.flash_on_message = enabled;
+        self.save_config().await
     }
 
     /// Persist the global flash pulse count (clamped to 3–7).
     pub async fn set_flash_count(&self, count: u8) -> anyhow::Result<()> {
-        let cfg = {
-            let mut cfg = self.0.config.write().await;
-            cfg.flash_count = count.clamp(3, 7);
-            cfg.clone()
-        };
-        save_config(cfg).await
+        self.0.config.write().await.flash_count = count.clamp(3, 7);
+        self.save_config().await
     }
 
     pub async fn set_macros_columns(&self, columns: u8) -> anyhow::Result<()> {
-        let cfg = {
-            let mut cfg = self.0.config.write().await;
-            cfg.macros_columns = columns.clamp(1, 2);
-            cfg.clone()
-        };
-        save_config(cfg).await
+        self.0.config.write().await.macros_columns = columns.clamp(1, 2);
+        self.save_config().await
     }
 
     pub async fn set_hide_keyboard(&self, enabled: bool) -> anyhow::Result<()> {
-        let cfg = {
-            let mut cfg = self.0.config.write().await;
-            cfg.hide_keyboard = enabled;
-            cfg.clone()
-        };
-        save_config(cfg).await
+        self.0.config.write().await.hide_keyboard = enabled;
+        self.save_config().await
     }
 
     /// Update per-channel flash flags. `None` means "leave unchanged".
@@ -203,24 +181,20 @@ impl AppState {
         if port == 0 {
             anyhow::bail!("Port 0 is not valid for a static peer");
         }
-        let cfg = {
+        {
             let mut cfg = self.0.config.write().await;
             if cfg.static_peers.iter().any(|p| p.address == address && p.port == port) {
                 anyhow::bail!("Peer {}:{} is already configured", address, port);
             }
             cfg.static_peers.push(config::StaticPeer { address, port, label });
-            cfg.clone()
-        };
-        save_config(cfg).await
+        }
+        self.save_config().await
     }
 
     pub async fn remove_static_peer(&self, address: &str, port: u16) -> anyhow::Result<()> {
-        let cfg = {
-            let mut cfg = self.0.config.write().await;
-            cfg.static_peers.retain(|p| !(p.address == address && p.port == port));
-            cfg.clone()
-        };
-        save_config(cfg).await
+        self.0.config.write().await
+            .static_peers.retain(|p| !(p.address == address && p.port == port));
+        self.save_config().await
     }
 
     // ── Messages ──────────────────────────────────────────────────────────────
@@ -479,24 +453,27 @@ impl AppState {
 
     /// Write current channel macros back to patch.toml.
     async fn persist_channels(&self) -> anyhow::Result<()> {
-        let channels: Vec<_> = self.0.channels.read().await.values().cloned().collect();
-        let cfg = {
-            let mut cfg = self.0.config.write().await;
-            cfg.default_channels = channels;
-            cfg.clone()
-        };
-        save_config(cfg).await
+        {
+            let channels: Vec<_> = self.0.channels.read().await.values().cloned().collect();
+            self.0.config.write().await.default_channels = channels;
+        }
+        self.save_config().await
     }
-}
 
-/// Persist a `Config` to disk off the async runtime.
-///
-/// `Config::save` does blocking file I/O (`std::fs::write` of the whole TOML);
-/// running it on a tokio worker would stall OSC send/receive. We offload it to
-/// the blocking thread pool. The caller clones the config under the lock and
-/// releases the lock before awaiting, so the write never holds `config`.
-async fn save_config(cfg: Config) -> anyhow::Result<()> {
-    tokio::task::spawn_blocking(move || cfg.save()).await?
+    /// Persist the current config to disk, off the async runtime.
+    ///
+    /// `Config::save` does blocking file I/O (`std::fs::write` of the whole
+    /// TOML); running it on a tokio worker would stall OSC send/receive, so it's
+    /// offloaded to the blocking pool. The `save_lock` serializes writes so two
+    /// concurrent mutators can't reorder their writes; the config snapshot is
+    /// taken *after* acquiring the lock, so the last writer always persists the
+    /// latest committed state. Callers must commit their mutation (drop the
+    /// config write guard) before calling this.
+    async fn save_config(&self) -> anyhow::Result<()> {
+        let _guard = self.0.save_lock.lock().await;
+        let cfg = self.0.config.read().await.clone();
+        tokio::task::spawn_blocking(move || cfg.save()).await?
+    }
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────────
@@ -630,5 +607,30 @@ mod tests {
         assert!(ids.contains(&fresh_dyn));
         assert!(ids.contains(&stale_manual)); // ManualIp never removed
         assert!(!ids.contains(&stale_dyn));
+    }
+
+    /// Exercises the real save path (`save_config` → `spawn_blocking`) end to end:
+    /// mutations must land in the on-disk `patch.toml`. The sole disk-touching
+    /// test, so the process-global `set_data_dir` override is unambiguous.
+    #[tokio::test]
+    async fn config_mutations_persist_to_disk() {
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        config::set_data_dir(dir.clone());
+
+        let st = test_state();
+        st.set_flash_count(6).await.unwrap();
+        st.set_hide_keyboard(false).await.unwrap();
+        st.set_macros_columns(2).await.unwrap();
+        st.add_static_peer("10.0.0.5".into(), 9000, Some("Booth".into())).await.unwrap();
+
+        let loaded = Config::load_or_default().unwrap();
+        assert_eq!(loaded.flash_count, 6);
+        assert!(!loaded.hide_keyboard);
+        assert_eq!(loaded.macros_columns, 2);
+        assert_eq!(loaded.static_peers.len(), 1);
+        assert_eq!(loaded.static_peers[0].address, "10.0.0.5");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
