@@ -105,47 +105,37 @@ can be received again.
 `DiscoveryMode::Mdns`, and the mode sticks across later OSC heartbeats (a peer already
 classified as `Mdns` isn't downgraded), so the 🔍 icon shows.
 
-### Stale `bridge_port` in sample config
-**File:** `patch-core/patch.toml` — line 4
-**Effort:** trivial
-
-`bridge_port = 9001` is a leftover from the removed TCP bridge. The field does not
-exist in the `Config` struct and is silently ignored on deserialisation.
-
-- Delete line 4 from `patch-core/patch.toml`
-
-### Sample config channels don't match `default_channels()`
+### ~~Stale `bridge_port` in sample config~~ ✅ Done
 **File:** `patch-core/patch.toml`
-**Effort:** trivial
 
-Shows old channels (`foh`, `mon`, `video`, `rf`) instead of the current defaults
-(`audio`, `rf`, `lighting`, `video`, `stage`). Misleading for new developers testing locally.
+The sample was rewritten to the current `Config` schema — `bridge_port` removed, placeholder
+`client_id`, and the new fields (`flash_count`, `macros_columns`, `hide_keyboard`).
 
-- Regenerate or manually update the `[[channels]]` section to match `state/config.rs::default_channels()`
+### ~~Sample config channels don't match `default_channels()`~~ ✅ Done
+**File:** `patch-core/patch.toml`
 
-### `RegExp` compiled on every dialog open in settings
-**File:** `patch_app/lib/screens/settings_screen.dart` — ~lines 947–949, 956, 1088
-**Effort:** trivial
+Now matches `state/config.rs::default_channels()` (`audio`, `rf`, `lighting`, `video`, `stage`)
+and uses the current `macros` field (the old `shortcuts` field is gone). A regression test
+(`state::config::tests::sample_patch_toml_deserializes`) keeps it from drifting again.
 
-`RegExp(r'...')` instances created inside dialog-open callbacks on every invocation.
+### ~~`RegExp` compiled on every dialog open in settings~~ ✅ Done
+**File:** `patch_app/lib/screens/settings_screen.dart`
 
-- Hoist to `static final` constants at the class level (e.g. `static final _slugRegex = RegExp(r'[^a-z0-9-]+')`)
+The five `RegExp`s are now lazily-compiled file-level `final`s (`_slugInvalidChars`,
+`_slugDashRuns`, `_slugEdgeDashes`, `_hex6`, `_channelIdRegex`) instead of being recompiled
+per dialog/keystroke.
 
 ### ~~`width: 220` peers panel hardcoded~~ ✅ Done
 Now `static const double _kPeersPanelWidth = 160.0` and `static const double _kMacroColumnWidth = 160.0` in `home_screen.dart`. Macros panel width scales as `_kMacroColumnWidth * _macrosColumns`.
 
-### Hardcoded channel-strip width
-**File:** `patch_app/lib/screens/home_screen.dart` — `_ChannelStrip.build()`
-**Effort:** trivial
+### ~~Hardcoded channel-strip width~~ ✅ Done
+**File:** `patch_app/lib/screens/home_screen.dart`
 
-`width: 80` inside `_ChannelStrip` is still a bare literal. Should be a named constant, e.g. `static const double _kChannelStripWidth = 80.0`.
+`width: 80` is now `static const double _kChannelStripWidth = 80.0` on `_ChannelStrip`.
 
-### Stale comment in `message_input.dart`
-**File:** `patch_app/lib/widgets/message_input.dart` — line 6
-**Effort:** trivial
-
-Comment says "Shift+Enter inserts a newline (future use)" but `maxLines: 1` makes
-this impossible as written. Either remove the comment or implement multi-line input.
+### ~~Stale comment in `message_input.dart`~~ ✅ Done
+The "Shift+Enter inserts a newline (future use)" comment is gone; the doc comment now just
+describes the Enter-to-send / `hideKeyboard` behaviour.
 
 ### Macros panel header may overflow in 1-column mode
 **File:** `patch_app/lib/widgets/macros_panel.dart` — header `Container`

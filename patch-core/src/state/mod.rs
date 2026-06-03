@@ -94,11 +94,12 @@ impl AppState {
     // ── Client name ───────────────────────────────────────────────────────────
 
     pub async fn set_client_name(&self, name: String) -> anyhow::Result<()> {
-        {
+        let cfg = {
             let mut cfg = self.0.config.write().await;
             cfg.client_name = name.clone();
-            cfg.save()?;
-        }
+            cfg.clone()
+        };
+        save_config(cfg).await?;
         self.publish(AppEvent::ClientNameChanged(name)).await;
         Ok(())
     }
@@ -106,42 +107,60 @@ impl AppState {
     /// Persist a new network interface selection (None = bind all).
     /// Takes effect on next restart — transport is already bound.
     pub async fn set_network_interface(&self, iface: Option<String>) -> anyhow::Result<()> {
-        let mut cfg = self.0.config.write().await;
-        cfg.network_interface = iface;
-        cfg.save()
+        let cfg = {
+            let mut cfg = self.0.config.write().await;
+            cfg.network_interface = iface;
+            cfg.clone()
+        };
+        save_config(cfg).await
     }
 
     /// Persist the flash-on-critical setting.
     pub async fn set_flash_on_critical(&self, enabled: bool) -> anyhow::Result<()> {
-        let mut cfg = self.0.config.write().await;
-        cfg.flash_on_critical = enabled;
-        cfg.save()
+        let cfg = {
+            let mut cfg = self.0.config.write().await;
+            cfg.flash_on_critical = enabled;
+            cfg.clone()
+        };
+        save_config(cfg).await
     }
 
     /// Persist the flash-on-every-message setting.
     pub async fn set_flash_on_message(&self, enabled: bool) -> anyhow::Result<()> {
-        let mut cfg = self.0.config.write().await;
-        cfg.flash_on_message = enabled;
-        cfg.save()
+        let cfg = {
+            let mut cfg = self.0.config.write().await;
+            cfg.flash_on_message = enabled;
+            cfg.clone()
+        };
+        save_config(cfg).await
     }
 
     /// Persist the global flash pulse count (clamped to 3–7).
     pub async fn set_flash_count(&self, count: u8) -> anyhow::Result<()> {
-        let mut cfg = self.0.config.write().await;
-        cfg.flash_count = count.clamp(3, 7);
-        cfg.save()
+        let cfg = {
+            let mut cfg = self.0.config.write().await;
+            cfg.flash_count = count.clamp(3, 7);
+            cfg.clone()
+        };
+        save_config(cfg).await
     }
 
     pub async fn set_macros_columns(&self, columns: u8) -> anyhow::Result<()> {
-        let mut cfg = self.0.config.write().await;
-        cfg.macros_columns = columns.clamp(1, 2);
-        cfg.save()
+        let cfg = {
+            let mut cfg = self.0.config.write().await;
+            cfg.macros_columns = columns.clamp(1, 2);
+            cfg.clone()
+        };
+        save_config(cfg).await
     }
 
     pub async fn set_hide_keyboard(&self, enabled: bool) -> anyhow::Result<()> {
-        let mut cfg = self.0.config.write().await;
-        cfg.hide_keyboard = enabled;
-        cfg.save()
+        let cfg = {
+            let mut cfg = self.0.config.write().await;
+            cfg.hide_keyboard = enabled;
+            cfg.clone()
+        };
+        save_config(cfg).await
     }
 
     /// Update per-channel flash flags. `None` means "leave unchanged".
@@ -184,18 +203,24 @@ impl AppState {
         if port == 0 {
             anyhow::bail!("Port 0 is not valid for a static peer");
         }
-        let mut cfg = self.0.config.write().await;
-        if cfg.static_peers.iter().any(|p| p.address == address && p.port == port) {
-            anyhow::bail!("Peer {}:{} is already configured", address, port);
-        }
-        cfg.static_peers.push(config::StaticPeer { address, port, label });
-        cfg.save()
+        let cfg = {
+            let mut cfg = self.0.config.write().await;
+            if cfg.static_peers.iter().any(|p| p.address == address && p.port == port) {
+                anyhow::bail!("Peer {}:{} is already configured", address, port);
+            }
+            cfg.static_peers.push(config::StaticPeer { address, port, label });
+            cfg.clone()
+        };
+        save_config(cfg).await
     }
 
     pub async fn remove_static_peer(&self, address: &str, port: u16) -> anyhow::Result<()> {
-        let mut cfg = self.0.config.write().await;
-        cfg.static_peers.retain(|p| !(p.address == address && p.port == port));
-        cfg.save()
+        let cfg = {
+            let mut cfg = self.0.config.write().await;
+            cfg.static_peers.retain(|p| !(p.address == address && p.port == port));
+            cfg.clone()
+        };
+        save_config(cfg).await
     }
 
     // ── Messages ──────────────────────────────────────────────────────────────
@@ -455,10 +480,23 @@ impl AppState {
     /// Write current channel macros back to patch.toml.
     async fn persist_channels(&self) -> anyhow::Result<()> {
         let channels: Vec<_> = self.0.channels.read().await.values().cloned().collect();
-        let mut cfg = self.0.config.write().await;
-        cfg.default_channels = channels;
-        cfg.save()
+        let cfg = {
+            let mut cfg = self.0.config.write().await;
+            cfg.default_channels = channels;
+            cfg.clone()
+        };
+        save_config(cfg).await
     }
+}
+
+/// Persist a `Config` to disk off the async runtime.
+///
+/// `Config::save` does blocking file I/O (`std::fs::write` of the whole TOML);
+/// running it on a tokio worker would stall OSC send/receive. We offload it to
+/// the blocking thread pool. The caller clones the config under the lock and
+/// releases the lock before awaiting, so the write never holds `config`.
+async fn save_config(cfg: Config) -> anyhow::Result<()> {
+    tokio::task::spawn_blocking(move || cfg.save()).await?
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────────

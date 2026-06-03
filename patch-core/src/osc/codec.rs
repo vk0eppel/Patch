@@ -110,10 +110,26 @@ fn decode_message(msg: OscMessage) -> Result<PatchEvent> {
     }
 }
 
+/// Maximum accepted payload length for an inbound message. Defensive bound —
+/// operational messages are short, while a UDP datagram can carry ~64 KB.
+const MAX_PAYLOAD_LEN: usize = 4096;
+
+/// Inbound channel ids must match the same slug rule the UI enforces
+/// (`api::upsert_channel`) so a remote sender can't inject arbitrary buffer
+/// keys or oversized address segments.
+fn valid_channel_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 64
+        && id.chars().all(|c| matches!(c, 'a'..='z' | '0'..='9' | '_' | '-'))
+}
+
 fn decode_patch_message(msg: OscMessage) -> Result<PatchEvent> {
     // Channel id lives in the address: /patch/channel/{id}/message
     let parts: Vec<&str> = msg.addr.split('/').collect();
     let channel_id = parts.get(3).copied().unwrap_or("unknown").to_string();
+    if !valid_channel_id(&channel_id) {
+        bail!("Rejected message: invalid channel id {:?}", channel_id);
+    }
     let args = msg.args;
     if args.len() < 6 {
         bail!("Expected 6 args for /patch/channel/.../message, got {}", args.len());
@@ -124,6 +140,9 @@ fn decode_patch_message(msg: OscMessage) -> Result<PatchEvent> {
     let ts_ms = parse_long(&args[3])?;
     let priority = Priority::try_from(parse_int(&args[4])?)?;
     let payload = parse_string(&args[5])?;
+    if payload.len() > MAX_PAYLOAD_LEN {
+        bail!("Rejected message: payload {} bytes exceeds max {}", payload.len(), MAX_PAYLOAD_LEN);
+    }
 
     Ok(PatchEvent::Message(PatchMessage {
         message_id,
@@ -191,6 +210,9 @@ fn decode_flash(msg: OscMessage) -> Result<PatchEvent> {
     // addr is /patch/channel/{id}/flash
     let parts: Vec<&str> = msg.addr.split('/').collect();
     let channel_id = parts.get(3).copied().unwrap_or("unknown").to_string();
+    if !valid_channel_id(&channel_id) {
+        bail!("Rejected flash: invalid channel id {:?}", channel_id);
+    }
     let args = msg.args;
     if args.len() < 2 {
         bail!("Expected 2 args for .../flash, got {}", args.len());
@@ -358,5 +380,48 @@ mod tests {
         let msg = OscMessage { addr: "/foo/bar".to_string(), args: vec![] };
         let bytes = rosc::encoder::encode(&OscPacket::Message(msg)).unwrap();
         assert!(matches!(decode_packet(&bytes).unwrap(), PatchEvent::Unknown(_)));
+    }
+
+    fn message_with(addr: &str, payload: &str) -> OscMessage {
+        OscMessage {
+            addr: addr.to_string(),
+            args: vec![
+                OscType::String(Uuid::new_v4().to_string()),
+                OscType::String("sender".into()),
+                OscType::String(Uuid::new_v4().to_string()),
+                OscType::Long(0),
+                OscType::Int(1),
+                OscType::String(payload.into()),
+            ],
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_inbound_channel_id() {
+        // Uppercase + symbol can't be a real channel slug — drop the packet.
+        assert!(decode_message(message_with("/patch/channel/RF!/message", "hi")).is_err());
+        // Empty channel segment too.
+        assert!(decode_message(message_with("/patch/channel//message", "hi")).is_err());
+    }
+
+    #[test]
+    fn rejects_oversized_inbound_payload() {
+        let big = "x".repeat(MAX_PAYLOAD_LEN + 1);
+        assert!(decode_message(message_with("/patch/channel/rf/message", &big)).is_err());
+        // Exactly at the limit is accepted.
+        let ok = "x".repeat(MAX_PAYLOAD_LEN);
+        assert!(decode_message(message_with("/patch/channel/rf/message", &ok)).is_ok());
+    }
+
+    #[test]
+    fn rejects_invalid_flash_channel_id() {
+        let flash = OscMessage {
+            addr: "/patch/channel/BAD!/flash".to_string(),
+            args: vec![
+                OscType::String(Uuid::new_v4().to_string()),
+                OscType::String("sender".into()),
+            ],
+        };
+        assert!(decode_message(flash).is_err());
     }
 }

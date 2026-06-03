@@ -130,7 +130,7 @@ Patch listens on UDP port 9000 (configurable). Send a standard OSC message to it
 /patch/channel/rf/message  <sender_id> <sender_name> <message_id> <timestamp_ms> <priority> <payload>
 ```
 
-The channel is identified by the address path — no need to repeat it in the args. `priority` is an integer: 0=debug, 1=info, 2=warning, 3=critical.
+The channel is identified by the address path — no need to repeat it in the args. `priority` is an integer: 0=debug, 1=info, 2=warning, 3=critical. The channel id must be a slug (`[a-z0-9_-]`, ≤64 chars) and payloads larger than 4 KB are rejected on receive.
 
 Flash/page a channel from any OSC source:
 
@@ -172,6 +172,7 @@ label = "Monitor World"
 - [x] Flash / page per channel (local + remote)
 - [x] Priority levels with visual differentiation
 - [x] Message deduplication by UUID
+- [x] Reliable critical delivery — receivers ACK `priority=3` messages; sender retransmits unacked ones (bounded retries)
 - [x] Single-binary build via `flutter_rust_bridge` + cargokit (no more TCP bridge)
 - [x] Settings screen — display name, NIC picker, macros, channel management
 - [x] Session presets — save / load / delete named channel layouts; sidebar folder icon (not Settings); import/export `.toml` files

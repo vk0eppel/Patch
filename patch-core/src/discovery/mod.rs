@@ -157,13 +157,31 @@ impl Discovery {
     }
 }
 
+/// Best-effort hostname for the mDNS host record. Looked up in-process rather
+/// than by forking the `hostname` binary; falls back to a stable default.
 fn gethostname() -> String {
-    std::env::var("HOSTNAME")
-        .or_else(|_| {
-            std::process::Command::new("hostname")
-                .output()
-                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-                .map_err(|_| std::env::VarError::NotPresent)
-        })
-        .unwrap_or_else(|_| "patch-node".to_string())
+    #[cfg(unix)]
+    {
+        let mut buf = [0u8; 256];
+        let rc = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len()) };
+        if rc == 0 {
+            // The buffer may not be NUL-terminated if the name was truncated.
+            let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+            if let Ok(s) = std::str::from_utf8(&buf[..end]) {
+                if !s.is_empty() {
+                    return s.to_string();
+                }
+            }
+        }
+    }
+    #[cfg(windows)]
+    {
+        // Windows reliably sets COMPUTERNAME — no syscall needed.
+        if let Ok(name) = std::env::var("COMPUTERNAME") {
+            if !name.is_empty() {
+                return name;
+            }
+        }
+    }
+    "patch-node".to_string()
 }

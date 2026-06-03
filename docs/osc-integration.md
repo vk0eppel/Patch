@@ -38,6 +38,8 @@ Send a standard OSC message to any Patch device on UDP port 9000:
 
 > **Tip:** Use a static UUID for `sender_id` so Patch recognises your show-control system as a consistent peer. Generate a message-unique UUID for `message_id` — Patch deduplicates by `message_id`, so reusing it will silently drop the message.
 
+> **Limits:** The channel id in the address must be a slug (`[a-z0-9_-]`, max 64 chars) and the `payload` must be ≤ 4 KB — packets that violate either are dropped on receipt. When you send `priority = 3` (critical), Patch replies with `/patch/ack` to your source address — you can ignore it if your integration doesn't track acknowledgements.
+
 ### Example — QLab OSC cue
 
 ```

@@ -57,5 +57,10 @@ toml = "0.8"
 anyhow = "1"
 thiserror = "2"
 
+# In-process hostname lookup on Unix (avoids forking the `hostname` binary).
+# Already present transitively (tokio→mio); declared here for direct use.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 tokio-test = "0.4"

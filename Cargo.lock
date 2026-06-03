@@ -815,6 +815,7 @@ dependencies = [
  "chrono",
  "dirs",
  "flutter_rust_bridge",
+ "libc",
  "mdns-sd",
  "network-interface",
  "rosc",

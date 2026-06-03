@@ -52,7 +52,8 @@ pub async fn init(config_dir: Option<String>) -> Result<()> {
                 crate::state::config::set_data_dir(std::path::PathBuf::from(dir));
             }
 
-            let config = Config::load_or_default()?;
+            // Blocking file I/O — read off the async runtime.
+            let config = tokio::task::spawn_blocking(Config::load_or_default).await??;
             tracing::info!(
                 client_name = %config.client_name,
                 osc_port = config.osc_port,
@@ -280,6 +281,23 @@ pub async fn clear_messages(channel_id: Option<String>) -> Result<()> {
     Ok(())
 }
 
+/// Escape a value for a quoted CSV field, neutralising spreadsheet formula
+/// injection. Excel/Sheets treat a cell starting with `=`, `+`, `-`, `@`, tab,
+/// or CR as a formula; since these values come from arbitrary LAN OSC sources,
+/// such cells are prefixed with `'`. Double-quotes are doubled per RFC 4180.
+fn csv_escape(s: &str) -> String {
+    let needs_guard = s
+        .chars()
+        .next()
+        .map_or(false, |c| matches!(c, '=' | '+' | '-' | '@' | '\t' | '\r'));
+    let mut out = String::with_capacity(s.len() + 2);
+    if needs_guard {
+        out.push('\'');
+    }
+    out.push_str(&s.replace('"', "\"\""));
+    out
+}
+
 /// Export messages to a CSV file at `path`.
 /// When `channel_id` is `Some`, only that channel's messages are exported.
 /// When `None`, all channels are exported (a `channel` column is included).
@@ -308,13 +326,14 @@ pub async fn export_messages(channel_id: Option<String>, path: String) -> Result
             crate::osc::types::Priority::Warning  => "warning",
             crate::osc::types::Priority::Critical => "critical",
         };
-        // Escape double-quotes in payload by doubling them (RFC 4180).
-        let payload = m.payload.replace('"', "\"\"");
-        let sender  = m.sender_name.replace('"', "\"\"");
+        // Payload/sender/channel are network-sourced — neutralise spreadsheet
+        // formula injection in addition to RFC 4180 quote-escaping.
+        let payload = csv_escape(&m.payload);
+        let sender  = csv_escape(&m.sender_name);
         if include_channel {
             out.push_str(&format!(
-                "{},{},\"{}\",{},\"{}\"\n",
-                ts, m.channel_id, sender, priority, payload
+                "{},\"{}\",\"{}\",{},\"{}\"\n",
+                ts, csv_escape(&m.channel_id), sender, priority, payload
             ));
         } else {
             out.push_str(&format!(
@@ -324,7 +343,7 @@ pub async fn export_messages(channel_id: Option<String>, path: String) -> Result
         }
     }
 
-    std::fs::write(&path, out)?;
+    tokio::task::spawn_blocking(move || std::fs::write(&path, out)).await??;
     Ok(())
 }
 
@@ -376,7 +395,7 @@ pub async fn save_session(name: String) -> Result<SessionSaved> {
     let channels = h.state.get_channels().await;
     let cfg = h.state.config().await;
     let sess = SessionConfig::new(&name, channels, cfg.static_peers);
-    let slug = session::save_session(&sess)?;
+    let slug = tokio::task::spawn_blocking(move || session::save_session(&sess)).await??;
     Ok(SessionSaved { slug, name })
 }
 
@@ -389,13 +408,14 @@ pub async fn export_layout(path: String, name: String) -> Result<()> {
     let cfg = h.state.config().await;
     let sess = SessionConfig::new(name, channels, cfg.static_peers);
     let raw = toml::to_string_pretty(&sess)?;
-    std::fs::write(&path, raw)?;
+    tokio::task::spawn_blocking(move || std::fs::write(&path, raw)).await??;
     Ok(())
 }
 
 /// Import a session from an arbitrary file path (file-picker) and apply it.
 pub async fn import_layout(path: String) -> Result<SessionLoaded> {
-    let raw = std::fs::read_to_string(&path)?;
+    let read_path = path.clone();
+    let raw = tokio::task::spawn_blocking(move || std::fs::read_to_string(&read_path)).await??;
     let sess: SessionConfig = toml::from_str(&raw)?;
     let name = sess.name.clone();
     let channel_count = sess.channels.len() as u32;
@@ -410,7 +430,8 @@ pub async fn import_layout(path: String) -> Result<SessionLoaded> {
 }
 
 pub async fn load_session(slug: String) -> Result<SessionLoaded> {
-    let sess = session::load_session(&slug)?;
+    let load_slug = slug.clone();
+    let sess = tokio::task::spawn_blocking(move || session::load_session(&load_slug)).await??;
     let name = sess.name.clone();
     let channel_count = sess.channels.len() as u32;
     engine().state.apply_session(sess.channels).await?;
@@ -487,6 +508,32 @@ impl From<AppEvent> for PatchAppEvent {
             AppEvent::ClientNameChanged(name) => Self::ClientNameChanged { name },
             AppEvent::PermissionDenied { context } => Self::PermissionDenied { context },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::csv_escape;
+
+    #[test]
+    fn csv_escape_neutralises_formulas() {
+        assert_eq!(csv_escape("=1+1"), "'=1+1");
+        assert_eq!(csv_escape("-2"), "'-2");
+        assert_eq!(csv_escape("+x"), "'+x");
+        assert_eq!(csv_escape("@cmd"), "'@cmd");
+        assert_eq!(csv_escape("\tlead"), "'\tlead");
+    }
+
+    #[test]
+    fn csv_escape_passes_through_safe_text() {
+        assert_eq!(csv_escape("hello"), "hello");
+        assert_eq!(csv_escape("Channel clear"), "Channel clear");
+    }
+
+    #[test]
+    fn csv_escape_doubles_quotes_and_combines_with_guard() {
+        assert_eq!(csv_escape("a\"b"), "a\"\"b");
+        assert_eq!(csv_escape("=a\"b"), "'=a\"\"b");
     }
 }
 

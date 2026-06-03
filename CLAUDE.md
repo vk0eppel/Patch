@@ -371,6 +371,15 @@ A single `flutter run` builds and links the Rust engine into the host binary via
 - `PatchTheme.headerHeight = 80.0`: single constant under `// ── Layout` in `patch_theme.dart`; applied as a fixed `Container(height: ...)` to all four top areas so their bottom dividers land on the same line.
 - `bridge_client.dart::getConfig()` builds the config map manually from `ConfigSnapshot` fields. **Every new field added to `ConfigSnapshot` in Rust must also be added to this map.** Missing a field silently resets the Dart state variable to its `?? default` every time `getConfig()` fires.
 - `macros_panel.dart` exports both `MacrosPanel` and `ChannelMacro`; `home_screen.dart` imports it with `show MacrosPanel, ChannelMacro`.
+- Reliability is wired: `api::init` holds a shared `Arc<Mutex<ReliabilityManager>>`. `send_message` calls `reliability.track(...)` for `Priority::Critical` (targets come from `send_to_peers`, which now returns the contacted `SocketAddr`s). Receivers ACK criticals in `transport::handle_event` (the `Message` arm encodes `/patch/ack` back to `from`), the `Ack` arm calls `reliability.ack(...)`, and a poller in `init` retransmits unacked entries every ~400ms (bounded by `MAX_RETRIES`). The `retransmit_delay` backoff helper is still unused.
+- `send_to_peers` iterates `get_peers()` once (which already merges static peers as synthetic `ManualIp` entries) and dedups by `SocketAddr` — do **not** re-add a separate `config.static_peers` loop or static peers get every packet twice (flashes have no dedup, so they'd double-fire). Peer/static addresses are parsed as `IpAddr` then `SocketAddr::new(ip, port)` so IPv6 gets correct `[..]:port` form; `bind_address` does the same.
+- Blocking file I/O is offloaded off the tokio runtime: `state::save_config(cfg)` wraps `Config::save` in `spawn_blocking`, and every config mutator clones the config under the lock then awaits the save (never holds the `RwLock` across the write). `api::init`'s `Config::load_or_default`, `export_messages`, `export_layout`, `import_layout`, `save_session`, and `load_session` are likewise `spawn_blocking`-wrapped. Plain (non-`async`) FRB fns like `list_sessions`/`delete_session` run on FRB's own pool, so they're left as direct `std::fs`.
+- mDNS peers are classified correctly via `AppState::upsert_peer_with_mode(presence, DiscoveryMode::Mdns)` (the `ServiceResolved` handler); `upsert_peer` keeps the `OscBeacon` default, and an already-`Mdns` peer is never downgraded by a later OSC heartbeat, so the 🔍 icon stays.
+- Inbound OSC is validated defensively in `osc/codec.rs`: `valid_channel_id` (same `[a-z0-9_-]`, ≤64 slug rule as `upsert_channel`) gates both `decode_patch_message` and `decode_flash`, and payloads over `MAX_PAYLOAD_LEN` (4096) are rejected — malformed packets `bail!` and the receive loop drops them.
+- `api::csv_escape` neutralises spreadsheet formula injection in `export_messages` (cells starting with `= + - @` tab/CR are prefixed with `'`) on top of RFC 4180 quote-doubling, because payload/sender/channel are network-sourced.
+- `gethostname` (mDNS host record) is looked up in-process — `libc::gethostname` on Unix (declared under `[target.'cfg(unix)'.dependencies]`), `COMPUTERNAME` env on Windows — instead of forking the `hostname` binary.
+- `main.dart` `_connect()` catches engine-boot failures and shows an error panel with **Retry**; `BridgeClient.connect` guards `RustLib.init()` with a static flag so a retry doesn't trip FRB's init-once throw. The `error` bridge event surfaces a red SnackBar in `home_screen.dart`, and the Add Channel dialog validates the slug client-side before closing.
+- Engine tests live in `osc/codec.rs`, `state/mod.rs`, `state/config.rs`, and `api.rs` (`#[cfg(test)]`, `#[tokio::test]` for the async state cases). `cargo test -p patch_core` runs them.
 
 ---
 
@@ -389,10 +398,10 @@ Patch assumes:
 
 To compensate:
 - All messages carry a UUID `message_id` for dedup and ACK
-- Message dedup is enforced in `store_message` (same `message_id` is never stored twice)
-- ACK required for `priority=3` (critical) messages
-- Retransmit uses exponential backoff: 100ms → 200ms → 400ms → … (max 5 retries)
-- Client maintains a 500-message local buffer per session
+- Message dedup is enforced in `store_message` — O(1) via a `HashSet<Uuid>` companion to the `VecDeque` buffer; the same `message_id` is never stored twice
+- Critical messages (`priority=3`) require ACKs: the sender registers them with `ReliabilityManager`, receivers emit `/patch/ack` on receipt, and a poller in `api::init` retransmits unacked criticals to their original targets until acked or `MAX_RETRIES` (5) is exceeded
+- Retransmit currently runs on a fixed ~400ms tick (bounded by `MAX_RETRIES`); the `retransmit_delay` exponential-backoff helper (100ms → 200ms → 400ms → …) exists but is not yet wired
+- Client maintains a 500-message local buffer per session (mirrored on the Dart side — `_kMaxMessagesPerChannel` in `home_screen.dart`)
 
 ---
 
