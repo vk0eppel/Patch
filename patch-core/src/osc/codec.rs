@@ -223,3 +223,140 @@ fn parse_uuid(t: &OscType) -> Result<Uuid> {
     let s = parse_string(t)?;
     Uuid::parse_str(&s).context("Invalid UUID")
 }
+
+// ── Tests ───────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::osc::types::Priority;
+    use chrono::Utc;
+
+    fn sample_message() -> PatchMessage {
+        PatchMessage {
+            message_id: Uuid::new_v4(),
+            sender_id: Uuid::new_v4(),
+            // Quote chars exercise the string round-trip (also relevant to CSV export).
+            sender_name: "FOH \"Eng\"".to_string(),
+            channel_id: "rf".to_string(),
+            timestamp: Utc::now(),
+            priority: Priority::Critical,
+            payload: "Battery low".to_string(),
+        }
+    }
+
+    #[test]
+    fn message_round_trip() {
+        let msg = sample_message();
+        let bytes = encode_message(&msg).unwrap();
+        match decode_packet(&bytes).unwrap() {
+            PatchEvent::Message(d) => {
+                assert_eq!(d.message_id, msg.message_id);
+                assert_eq!(d.sender_id, msg.sender_id);
+                assert_eq!(d.sender_name, msg.sender_name);
+                assert_eq!(d.channel_id, "rf"); // channel comes from the address path
+                assert_eq!(d.priority, Priority::Critical);
+                assert_eq!(d.payload, msg.payload);
+                assert_eq!(
+                    d.timestamp.timestamp_millis(),
+                    msg.timestamp.timestamp_millis()
+                );
+            }
+            other => panic!("expected Message, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn presence_round_trip() {
+        let p = PeerPresence {
+            peer_id: Uuid::new_v4(),
+            peer_name: "MON".into(),
+            channels: vec!["rf".into(), "audio".into()],
+            timestamp: Utc::now(),
+        };
+        let bytes = encode_presence(&p).unwrap();
+        match decode_packet(&bytes).unwrap() {
+            PatchEvent::Presence(d) => {
+                assert_eq!(d.peer_id, p.peer_id);
+                assert_eq!(d.peer_name, p.peer_name);
+                assert_eq!(d.channels, p.channels);
+            }
+            other => panic!("expected Presence, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn flash_round_trip_carries_channel_in_address() {
+        let f = ChannelFlash {
+            channel_id: "lighting".into(),
+            sender_id: Uuid::new_v4(),
+            sender_name: "LD".into(),
+        };
+        let bytes = encode_flash(&f).unwrap();
+        match decode_packet(&bytes).unwrap() {
+            PatchEvent::Flash(d) => {
+                assert_eq!(d.channel_id, "lighting");
+                assert_eq!(d.sender_id, f.sender_id);
+                assert_eq!(d.sender_name, f.sender_name);
+            }
+            other => panic!("expected Flash, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn ack_round_trip() {
+        let (mid, pid) = (Uuid::new_v4(), Uuid::new_v4());
+        let bytes = encode_ack(mid, pid).unwrap();
+        match decode_packet(&bytes).unwrap() {
+            PatchEvent::Ack { message_id, peer_id } => {
+                assert_eq!(message_id, mid);
+                assert_eq!(peer_id, pid);
+            }
+            other => panic!("expected Ack, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn priority_integer_mapping_is_the_wire_contract() {
+        // 0=debug 1=info 2=warning 3=critical — must match docs/README/OSC integ.
+        assert_eq!(Priority::try_from(0).unwrap(), Priority::Debug);
+        assert_eq!(Priority::try_from(1).unwrap(), Priority::Info);
+        assert_eq!(Priority::try_from(2).unwrap(), Priority::Warning);
+        assert_eq!(Priority::try_from(3).unwrap(), Priority::Critical);
+        assert!(Priority::try_from(4).is_err());
+        assert_eq!(Priority::Critical as i32, 3);
+    }
+
+    #[test]
+    fn truncated_message_is_rejected_not_panicked() {
+        // Too few args must bail (not index-panic) — the codec bounds guard.
+        let msg = OscMessage {
+            addr: "/patch/channel/rf/message".to_string(),
+            args: vec![OscType::String(Uuid::new_v4().to_string())], // 1 of 6
+        };
+        assert!(decode_message(msg).is_err());
+    }
+
+    #[test]
+    fn out_of_range_priority_is_rejected() {
+        let msg = OscMessage {
+            addr: "/patch/channel/rf/message".to_string(),
+            args: vec![
+                OscType::String(Uuid::new_v4().to_string()),
+                OscType::String("sender".into()),
+                OscType::String(Uuid::new_v4().to_string()),
+                OscType::Long(Utc::now().timestamp_millis()),
+                OscType::Int(99), // invalid priority
+                OscType::String("payload".into()),
+            ],
+        };
+        assert!(decode_message(msg).is_err());
+    }
+
+    #[test]
+    fn unknown_address_decodes_to_unknown() {
+        let msg = OscMessage { addr: "/foo/bar".to_string(), args: vec![] };
+        let bytes = rosc::encoder::encode(&OscPacket::Message(msg)).unwrap();
+        assert!(matches!(decode_packet(&bytes).unwrap(), PatchEvent::Unknown(_)));
+    }
+}

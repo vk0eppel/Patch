@@ -17,18 +17,18 @@ Malformed or truncated OSC packets are logged and discarded instead of panicking
 
 ## 🟠 Major — Incomplete Features
 
-### Wire ReliabilityManager into the send path for critical messages
+### ~~Wire ReliabilityManager into the send path for critical messages~~ ✅ Done
 **Files:** `patch-core/src/reliability/mod.rs`, `patch-core/src/api.rs`, `patch-core/src/transport/mod.rs`
-**Effort:** large
-**Also tracked in:** `CLAUDE.md` → Known Incomplete
 
-`ReliabilityManager` (exponential-backoff retransmit, ACK tracking) is fully implemented
-but never instantiated or called. Critical messages (`Priority::Critical`) are currently
-fire-and-forget with no retry logic.
+`ReliabilityManager` is now instantiated in `api::init` (shared `Arc<Mutex<…>>`).
+`send_message` calls `reliability.track(message_id, bytes, targets)` for `Priority::Critical`
+messages (targets come from `send_to_peers`, which now returns the contacted `SocketAddr`s).
+A retransmit poller spawned in `init` drains `drain_retransmits()` every 400 ms and re-sends.
+Receivers emit an ACK for every critical message (`handle_event` `Message` arm), and the
+`PatchEvent::Ack` arm calls `reliability.ack(message_id, peer_id)` to clear the in-flight entry.
 
-- Wire `reliability.track(message_id, bytes, peer_ids)` in `api.rs::send_message` when `priority == Critical`
-- Spawn a retransmit loop in `api::init` that calls `reliability.drain_retransmits()` periodically
-- In `transport/mod.rs` `PatchEvent::Ack` arm, call `reliability.ack(message_id)`
+Note: retransmit currently uses a fixed 400 ms tick (bounded by `MAX_RETRIES`) rather than the
+`retransmit_delay` exponential-backoff helper, which is still unused.
 
 ### Multicast transport option
 **Files:** `patch-core/src/transport/mod.rs`, `patch-core/src/discovery/mod.rs`, `patch-core/src/state/config.rs`
@@ -89,25 +89,21 @@ Fixed: `result.files.single` → `result.files.isEmpty` guard + `result.files.fi
 
 ## 🟢 Low — Code Quality & Performance
 
-### Message ring buffer: O(n) dedup scan + O(n) front removal
-**File:** `patch-core/src/state/mod.rs` — `store_message()` ~lines 169–182
-**Effort:** small
+### ~~Message ring buffer: O(n) dedup scan + O(n) front removal~~ ✅ Done
+**File:** `patch-core/src/state/mod.rs` — `store_message()`
 
-- `buf.iter().any(|m| m.message_id == ...)` — linear scan on every incoming message
-- `buf.remove(0)` — shifts the entire `Vec` on overflow
+The buffer is now a `MessageBuffer { queue: VecDeque<PatchMessage>, seen: HashSet<Uuid> }`.
+Dedup is O(1) (`seen.insert` returns false on a repeat); overflow evicts via `pop_front` and
+drops the evicted id from `seen`. `clear_messages` rebuilds/clears `seen` so cleared messages
+can be received again.
 
-Replace `Vec<PatchMessage>` with `VecDeque` (O(1) `pop_front`) and maintain a
-companion `HashSet<Uuid>` of seen message IDs for O(1) dedup.
+### ~~`DiscoveryMode` not set correctly for mDNS-resolved peers~~ ✅ Done
+**File:** `patch-core/src/state/mod.rs`, `patch-core/src/discovery/mod.rs`
 
-### `DiscoveryMode` not set correctly for mDNS-resolved peers
-**File:** `patch-core/src/state/peer.rs` — `from_presence()`
-**Effort:** small
-
-`from_presence()` always sets `discovery_mode: DiscoveryMode::OscBeacon`, so peers
-discovered via mDNS are misclassified. The 🔍 icon in the peers panel is never shown.
-
-- Add a `from_mdns()` constructor (or pass `DiscoveryMode` explicitly) and use it in
-  `discovery/mod.rs` `ServiceResolved` handler.
+`AppState::upsert_peer_with_mode(presence, mode)` now lets the caller classify the peer;
+`upsert_peer` keeps the `OscBeacon` default. The `ServiceResolved` handler passes
+`DiscoveryMode::Mdns`, and the mode sticks across later OSC heartbeats (a peer already
+classified as `Mdns` isn't downgraded), so the 🔍 icon shows.
 
 ### Stale `bridge_port` in sample config
 **File:** `patch-core/patch.toml` — line 4

@@ -6,7 +6,7 @@ pub mod config;
 pub mod peer;
 pub mod session;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
@@ -41,12 +41,23 @@ struct Inner {
     /// peer_id → Peer
     pub peers: RwLock<HashMap<Uuid, peer::Peer>>,
     /// Recent messages (ring buffer — capped at MAX_BUFFER)
-    pub messages: RwLock<Vec<PatchMessage>>,
+    pub messages: RwLock<MessageBuffer>,
     /// Event bus — clone a receiver to subscribe
     pub events: broadcast::Sender<AppEvent>,
 }
 
 const MAX_BUFFER: usize = 500;
+
+/// Bounded message ring buffer with O(1) dedup.
+///
+/// `queue` keeps insertion order (and is popped from the front on overflow);
+/// `seen` mirrors the message IDs currently in `queue` so duplicates — our own
+/// broadcast echoes back over UDP — are rejected without scanning the queue.
+#[derive(Debug, Default)]
+struct MessageBuffer {
+    queue: VecDeque<PatchMessage>,
+    seen: HashSet<Uuid>,
+}
 
 impl AppState {
     pub fn new(config: Config) -> Self {
@@ -62,7 +73,7 @@ impl AppState {
             config: RwLock::new(config),
             channels: RwLock::new(channels),
             peers: RwLock::new(HashMap::new()),
-            messages: RwLock::new(Vec::new()),
+            messages: RwLock::new(MessageBuffer::default()),
             events: tx,
         }))
     }
@@ -193,13 +204,16 @@ impl AppState {
         let mut buf = self.0.messages.write().await;
         // Deduplicate — our own broadcast comes back over UDP, so the same
         // message_id can arrive twice (once on send, once on receive).
-        if buf.iter().any(|m| m.message_id == msg.message_id) {
+        // `insert` returns false if the id was already present (O(1)).
+        if !buf.seen.insert(msg.message_id) {
             return;
         }
-        if buf.len() >= MAX_BUFFER {
-            buf.remove(0);
+        if buf.queue.len() >= MAX_BUFFER {
+            if let Some(old) = buf.queue.pop_front() {
+                buf.seen.remove(&old.message_id);
+            }
         }
-        buf.push(msg.clone());
+        buf.queue.push_back(msg.clone());
         drop(buf);
         self.publish(AppEvent::MessageReceived(msg)).await;
     }
@@ -208,18 +222,26 @@ impl AppState {
     pub async fn clear_messages(&self, channel_id: Option<&str>) {
         let mut buf = self.0.messages.write().await;
         match channel_id {
-            Some(id) => buf.retain(|m| m.channel_id != id),
-            None => buf.clear(),
+            Some(id) => {
+                buf.queue.retain(|m| m.channel_id != id);
+                // Rebuild the dedup set so cleared IDs can be received again.
+                buf.seen = buf.queue.iter().map(|m| m.message_id).collect();
+            }
+            None => {
+                buf.queue.clear();
+                buf.seen.clear();
+            }
         }
     }
 
     pub async fn get_all_messages(&self) -> Vec<PatchMessage> {
-        self.0.messages.read().await.clone()
+        self.0.messages.read().await.queue.iter().cloned().collect()
     }
 
     pub async fn get_messages(&self, channel_id: &str, limit: usize) -> Vec<PatchMessage> {
         let buf = self.0.messages.read().await;
-        buf.iter()
+        buf.queue
+            .iter()
             .filter(|m| m.channel_id == channel_id)
             .rev()
             .take(limit)
@@ -232,9 +254,17 @@ impl AppState {
 
     // ── Peers ─────────────────────────────────────────────────────────────────
 
+    /// Insert/update a peer discovered via the OSC presence beacon.
     pub async fn upsert_peer(&self, presence: PeerPresence) {
+        self.upsert_peer_with_mode(presence, peer::DiscoveryMode::OscBeacon).await;
+    }
+
+    /// Insert/update a peer, classifying it with an explicit discovery mode.
+    /// Used by mDNS resolution (`DiscoveryMode::Mdns`) so the 🔍 icon shows.
+    pub async fn upsert_peer_with_mode(&self, presence: PeerPresence, mode: peer::DiscoveryMode) {
         let mut peers = self.0.peers.write().await;
         let mut new_peer = peer::Peer::from_presence(presence.clone());
+        new_peer.discovery_mode = mode;
         // Preserve the transport-resolved address — touch_peer_address runs
         // before upsert_peer in handle_event, and from_presence() would
         // otherwise overwrite it with an empty string.
@@ -242,6 +272,11 @@ impl AppState {
             if !existing.address.is_empty() {
                 new_peer.address = existing.address.clone();
                 new_peer.osc_port = existing.osc_port;
+            }
+            // Once a peer has been resolved via mDNS, keep that classification —
+            // a subsequent OSC presence heartbeat shouldn't downgrade the icon.
+            if matches!(existing.discovery_mode, peer::DiscoveryMode::Mdns) {
+                new_peer.discovery_mode = peer::DiscoveryMode::Mdns;
             }
         }
         peers.insert(presence.peer_id, new_peer);

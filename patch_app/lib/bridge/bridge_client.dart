@@ -395,7 +395,7 @@ class BridgeClient {
     }
   }
 
-  /// Set the global flash pulse count (1–10).
+  /// Set the global flash pulse count (3–7).
   Future<void> setFlashCount(int count) async {
     try {
       await rust.setFlashCount(count: count);

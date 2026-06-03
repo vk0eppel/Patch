@@ -63,7 +63,7 @@ pub struct Config {
     /// Flash the channel on every incoming message, regardless of priority.
     #[serde(default)]  // default = false
     pub flash_on_message: bool,
-    /// Number of flash pulses per flash event (1–10).
+    /// Number of flash pulses per flash event (3–7).
     #[serde(default = "default_four")]
     pub flash_count: u8,
     /// Number of columns in the macros panel (1–2).

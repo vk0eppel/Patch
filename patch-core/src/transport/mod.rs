@@ -2,16 +2,18 @@
 
 use anyhow::{Context, Result};
 use network_interface::{NetworkInterface, NetworkInterfaceConfig};
-use std::net::SocketAddr;
+use std::collections::HashSet;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use tokio::net::UdpSocket;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, warn};
 use uuid::Uuid;
 
 use chrono::Utc;
-use crate::osc::codec::{decode_packet, PatchEvent};
+use crate::osc::codec::{decode_packet, encode_ack, PatchEvent};
 use crate::osc::types::PeerPresence;
+use crate::reliability::ReliabilityManager;
 use crate::state::{AppEvent, AppState, Config};
 
 pub struct Transport {
@@ -23,7 +25,11 @@ pub struct Transport {
 }
 
 impl Transport {
-    pub async fn new(config: &Config, state: AppState) -> Result<Self> {
+    pub async fn new(
+        config: &Config,
+        state: AppState,
+        reliability: Arc<Mutex<ReliabilityManager>>,
+    ) -> Result<Self> {
         let bind_addr = bind_address(config)?;
         let socket = UdpSocket::bind(&bind_addr)
             .await
@@ -35,12 +41,15 @@ impl Transport {
         let socket = Arc::new(socket);
         let (send_tx, send_rx) = mpsc::channel::<(Vec<u8>, SocketAddr)>(256);
 
-        // Receive loop
+        // Receive loop. It also needs the send half (to emit ACKs for critical
+        // messages) and the reliability manager (to clear acked retransmits).
         let rx_socket = socket.clone();
         let rx_state = state.clone();
+        let rx_send_tx = send_tx.clone();
+        let rx_reliability = Arc::clone(&reliability);
         let client_id = config.client_id;
         tokio::spawn(async move {
-            receive_loop(rx_socket, rx_state, client_id).await;
+            receive_loop(rx_socket, rx_state, client_id, rx_send_tx, rx_reliability).await;
         });
 
         // Send loop
@@ -64,85 +73,90 @@ impl Transport {
         self.send_to(bytes, addr).await
     }
 
-    /// Unicast raw OSC bytes to every known peer in the registry,
-    /// plus any static peers defined in config.
+    /// Unicast raw OSC bytes to every known peer.
+    ///
+    /// `state.get_peers()` already merges the configured static peers in as
+    /// synthetic `ManualIp` entries, so a single pass covers both dynamic and
+    /// static targets. We dedup by resolved `SocketAddr` so a static peer that
+    /// has also been discovered dynamically isn't contacted twice (which would
+    /// double-fire flashes, since flashes carry no dedup id).
     ///
     /// Skips ourselves (by client_id) and peers without a resolved address.
-    /// If no peers are known yet, the packet is silently dropped — no broadcast fallback.
+    /// Returns the addresses actually contacted (used for ACK tracking). If no
+    /// peers are known yet, the packet is silently dropped — no broadcast fallback.
     pub async fn send_to_peers(
         &self,
         bytes: Vec<u8>,
         state: &AppState,
         config: &Config,
-    ) -> Result<()> {
+    ) -> Result<Vec<SocketAddr>> {
         let peers = state.get_peers().await;
-        let mut sent = 0usize;
+        let mut targets: Vec<SocketAddr> = Vec::new();
+        let mut seen: HashSet<SocketAddr> = HashSet::new();
 
         for peer in &peers {
-            // Skip ourselves
             if peer.peer_id == config.client_id {
-                continue;
+                continue; // skip ourselves
             }
             if !peer.has_address() {
                 debug!("Skipping peer {} — no address yet", peer.peer_name);
                 continue;
             }
-            let addr: SocketAddr = match format!("{}:{}", peer.address, peer.osc_port).parse() {
-                Ok(a) => a,
+            // Parse the IP first so IPv6 addresses get correct `[..]:port` form.
+            let ip: IpAddr = match peer.address.parse() {
+                Ok(ip) => ip,
                 Err(e) => {
                     warn!("Invalid peer address for {}: {}", peer.peer_name, e);
                     continue;
                 }
             };
-            if let Err(e) = self.send_to(bytes.clone(), addr).await {
-                warn!("Send to peer {} failed: {}", peer.peer_name, e);
+            let addr = SocketAddr::new(ip, peer.osc_port);
+            if seen.insert(addr) {
+                targets.push(addr);
+            }
+        }
+
+        let mut sent = 0usize;
+        for addr in &targets {
+            if let Err(e) = self.send_to(bytes.clone(), *addr).await {
+                warn!("Send to {} failed: {}", addr, e);
             } else {
-                debug!("Unicast → {} ({})", peer.peer_name, addr);
+                debug!("Unicast → {}", addr);
                 sent += 1;
             }
         }
 
-        // Also send to manually-configured static peers
-        for static_peer in &config.static_peers {
-            let addr: SocketAddr =
-                match format!("{}:{}", static_peer.address, static_peer.port).parse() {
-                    Ok(a) => a,
-                    Err(e) => {
-                        warn!("Invalid static peer address: {}", e);
-                        continue;
-                    }
-                };
-            if let Err(e) = self.send_to(bytes.clone(), addr).await {
-                warn!("Send to static peer {:?} failed: {}", static_peer.label, e);
-            } else {
-                debug!("Unicast → static {:?} ({})", static_peer.label, addr);
-                sent += 1;
-            }
-        }
-
-        let total_targets = peers.len() + config.static_peers.len();
         if sent == 0 {
-            if total_targets == 0 {
+            if targets.is_empty() {
                 debug!("No peers known yet — packet not sent");
             } else {
-                warn!("send_to_peers: all {} send(s) failed", total_targets);
+                warn!("send_to_peers: all {} send(s) failed", targets.len());
             }
         }
 
-        Ok(())
+        Ok(targets)
     }
 }
 
 // ── Internal loops ────────────────────────────────────────────────────────────
 
-async fn receive_loop(socket: Arc<UdpSocket>, state: AppState, client_id: Uuid) {
+async fn receive_loop(
+    socket: Arc<UdpSocket>,
+    state: AppState,
+    client_id: Uuid,
+    send_tx: mpsc::Sender<(Vec<u8>, SocketAddr)>,
+    reliability: Arc<Mutex<ReliabilityManager>>,
+) {
     let mut buf = vec![0u8; 65535];
     loop {
         match socket.recv_from(&mut buf).await {
             Ok((len, peer_addr)) => {
                 debug!("OSC packet from {} ({} bytes)", peer_addr, len);
                 match decode_packet(&buf[..len]) {
-                    Ok(event) => handle_event(event, peer_addr, &state, client_id).await,
+                    Ok(event) => {
+                        handle_event(event, peer_addr, &state, client_id, &send_tx, &reliability)
+                            .await
+                    }
                     Err(e) => warn!("Decode error from {}: {}", peer_addr, e),
                 }
             }
@@ -158,7 +172,14 @@ async fn receive_loop(socket: Arc<UdpSocket>, state: AppState, client_id: Uuid) 
     }
 }
 
-async fn handle_event(event: PatchEvent, from: SocketAddr, state: &AppState, client_id: Uuid) {
+async fn handle_event(
+    event: PatchEvent,
+    from: SocketAddr,
+    state: &AppState,
+    client_id: Uuid,
+    send_tx: &mpsc::Sender<(Vec<u8>, SocketAddr)>,
+    reliability: &Arc<Mutex<ReliabilityManager>>,
+) {
     // For every event that carries a sender_id, record the source address so
     // we can unicast back to that peer later.  Skip our own packets — the Mac
     // receives its own broadcast, and we don't want to add ourselves as a peer.
@@ -195,15 +216,29 @@ async fn handle_event(event: PatchEvent, from: SocketAddr, state: &AppState, cli
                     from.port(),
                 ).await;
             }
+            // ACK critical messages so the sender can stop retransmitting.
+            if msg.is_critical() {
+                match encode_ack(msg.message_id, client_id) {
+                    Ok(ack_bytes) => { let _ = send_tx.send((ack_bytes, from)).await; }
+                    Err(e) => warn!("Failed to encode ACK: {}", e),
+                }
+            }
             state.store_message(msg).await;
         }
         PatchEvent::Ack { message_id, peer_id } => {
+            // Clear the in-flight retransmit entry, then notify the UI.
+            reliability.lock().await.ack(message_id, peer_id);
             state.publish(AppEvent::MessageAcked { message_id, peer_id }).await;
         }
         PatchEvent::Presence(p) => {
             // Ignore our own presence broadcast — we receive it on the same socket.
             if p.peer_id == client_id { return; }
+            let peer_id = p.peer_id;
             state.upsert_peer(p).await;
+            // touch_peer_address at the top of this fn was a no-op (no entry yet);
+            // resolve the address now so the first unicast back isn't delayed a
+            // full heartbeat interval.
+            state.touch_peer_address(peer_id, from.ip().to_string(), from.port()).await;
         }
         PatchEvent::Flash(f) => {
             // Same auto-register logic as for Message.
@@ -256,21 +291,21 @@ fn bind_address(config: &Config) -> Result<String> {
                 .with_context(|| format!("Network interface '{}' not found", iface_name))?;
 
             // Prefer IPv4; skip loopback and link-local IPv6 (fe80::).
-            let ip = iface
+            let ip: IpAddr = iface
                 .addr
                 .iter()
-                .map(|a| a.ip().to_string())
-                .filter(|s| is_usable_ip(s))
-                .find(|s| s.contains('.'))          // IPv4 first
+                .map(|a| a.ip())
+                .filter(|ip| is_usable_ip(&ip.to_string()))
+                .find(|ip| ip.is_ipv4())            // IPv4 first
                 .or_else(|| {
                     iface.addr.iter()
-                        .map(|a| a.ip().to_string())
-                        .filter(|s| is_usable_ip(s))
-                        .next()                     // any usable IPv6 fallback
+                        .map(|a| a.ip())
+                        .find(|ip| is_usable_ip(&ip.to_string())) // any usable IPv6 fallback
                 })
                 .with_context(|| format!("Interface '{}' has no usable address", iface_name))?;
 
-            Ok(format!("{}:{}", ip, config.osc_port))
+            // SocketAddr renders IPv6 with the required brackets (`[::1]:9000`).
+            Ok(SocketAddr::new(ip, config.osc_port).to_string())
         }
     }
 }

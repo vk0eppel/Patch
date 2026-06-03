@@ -12,6 +12,7 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::osc::{codec::encode_presence, types::PeerPresence};
+use crate::state::peer::DiscoveryMode;
 use crate::state::{AppState, Config};
 use crate::transport::Transport;
 
@@ -91,7 +92,7 @@ impl Discovery {
                                 channels: Vec::new(),
                                 timestamp: Utc::now(),
                             };
-                            browse_state.upsert_peer(presence).await;
+                            browse_state.upsert_peer_with_mode(presence, DiscoveryMode::Mdns).await;
                             // Wire the resolved IP+port into the peer record so
                             // unicast sends work immediately after mDNS discovery.
                             if !addr.is_empty() {

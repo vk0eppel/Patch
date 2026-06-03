@@ -14,11 +14,12 @@ use std::sync::Arc;
 use anyhow::Result;
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
-use tokio::sync::OnceCell;
+use tokio::sync::{Mutex, OnceCell};
 
 use crate::discovery::Discovery;
 use crate::osc::codec::{encode_flash, encode_message};
 use crate::osc::types::{ChannelFlash, PatchMessage, Priority};
+use crate::reliability::ReliabilityManager;
 use crate::state::channel::{Channel, MacroMessage};
 use crate::state::session::{self, SessionConfig, SessionMeta};
 use crate::state::{config::StaticPeer, AppEvent, AppState, Config};
@@ -32,6 +33,8 @@ use crate::transport::{list_interfaces, InterfaceInfo, Transport};
 pub struct EngineHandle {
     pub state: AppState,
     pub transport: Arc<Transport>,
+    /// ACK tracking + retransmit state for critical messages.
+    pub reliability: Arc<Mutex<ReliabilityManager>>,
     // Keep discovery alive for the lifetime of the engine.
     _discovery: Arc<Discovery>,
 }
@@ -57,12 +60,35 @@ pub async fn init(config_dir: Option<String>) -> Result<()> {
             );
 
             let state = AppState::new(config.clone());
-            let transport = Arc::new(Transport::new(&config, state.clone()).await?);
+            let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+            let transport = Arc::new(
+                Transport::new(&config, state.clone(), Arc::clone(&reliability)).await?,
+            );
             let discovery = Arc::new(Discovery::new(&config, state.clone(), Arc::clone(&transport)).await?);
+
+            // Retransmit poller for unacked critical messages. drain_retransmits
+            // increments each entry's retry counter and surfaces it until it is
+            // acked or exceeds MAX_RETRIES, so a fixed tick gives bounded retries.
+            let rt_transport = Arc::clone(&transport);
+            let rt_reliability = Arc::clone(&reliability);
+            tokio::spawn(async move {
+                let mut interval =
+                    tokio::time::interval(std::time::Duration::from_millis(400));
+                loop {
+                    interval.tick().await;
+                    let due = rt_reliability.lock().await.drain_retransmits();
+                    for (_id, bytes, targets) in due {
+                        for addr in targets {
+                            let _ = rt_transport.send_to(bytes.clone(), addr).await;
+                        }
+                    }
+                }
+            });
 
             Ok::<_, anyhow::Error>(EngineHandle {
                 state,
                 transport,
+                reliability,
                 _discovery: discovery,
             })
         })
@@ -85,8 +111,13 @@ pub async fn send_message(channel_id: String, payload: String, priority: i32) ->
     let config = h.state.config().await;
     let msg = PatchMessage::new(config.client_id, &config.client_name, channel_id, prio, payload);
     let bytes = encode_message(&msg)?;
-    h.transport.send_to_peers(bytes, &h.state, &config).await?;
+    let targets = h.transport.send_to_peers(bytes.clone(), &h.state, &config).await?;
     let id = msg.message_id.to_string();
+    // Critical messages require ACKs — register for retransmit until every
+    // contacted peer acknowledges (or MAX_RETRIES is exceeded).
+    if msg.is_critical() && !targets.is_empty() {
+        h.reliability.lock().await.track(msg.message_id, bytes, targets);
+    }
     h.state.store_message(msg).await;
     Ok(id)
 }
