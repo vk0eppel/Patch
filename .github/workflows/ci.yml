@@ -58,3 +58,7 @@ jobs:
       - name: Analyze
         working-directory: patch_app
         run: flutter analyze
+
+      - name: Test
+        working-directory: patch_app
+        run: flutter test

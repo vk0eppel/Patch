@@ -139,15 +139,19 @@ pinned (Rust 1.95.0, Flutter 3.44.1) so rustfmt/clippy version drift can't turn 
 changes. `flutter test` is intentionally **excluded** until the broken default `widget_test.dart` is
 replaced (see the item below).
 
-### [Med] Broken default Dart test + no Dart unit coverage
-**Files:** `patch_app/test/widget_test.dart`, `patch_app/lib/bridge/bridge_client.dart`, `patch_app/lib/models/message.dart`
-**Effort:** small
+### ~~[Med] Broken default Dart test + no Dart unit coverage~~ ✅ Done
+**Files:** `patch_app/test/models_test.dart`, `patch_app/test/message_list_test.dart`, `.github/workflows/ci.yml`
 
-`widget_test.dart` is still the Flutter counter template — it imports `MyApp` (the real root is
-`PatchApp`) and asserts a counter, so `flutter test` fails to compile. Replace it, and add unit
-tests for the pure, high-value logic that's currently untested: bridge conversions
-(`_messageToMap` priority `.index` mapping, `_peerToMap` discovery-mode strings, `_presenceToPeerMap`)
-and model `fromJson` (`PatchMessage` / `PeerInfo` / `SessionMeta`). No engine/FFI needed.
+Removed the broken counter-template `widget_test.dart`. Added `models_test.dart` (PatchMessage —
+incl. the `isCritical`/`isWarning` priority contract; PeerInfo defaults + discovery mode; SessionMeta;
+PatchChannel colour-hex/flag/macro parsing) and `message_list_test.dart` (a pure widget test:
+empty-state hint + message rendering, no bridge/engine). `flutter test` is now wired into the CI
+flutter job. 11 tests pass.
+
+Note: the bridge `_messageToMap`/`_peerToMap` helpers are private and take FRB-generated types, so
+they aren't unit-tested directly; the model `fromJson` tests cover the consumer side of that same
+JSON shape. Exposing the bridge converters (`@visibleForTesting`) to test the emission side is a
+possible follow-up.
 
 ### ~~Channel ID not validated for OSC path safety~~ ✅ Done
 **File:** `patch-core/src/api.rs` — `upsert_channel()`
