@@ -5,6 +5,66 @@ Effort: **trivial** < **small** < **medium** < **large**.
 
 ---
 
+## 🟢 Peer presence & activity precision
+
+Goal: the user should see *who's online and when*, with good precision, without a rewrite.
+**Current model (sound, keep it):** presence broadcast every 7s (`discovery/mod.rs`); `last_seen`
+refreshed on **every** received packet (`state/mod.rs::touch_peer_address`); the Flutter dot is green
+when `last_seen ≤ 35s`, gray otherwise (`peers_panel.dart`); peers never auto-expire; the panel
+re-renders on a 10s `Timer`. The gap is that the UI only shows a binary dot — not *when* a peer was
+last heard. Items below are additive and low-risk; ordered by priority.
+
+### [High] Show a per-peer "last seen" relative time
+**File:** `patch_app/lib/widgets/peers_panel.dart` (`_PeerTile`) · **Effort:** small
+The data already exists (`peer.lastSeen`). Add a relative-time line ("now" / "12 s ago" / "3 m ago")
+under each peer so the panel answers *when*, not just online/offline. Tighten the existing
+`Timer.periodic` from 10 s → ~3 s so the counter feels live (cheap — just `setState`). This is the
+single highest-value, lowest-risk win for the stated goal; pure additive UI, no engine change.
+
+### [Med] Throttle `PeerUpdated` / `getPeers()` churn
+**Files:** `patch-core/src/state/mod.rs` (`touch_peer_address`), `patch_app/lib/screens/home_screen.dart`
+**Effort:** small
+`touch_peer_address` emits `PeerUpdated` on *every* received packet, and `home_screen` answers each
+with a full `getPeers()` FFI round-trip — so a busy channel triggers one peer-list fetch per message.
+Precision doesn't need that: throttle the emit to ≤1/s per peer (the registry still updates
+`last_seen`; the panel timer recomputes the dot), or debounce `getPeers()` on the Dart side. Cuts
+event/FFI spam and broadcast-bus lag (the `256`-slot bus can log "lagged") with no loss of precision.
+
+### [Med] Act on mDNS `ServiceRemoved`
+**File:** `patch-core/src/discovery/mod.rs` (`ServiceRemoved` arm — currently debug-log only)
+**Effort:** small
+When a peer cleanly leaves, mDNS reports it immediately. Map `fullname` → peer and mark it offline now
+(age `last_seen` + emit `PeerUpdated`, or `PeerExpired`) instead of waiting out the 35 s window.
+Improves *offline* precision on graceful exits. (Won't help unicast-only / AP-isolated peers that never
+reached us via mDNS — those still rely on the heartbeat timeout.)
+
+### [Low] Derive the online threshold from the heartbeat (or tighten it)
+**Files:** `patch_app/lib/widgets/peers_panel.dart` (hardcoded `35`), `state/config.rs` · **Effort:** trivial
+35 s = 5× the 7 s heartbeat — conservative (avoids Wi-Fi flapping) but slow to show offline. Consider
+~21 s (3 missed) for faster detection, and/or derive it from `heartbeat_interval_secs` (already in
+`ConfigSnapshot`) instead of a magic `35` so it tracks the interval if it ever changes.
+
+### [Low] Active liveness probe for static / manual peers
+**Files:** `patch-core/src/discovery/mod.rs`, `transport/mod.rs` · **Effort:** medium
+Static peers always show gray — their `last_seen` is synthetic (`get_peers` sets it to `now()`); we
+never actually hear from them unless they initiate. A light periodic unicast presence ping to each
+configured static peer would give them a real online state + real "last seen". Optional (adds a little
+traffic); gate it on the static-peer list so it only pings known addresses.
+
+## 🟢 General optimizations (low priority)
+
+### `get_peers()` allocates per call
+**File:** `patch-core/src/state/mod.rs` — `get_peers()`
+Builds a `HashSet` of known addresses and clones `static_peers` on every call; invoked per send and per
+peer event. Minor, and largely mooted once the peer-event churn above is throttled.
+
+### `_combinedMessages` re-sorts every build
+**File:** `patch_app/lib/screens/home_screen.dart`
+The getter merges + sorts all selected channels' messages (up to 500 each) on every `setState`. Memoize
+per (selection, total count) if profiling shows jank on busy multi-channel views.
+
+---
+
 ## ~~🔴 Critical — Runtime Panics~~ ✅ Fixed
 
 ### ~~OSC codec decoders missing bounds checks~~ ✅ Done
