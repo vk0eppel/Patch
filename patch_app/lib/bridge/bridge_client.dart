@@ -192,10 +192,12 @@ class BridgeClient {
   Future<void> setInterface(String name) async {
     try {
       await rust.setInterface(name: name.isEmpty ? null : name);
+      // No restart needed: the socket always binds 0.0.0.0; the NIC only scopes
+      // the discovery broadcast, which the engine re-reads each heartbeat.
       _emit({
         'event': 'interface_changed',
         'name': name.isEmpty ? 'auto' : name,
-        'restart_required': true,
+        'restart_required': false,
       });
     } catch (e) {
       _emitError(e);

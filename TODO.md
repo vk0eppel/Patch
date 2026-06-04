@@ -43,12 +43,12 @@ waiting out the timeout. A transient mDNS blip self-heals: the peer's next OSC p
 ~21 s (3 missed) for faster detection, and/or derive it from `heartbeat_interval_secs` (already in
 `ConfigSnapshot`) instead of a magic `35` so it tracks the interval if it ever changes.
 
-### [Low] Active liveness probe for static / manual peers
-**Files:** `patch-core/src/discovery/mod.rs`, `transport/mod.rs` · **Effort:** medium
-Static peers always show gray — their `last_seen` is synthetic (`get_peers` sets it to `now()`); we
-never actually hear from them unless they initiate. A light periodic unicast presence ping to each
-configured static peer would give them a real online state + real "last seen". Optional (adds a little
-traffic); gate it on the static-peer list so it only pings known addresses.
+### ~~[Low] Active liveness probe for static / manual peers~~ ✅ Done
+**File:** `patch-core/src/discovery/mod.rs` (heartbeat loop)
+The heartbeat now **unicasts presence to all known peers** (via `send_to_peers`, which includes
+static peers). So a static peer receives our heartbeat every ~7 s, learns us, and — once it sends
+its own heartbeat back — shows a real green/grey state and "last seen" instead of always-gray
+synthetic. No separate probe needed.
 
 ### [Low] Departed peers have no distinct state (and a backdated "last seen")
 **Files:** `patch-core/src/state/{mod,peer}.rs`, `transport/mod.rs`, `peers_panel.dart` · **Effort:** medium
@@ -106,12 +106,28 @@ Receivers emit an ACK for every critical message (`handle_event` `Message` arm),
 Note: retransmit currently uses a fixed 400 ms tick (bounded by `MAX_RETRIES`) rather than the
 `retransmit_delay` exponential-backoff helper, which is still unused.
 
+### [Low] macOS multi-interface *initial* discovery (one-way until first contact)
+**Files:** `patch-core/src/transport/mod.rs` (`broadcast_targets` / `Transport`)
+**Effort:** medium
+
+**Largely mitigated** by the unicast-heartbeat bootstrap (`discovery/mod.rs` now unicasts presence to
+known peers, so any one-way contact becomes two-way within a heartbeat). The remaining gap is the
+*very first* contact: `broadcast_targets` sends `255.255.255.255` + per-interface subnet broadcasts,
+but **macOS doesn't deliver directed broadcasts to apps** — only `255.255.255.255`, which leaves just
+the primary/default-route interface. So if a macOS machine's default route is a VPN/`utun`/Ethernet
+and the *other* machine's broadcast also can't reach it, neither makes first contact and the bootstrap
+never starts. Workarounds (`docs/networking.md`): disconnect the extra interface, or add a static peer
+(which supplies the first contact). A real fix for first-contact: send `255.255.255.255` out **each**
+interface from a socket bound to that interface's IP (port 9000, `SO_REUSEADDR`/`SO_REUSEPORT` so the
+source port stays 9000 for unicast replies), or move the beacon to multicast (below). **Do not** ship
+"subnet-directed only" — it broke macOS discovery completely (zero-way).
+
 ### Multicast transport option
 **Files:** `patch-core/src/transport/mod.rs`, `patch-core/src/discovery/mod.rs`, `patch-core/src/state/config.rs`
 **Effort:** large
 
-Currently Patch uses UDP broadcast for presence/discovery (per-interface **subnet-directed**
-broadcast — see `transport::broadcast_targets` — which is LAN-only and stops at routers) and
+Currently Patch uses UDP broadcast for presence/discovery (`255.255.255.255` + per-interface
+subnet-directed — see `transport::broadcast_targets` — LAN-only, stops at routers) and
 UDP unicast to known peers for messages. Multicast would allow group delivery that can be routed
 across VLANs on networks that support multicast routing.
 

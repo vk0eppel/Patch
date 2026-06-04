@@ -30,7 +30,7 @@ impl Transport {
         state: AppState,
         reliability: Arc<Mutex<ReliabilityManager>>,
     ) -> Result<Self> {
-        let bind_addr = bind_address(config)?;
+        let bind_addr = bind_address(config);
         let socket = UdpSocket::bind(&bind_addr)
             .await
             .with_context(|| format!("Failed to bind UDP socket on {}", bind_addr))?;
@@ -339,37 +339,13 @@ async fn send_loop(socket: Arc<UdpSocket>, mut rx: mpsc::Receiver<(Vec<u8>, Sock
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-fn bind_address(config: &Config) -> Result<String> {
-    match &config.network_interface {
-        None => Ok(format!("0.0.0.0:{}", config.osc_port)),
-        Some(iface_name) => {
-            let interfaces =
-                NetworkInterface::show().context("Failed to enumerate network interfaces")?;
-            let iface = interfaces
-                .iter()
-                .find(|i| i.name == *iface_name)
-                .with_context(|| format!("Network interface '{}' not found", iface_name))?;
-
-            // Prefer IPv4; skip loopback and link-local IPv6 (fe80::).
-            let ip: IpAddr = iface
-                .addr
-                .iter()
-                .map(|a| a.ip())
-                .filter(|ip| is_usable_ip(&ip.to_string()))
-                .find(|ip| ip.is_ipv4()) // IPv4 first
-                .or_else(|| {
-                    iface
-                        .addr
-                        .iter()
-                        .map(|a| a.ip())
-                        .find(|ip| is_usable_ip(&ip.to_string())) // any usable IPv6 fallback
-                })
-                .with_context(|| format!("Interface '{}' has no usable address", iface_name))?;
-
-            // SocketAddr renders IPv6 with the required brackets (`[::1]:9000`).
-            Ok(SocketAddr::new(ip, config.osc_port).to_string())
-        }
-    }
+/// The OSC socket always binds `0.0.0.0`, so it receives on **every** interface
+/// (including `255.255.255.255` broadcasts — a socket bound to a specific NIC IP
+/// can't). The `network_interface` setting is applied at *send* time instead:
+/// `broadcast_targets` scopes the discovery beacon to the chosen NIC. So changing
+/// the NIC takes effect live (next heartbeat) with no rebind/restart.
+fn bind_address(config: &Config) -> String {
+    format!("0.0.0.0:{}", config.osc_port)
 }
 
 // Name prefixes of macOS/Linux virtual or system interfaces that are never
@@ -384,17 +360,26 @@ fn is_usable_ip(s: &str) -> bool {
     !s.starts_with("127.") && s != "::1" && !s.to_lowercase().starts_with("fe80")
 }
 
-/// Subnet-directed broadcast targets (e.g. `192.168.1.255:9000`) for each usable
-/// IPv4 interface. Sending to these — instead of the limited `255.255.255.255` —
-/// lets the OS route a copy out every NIC by destination subnet, which fixes
-/// discovery on machines where `255.255.255.255` only leaves the primary
-/// interface (VPN/`utun`, Ethernet alongside Wi-Fi, etc.). When `iface_pin` is
-/// `Some`, only that interface is used. Falls back to `255.255.255.255` if no
-/// subnet broadcast can be determined, so discovery never goes fully silent.
+/// Broadcast targets for the presence/discovery beacon.
+///
+/// **Always includes `255.255.255.255`** (limited broadcast) — that's the one
+/// address macOS reliably delivers to apps, and it's what discovery relies on.
+/// Subnet-directed broadcasts (e.g. `192.168.1.255`) for each usable IPv4 NIC
+/// are added on top: on Linux/Windows they let the routing table push a copy
+/// out every interface (useful with a VPN/Ethernet alongside Wi-Fi); macOS
+/// ignores directed broadcasts, so there the `255.255.255.255` copy is what
+/// counts. `iface_pin` limits the subnet copies to one interface.
 fn broadcast_targets(iface_pin: Option<&str>, port: u16) -> Vec<SocketAddr> {
     let mut out: Vec<SocketAddr> = Vec::new();
     let mut seen: HashSet<SocketAddr> = HashSet::new();
 
+    // Limited broadcast — always sent.
+    if let Ok(sa) = format!("255.255.255.255:{}", port).parse::<SocketAddr>() {
+        seen.insert(sa);
+        out.push(sa);
+    }
+
+    // Plus each usable interface's subnet-directed broadcast.
     if let Ok(interfaces) = NetworkInterface::show() {
         for iface in &interfaces {
             if SKIP_PREFIXES.iter().any(|p| iface.name.starts_with(p)) {
@@ -418,11 +403,6 @@ fn broadcast_targets(iface_pin: Option<&str>, port: u16) -> Vec<SocketAddr> {
         }
     }
 
-    if out.is_empty() {
-        if let Ok(sa) = format!("255.255.255.255:{}", port).parse() {
-            out.push(sa);
-        }
-    }
     out
 }
 
@@ -484,9 +464,13 @@ mod tests {
     }
 
     #[test]
-    fn broadcast_targets_unknown_pin_falls_back_to_limited_broadcast() {
+    fn broadcast_targets_always_include_limited_broadcast() {
+        // Limited broadcast is always present; pinning to an unknown interface
+        // adds no subnet copies, leaving just 255.255.255.255.
         let targets = broadcast_targets(Some("definitely-not-a-real-iface-xyz"), 5000);
         assert_eq!(targets, vec!["255.255.255.255:5000".parse().unwrap()]);
+        // And it's present even with no pin.
+        assert!(broadcast_targets(None, 9000).contains(&"255.255.255.255:9000".parse().unwrap()));
     }
 
     /// Diagnostic: prints the broadcast targets this machine would use.

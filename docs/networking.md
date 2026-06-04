@@ -26,12 +26,15 @@ To clean up the list after a show or when moving between networks, tap the **�
 
 ## Network interface selection
 
-If your device has multiple NICs (e.g. Ethernet + Wi-Fi), go to **Settings → Network Interface** and select the one connected to the show network. Patch will only send and receive on that interface.
+Patch **always listens on every interface**, so on most setups you can leave this on **Auto**. If your device has multiple NICs (e.g. Ethernet + Wi-Fi) and you want the discovery beacon announced on a specific one, go to **Settings → Network Interface** and select it. The change applies **within a few seconds — no restart needed**.
 
-- **Auto** — binds to all interfaces (`0.0.0.0`) and sends discovery beacons out **every** active interface (each to its own subnet broadcast). Best for most setups, including machines with a VPN or Ethernet alongside Wi-Fi.
-- **Named interface** — e.g. `en0` (Ethernet), `en1` (Wi-Fi). Restricts discovery to that one interface — use it only if Auto reaches a network you don't want Patch on.
+- **Auto** — announces discovery on every interface. Best for almost everything.
+- **Named interface** — e.g. `en0` (Ethernet), `en1` (Wi-Fi). Scopes the discovery beacon to that one network (Patch still *listens* on all). Useful if you don't want Patch announcing itself on, say, a corporate VPN.
 
-> **One-way discovery?** If machine A sees B but B doesn't see A, it's almost always because A's broadcasts are leaving the wrong interface (a VPN/`utun` or Ethernet is its default route). On **Auto**, Patch now beacons out every interface's subnet, which fixes this without fiddling — make sure both are on Auto and restart. As a guaranteed fallback, add each machine as a **static peer** of the other (Settings → Static Peers).
+> **One-way discovery (A sees B, but B doesn't see A)?** This happens when the machine that *can't* be seen has its **default route on the wrong interface** — a VPN (`utun`), iCloud Private Relay, or Ethernet/dock alongside Wi-Fi — so on macOS its broadcast beacon only leaves that interface and never reaches the Wi-Fi.
+> Patch now **self-heals** this: once one machine sees the other, it unicasts its heartbeat directly to that peer (unicast routes correctly regardless of the default route), so two-way visibility is restored within one heartbeat (~7 s). If it's still one-way after that, neither side ever made first contact — then:
+> 1. **Disconnect the VPN / unplug the extra interface** so Wi-Fi is the default route (no Patch restart needed — it re-checks interfaces each heartbeat). Check with `route -n get default`.
+> 2. **Add each machine as a static peer** of the other (Settings → Static Peers) — that gives the bootstrap its first contact, and unicast takes over from there.
 
 > The NIC picker filters out loopback, virtual, and link-local-only interfaces automatically. Only real NICs with routable IPv4 addresses are shown.
 

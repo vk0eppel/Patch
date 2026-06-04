@@ -184,7 +184,6 @@ label = "Monitor World"
 
 - [x] OSC transport — unicast to known peers, broadcast for presence/discovery
 - [x] Hybrid peer discovery (mDNS + OSC beacon + static IP)
-- [x] Per-interface subnet-directed discovery beacons (reliable on machines with a VPN/Ethernet alongside Wi-Fi)
 - [x] Peer address resolution from UDP source + mDNS
 - [x] Channel model with per-channel shortcuts — create, edit, delete at runtime
 - [x] Flash / page per channel (local + remote)

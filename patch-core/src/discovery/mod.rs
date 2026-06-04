@@ -154,13 +154,22 @@ impl Discovery {
                 };
                 match encode_presence(&presence) {
                     Ok(bytes) => {
-                        debug!("Heartbeat — broadcasting presence on port {}", osc_port);
+                        debug!(
+                            "Heartbeat — presence broadcast + unicast on port {}",
+                            osc_port
+                        );
+                        // Broadcast so still-undiscovered peers can find us.
                         if let Err(e) = hb_transport
-                            .broadcast(bytes, osc_port, cfg.network_interface.as_deref())
+                            .broadcast(bytes.clone(), osc_port, cfg.network_interface.as_deref())
                             .await
                         {
                             warn!("Presence broadcast failed: {}", e);
                         }
+                        // Also unicast to peers we already know (dynamic + static):
+                        // a peer we can see learns about us even when our broadcast
+                        // can't reach them (asymmetric routing / AP isolation).
+                        // Unicast routes per-subnet, ignoring a bad default route.
+                        let _ = hb_transport.send_to_peers(bytes, &hb_state, &cfg).await;
                     }
                     Err(e) => warn!("Failed to encode presence: {}", e),
                 }

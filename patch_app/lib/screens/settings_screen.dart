@@ -38,7 +38,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Network interfaces
   List<Map<String, String>> _interfaces = [];
   String? _selectedInterface; // null = auto
-  bool _interfaceChangedPending = false;
+  bool _interfaceApplied = false;
 
   // Static peers
   List<Map<String, dynamic>> _staticPeers = [];
@@ -90,7 +90,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               .toList();
         });
       case 'interface_changed':
-        setState(() => _interfaceChangedPending = true);
+        setState(() => _interfaceApplied = true);
+        Future.delayed(const Duration(seconds: 3), () {
+          if (mounted) setState(() => _interfaceApplied = false);
+        });
       case 'client_name_changed':
         setState(() => _nameSaved = true);
         Future.delayed(const Duration(seconds: 2), () {
@@ -223,19 +226,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _SectionHeader('Network Interface'),
           const SizedBox(height: 4),
           const Text(
-            'Bind OSC to a specific NIC. Use Auto on single-homed machines. Takes effect after restart.',
+            'Which network Patch announces discovery on. Patch always listens on every interface; '
+            'this just scopes the beacon. Applies within a few seconds — no restart.',
             style: TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeSmall),
           ),
           const SizedBox(height: 12),
           _InterfacePicker(
             interfaces: _interfaces,
             selected: _selectedInterface,
-            restartPending: _interfaceChangedPending,
+            applied: _interfaceApplied,
             onSelect: (name) {
-              setState(() {
-                _selectedInterface = name;
-                _interfaceChangedPending = false;
-              });
+              setState(() => _selectedInterface = name);
               widget.bridge.setInterface(name ?? 'auto');
             },
           ),
@@ -577,13 +578,13 @@ class _UsernameField extends StatelessWidget {
 class _InterfacePicker extends StatelessWidget {
   final List<Map<String, String>> interfaces;
   final String? selected; // null = auto
-  final bool restartPending;
+  final bool applied;
   final ValueChanged<String?> onSelect;
 
   const _InterfacePicker({
     required this.interfaces,
     required this.selected,
-    required this.restartPending,
+    required this.applied,
     required this.onSelect,
   });
 
@@ -624,15 +625,15 @@ class _InterfacePicker extends StatelessWidget {
             onChanged: onSelect,
           ),
         ),
-        if (restartPending) ...[
+        if (applied) ...[
           const SizedBox(height: 8),
           Row(
             children: const [
-              Icon(Icons.info_outline, size: 14, color: PatchTheme.warning),
+              Icon(Icons.check_circle_outline, size: 14, color: PatchTheme.success),
               SizedBox(width: 6),
               Text(
-                'Restart patch-core for the new interface to take effect.',
-                style: TextStyle(color: PatchTheme.warning, fontSize: 11),
+                'Applied — active within a few seconds.',
+                style: TextStyle(color: PatchTheme.success, fontSize: 11),
               ),
             ],
           ),
