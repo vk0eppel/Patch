@@ -460,7 +460,19 @@ class BridgeClient {
     }
   }
 
+  /// Announce departure so peers drop us promptly (best-effort). Safe to call
+  /// more than once and before/without a full [dispose].
+  Future<void> shutdown() async {
+    if (!_connected) return;
+    try {
+      await rust.shutdown();
+    } catch (_) {
+      // Best-effort — never block shutdown on a failed goodbye.
+    }
+  }
+
   Future<void> dispose() async {
+    await shutdown();
     await _engineSub?.cancel();
     await _eventController.close();
   }

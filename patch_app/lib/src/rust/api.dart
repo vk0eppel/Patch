@@ -15,7 +15,7 @@ import 'state/session.dart';
 import 'transport.dart';
 part 'api.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `csv_escape`
+// These functions are ignored because they are not marked as `pub`: `csv_escape`, `init_tracing`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `EngineHandle`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `engine`
@@ -41,6 +41,13 @@ Future<String> sendMessage({
 /// Flashes a channel (sends to peers + fires local event).
 Future<void> sendFlash({required String channelId}) =>
     RustLib.instance.api.crateApiSendFlash(channelId: channelId);
+
+/// Announce departure so peers drop us promptly instead of waiting out the
+/// heartbeat timeout. Call from the Dart side when the app is closing. Sends a
+/// `/patch/bye` directly on the socket (bypassing the queue, so it flushes
+/// before the process exits) to every known/static peer plus a LAN broadcast.
+/// Best-effort and idempotent — safe to call more than once.
+Future<void> shutdown() => RustLib.instance.api.crateApiShutdown();
 
 Future<List<Channel>> getChannels() =>
     RustLib.instance.api.crateApiGetChannels();

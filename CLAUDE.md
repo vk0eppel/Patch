@@ -147,6 +147,7 @@ import_layout(path: String) -> Result<SessionLoaded>              // load + appl
 clear_messages(channel_id: Option<String>) -> Result<()>          // clear buffer for one channel or all (None)
 export_messages(channel_id: Option<String>, path: String) -> Result<()>  // write CSV to path; None = all channels
 clear_stale_peers(max_age_secs: u64) -> Result<()>                // remove OscBeacon/Mdns peers not heard from recently
+shutdown() -> Result<()>                                          // broadcast /patch/bye so peers drop us promptly (call on app close)
 subscribe_events(sink: StreamSink<PatchAppEvent>) -> Result<()>   // long-lived stream
 ```
 
@@ -183,6 +184,7 @@ After regeneration, run `dart run build_runner build` from `patch_app/` if `Patc
 /patch/channel/{id}/message     # Core message — primary address (channel-scoped)
 /patch/ack                      # ACK for a message_id
 /patch/presence                 # Heartbeat / presence announcement
+/patch/bye                      # Departure announcement (graceful shutdown) — arg: peer_id
 /patch/system/heartbeat         # Standalone heartbeat ping
 /patch/discovery                # Peer discovery beacon
 /patch/channel/{id}/flash       # Flash/page a specific channel
@@ -196,6 +198,7 @@ After regeneration, run `dart run build_runner build` from `patch_app/` if `Patc
 | `/patch/channel/{id}/flash` | Unicast to each known peer + local publish |
 | `/patch/presence` heartbeat | Broadcast (must reach undiscovered peers) |
 | `/patch/discovery` beacon | Broadcast (same) |
+| `/patch/bye` departure | Direct unicast to known/static peers + broadcast, on shutdown |
 
 Messages and flash are **not** broadcast. If no peers are known yet, packets are silently dropped. Peer addresses are learned from UDP `from` fields on receive and from mDNS resolution.
 
@@ -382,6 +385,8 @@ A single `flutter run` builds and links the Rust engine into the host binary via
 - `main.dart` `_connect()` catches engine-boot failures and shows an error panel with **Retry**; `BridgeClient.connect` guards `RustLib.init()` with a static flag so a retry doesn't trip FRB's init-once throw. The `error` bridge event surfaces a red SnackBar in `home_screen.dart`, and the Add Channel dialog validates the slug client-side before closing.
 - Per-channel message lists are capped at `_kMaxMessagesPerChannel` (500, mirrors `MAX_BUFFER`) in `home_screen.dart`'s `message` handler. Because of that cap, `message_list.dart` auto-scrolls on the **tail `messageId` changing**, not on list length — once the list is pinned at 500 the length stops changing, so a length-based trigger would silently stop following new messages. Don't revert it to a length comparison.
 - Engine tests live in `osc/codec.rs`, `state/mod.rs`, `state/config.rs`, and `api.rs` (`#[cfg(test)]`, `#[tokio::test]` for the async state cases). `cargo test -p patch_core` runs them.
+- Logging: `api::init_tracing()` installs a `tracing-subscriber` stderr `fmt` layer at the top of `init()` via `try_init()` (idempotent — safe across repeated `init()` and tests). Without it every engine `warn!/error!/debug!` is dropped. Control verbosity with `RUST_LOG` (default `info`); output shows under `flutter run`.
+- Graceful shutdown: `api::shutdown()` sends `/patch/bye` (peer_id) via `Transport::send_now` — a **direct** `socket.send_to` that bypasses the mpsc send queue, so the packet flushes before the process exits (a queued send may never drain). Receivers' `handle_event` `Bye` arm calls `expire_peer` → `PeerExpired`, dropping the peer immediately instead of waiting out the timeout. Dart calls it from `BridgeClient.dispose()` and on `AppLifecycleState.detached` (`main.dart`). `Bye` is intentionally excluded from the top-of-`handle_event` `touch_peer_address` block so it doesn't refresh `last_seen` right before expiring.
 
 ---
 

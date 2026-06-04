@@ -77,6 +77,14 @@ Malformed or truncated OSC packets are logged and discarded instead of panicking
 
 ## 🟠 Major — Incomplete Features
 
+### ~~[High] No tracing subscriber — all engine logs are dropped~~ ✅ Done
+**Files:** `patch-core/Cargo.toml`, `patch-core/src/api.rs`
+
+Added `tracing-subscriber` (with `env-filter`). `api::init_tracing()` runs at the top of `init()`
+and installs a stderr `fmt` subscriber via `try_init()` (no-op if already set — safe for repeated
+`init()`/tests). Level is controlled by `RUST_LOG` (defaults to `info`); logs surface under
+`flutter run`. Forwarding to a Dart log stream is a possible future nicety but not required.
+
 ### ~~Wire ReliabilityManager into the send path for critical messages~~ ✅ Done
 **Files:** `patch-core/src/reliability/mod.rs`, `patch-core/src/api.rs`, `patch-core/src/transport/mod.rs`
 
@@ -121,6 +129,24 @@ and the engine continues with OSC beacon + static peer discovery only.
 
 ## 🟡 Medium — Validation & Silent Failures
 
+### [Med] No CI pipeline
+**Files:** `.github/workflows/` (new)
+**Effort:** small–medium
+
+No CI exists. Add a GitHub Actions workflow running `cargo test -p patch_core`,
+`cargo clippy -- -D warnings`, `cargo fmt --check`, and `flutter analyze`. The engine has 25 tests
+and analyze is clean — CI locks that in against regressions.
+
+### [Med] Broken default Dart test + no Dart unit coverage
+**Files:** `patch_app/test/widget_test.dart`, `patch_app/lib/bridge/bridge_client.dart`, `patch_app/lib/models/message.dart`
+**Effort:** small
+
+`widget_test.dart` is still the Flutter counter template — it imports `MyApp` (the real root is
+`PatchApp`) and asserts a counter, so `flutter test` fails to compile. Replace it, and add unit
+tests for the pure, high-value logic that's currently untested: bridge conversions
+(`_messageToMap` priority `.index` mapping, `_peerToMap` discovery-mode strings, `_presenceToPeerMap`)
+and model `fromJson` (`PatchMessage` / `PeerInfo` / `SessionMeta`). No engine/FFI needed.
+
 ### ~~Channel ID not validated for OSC path safety~~ ✅ Done
 **File:** `patch-core/src/api.rs` — `upsert_channel()`
 
@@ -148,6 +174,41 @@ Fixed: `result.files.single` → `result.files.isEmpty` guard + `result.files.fi
 ---
 
 ## 🟢 Low — Code Quality & Performance
+
+### [Low] No rustfmt/clippy config; clippy never run
+**Files:** `rustfmt.toml` / `clippy.toml` (new), CI
+**Effort:** small
+
+No formatter/linter config. ~25 non-test `.unwrap()` in the engine (mostly lock guards — audit for
+poison-panic risk, e.g. the `DATA_DIR_OVERRIDE` / `save_lock` paths). Add a clippy pass (wire into
+CI) and a minimal `rustfmt.toml`. Also clears the pre-existing `unnecessary_underscores` info-lint
+in `flash_button.dart`.
+
+### ~~[Low] No "goodbye" on shutdown — peers linger until timeout~~ ✅ Done
+**Files:** `osc/{addresses,codec}.rs`, `transport/mod.rs`, `api.rs`, `bridge_client.dart`, `main.dart`
+
+New `/patch/bye` packet (carries `peer_id`). `api::shutdown()` sends it directly on the socket
+(`Transport::send_now`, bypassing the queue so it flushes before exit) to every resolved/static peer
+plus a LAN broadcast. Receivers' `handle_event` `Bye` arm calls `expire_peer` → `PeerExpired` → the
+UI drops them immediately instead of waiting out the 35 s window. Dart calls `shutdown()` from
+`BridgeClient.dispose()` and on `AppLifecycleState.detached`. Explicit mDNS unregister was left out
+(the daemon thread dies with the process; the `/patch/bye` broadcast is the prompt signal).
+
+### [Low] `patch.toml` has no schema version
+**File:** `patch-core/src/state/config.rs`
+**Effort:** trivial
+
+Migrations rely entirely on `#[serde(default)]`. A `config_version` field would enable explicit,
+ordered migrations if a field ever needs renaming/removing (the recent `shortcuts`→`macros` churn
+is a good example of why).
+
+### [Low] Reliability retransmit doesn't use exponential backoff
+**Files:** `patch-core/src/api.rs`, `patch-core/src/reliability/mod.rs`
+**Effort:** small
+
+The poller in `api::init` retransmits on a fixed ~400 ms tick; the `retransmit_delay`
+(100→200→400…) helper in `reliability/mod.rs` exists but is unused. Track a per-message next-retry
+instant and honour the backoff curve so a lossy link isn't hammered.
 
 ### ~~Message ring buffer: O(n) dedup scan + O(n) front removal~~ ✅ Done
 **File:** `patch-core/src/state/mod.rs` — `store_message()`

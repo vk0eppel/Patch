@@ -4,6 +4,8 @@
 pub const ACK: &str = "/patch/ack";
 pub const TYPING: &str = "/patch/typing";
 pub const PRESENCE: &str = "/patch/presence";
+/// Departure announcement broadcast on graceful shutdown so peers drop us promptly.
+pub const BYE: &str = "/patch/bye";
 
 // System events
 pub const SYSTEM_ALERT: &str = "/patch/system/alert";

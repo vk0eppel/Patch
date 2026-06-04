@@ -66,6 +66,14 @@ impl Transport {
         self.send_tx.send((bytes, addr)).await.context("Send channel closed")
     }
 
+    /// Send raw OSC bytes immediately on the socket, bypassing the send queue.
+    /// Used on shutdown so the departure packet actually flushes before the
+    /// process exits (a queued send may never be drained in time).
+    pub async fn send_now(&self, bytes: &[u8], addr: SocketAddr) -> Result<()> {
+        self.socket.send_to(bytes, addr).await.context("Direct send failed")?;
+        Ok(())
+    }
+
     /// Broadcast raw OSC bytes on the LAN (255.255.255.255).
     /// Used only for presence heartbeats and discovery beacons.
     pub async fn broadcast(&self, bytes: Vec<u8>, port: u16) -> Result<()> {
@@ -239,6 +247,13 @@ async fn handle_event(
             // resolve the address now so the first unicast back isn't delayed a
             // full heartbeat interval.
             state.touch_peer_address(peer_id, from.ip().to_string(), from.port()).await;
+        }
+        PatchEvent::Bye { peer_id } => {
+            // Graceful departure — drop the peer now instead of waiting out the
+            // heartbeat timeout. expire_peer emits PeerExpired → the UI refreshes.
+            if peer_id != client_id {
+                state.expire_peer(peer_id).await;
+            }
         }
         PatchEvent::Flash(f) => {
             // Same auto-register logic as for Message.

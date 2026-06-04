@@ -49,6 +49,8 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # Logging
 tracing = "0.1"
+# Subscriber so engine logs actually surface (stderr → visible under `flutter run`).
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Config file (TOML)
 toml = "0.8"

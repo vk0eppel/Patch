@@ -9,6 +9,7 @@
 //! Lifecycle: call `init()` once at app start. All other functions assume
 //! the engine is up and will panic if called first.
 
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -17,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, OnceCell};
 
 use crate::discovery::Discovery;
-use crate::osc::codec::{encode_flash, encode_message};
+use crate::osc::codec::{encode_bye, encode_flash, encode_message};
 use crate::osc::types::{ChannelFlash, PatchMessage, Priority};
 use crate::reliability::ReliabilityManager;
 use crate::state::channel::{Channel, MacroMessage};
@@ -46,6 +47,7 @@ static ENGINE: OnceCell<EngineHandle> = OnceCell::const_new();
 /// `config_dir`, when `Some`, overrides the platform default data directory
 /// (used by tests and by hosts that want to pin the config to a specific path).
 pub async fn init(config_dir: Option<String>) -> Result<()> {
+    init_tracing();
     ENGINE
         .get_or_try_init(|| async move {
             if let Some(dir) = config_dir.as_deref() {
@@ -97,6 +99,19 @@ pub async fn init(config_dir: Option<String>) -> Result<()> {
     Ok(())
 }
 
+/// Install a `tracing` subscriber so engine diagnostics (send failures, decode
+/// errors, permission-denied, mDNS failures…) actually appear instead of being
+/// dropped. Writes to stderr, which surfaces under `flutter run`. Level is
+/// controlled by `RUST_LOG` (defaults to `info`). `try_init` is a no-op if a
+/// global subscriber is already set, so repeated `init()` calls and the test
+/// harness are safe.
+#[frb(ignore)]
+fn init_tracing() {
+    use tracing_subscriber::{fmt, EnvFilter};
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let _ = fmt().with_env_filter(filter).with_target(false).try_init();
+}
+
 /// Internal: borrow the live engine. Panics if `init()` hasn't completed.
 #[frb(ignore)]
 pub fn engine() -> &'static EngineHandle {
@@ -135,6 +150,32 @@ pub async fn send_flash(channel_id: String) -> Result<()> {
     let bytes = encode_flash(&flash)?;
     h.transport.send_to_peers(bytes, &h.state, &config).await?;
     h.state.publish(AppEvent::ChannelFlash(flash)).await;
+    Ok(())
+}
+
+/// Announce departure so peers drop us promptly instead of waiting out the
+/// heartbeat timeout. Call from the Dart side when the app is closing. Sends a
+/// `/patch/bye` directly on the socket (bypassing the queue, so it flushes
+/// before the process exits) to every known/static peer plus a LAN broadcast.
+/// Best-effort and idempotent — safe to call more than once.
+pub async fn shutdown() -> Result<()> {
+    let Some(h) = ENGINE.get() else { return Ok(()) }; // never initialized
+    let config = h.state.config().await;
+    let bytes = encode_bye(config.client_id)?;
+
+    // Unicast to resolved peers (covers static / AP-isolated).
+    for peer in h.state.get_peers().await {
+        if peer.peer_id == config.client_id || !peer.has_address() {
+            continue;
+        }
+        if let Ok(ip) = peer.address.parse::<IpAddr>() {
+            let _ = h.transport.send_now(&bytes, SocketAddr::new(ip, peer.osc_port)).await;
+        }
+    }
+    // Broadcast for anyone we haven't resolved yet.
+    if let Ok(addr) = format!("255.255.255.255:{}", config.osc_port).parse::<SocketAddr>() {
+        let _ = h.transport.send_now(&bytes, addr).await;
+    }
     Ok(())
 }
 

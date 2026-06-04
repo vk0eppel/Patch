@@ -30,7 +30,7 @@ class AppRoot extends StatefulWidget {
   State<AppRoot> createState() => _AppRootState();
 }
 
-class _AppRootState extends State<AppRoot> {
+class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
   late final BridgeClient _bridge;
   bool _connected = false;
   String? _error;
@@ -38,8 +38,18 @@ class _AppRootState extends State<AppRoot> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _bridge = BridgeClient();
     _connect();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // App is being torn down (more reliable than dispose on desktop close) —
+    // fire the departure announcement so peers drop us promptly. Best-effort.
+    if (state == AppLifecycleState.detached) {
+      _bridge.shutdown();
+    }
   }
 
   Future<void> _connect() async {
@@ -56,6 +66,7 @@ class _AppRootState extends State<AppRoot> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _bridge.dispose();
     super.dispose();
   }

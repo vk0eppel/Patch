@@ -60,6 +60,15 @@ pub fn encode_flash(flash: &ChannelFlash) -> Result<Vec<u8>> {
     rosc::encoder::encode(&OscPacket::Message(osc)).context("Failed to encode flash")
 }
 
+/// Encode a departure announcement (sent on graceful shutdown).
+pub fn encode_bye(peer_id: Uuid) -> Result<Vec<u8>> {
+    let osc = OscMessage {
+        addr: addresses::BYE.to_string(),
+        args: vec![OscType::String(peer_id.to_string())],
+    };
+    rosc::encoder::encode(&OscPacket::Message(osc)).context("Failed to encode /patch/bye")
+}
+
 /// Encode an ACK for a given message_id.
 pub fn encode_ack(message_id: Uuid, peer_id: Uuid) -> Result<Vec<u8>> {
     let osc = OscMessage {
@@ -80,6 +89,7 @@ pub enum PatchEvent {
     Message(PatchMessage),
     Ack { message_id: Uuid, peer_id: Uuid },
     Presence(PeerPresence),
+    Bye { peer_id: Uuid },
     Flash(ChannelFlash),
     Heartbeat { peer_id: Uuid },
     Discovery { peer_id: Uuid, peer_name: String, osc_port: u16 },
@@ -103,6 +113,7 @@ fn decode_message(msg: OscMessage) -> Result<PatchEvent> {
         }
         addresses::ACK => decode_ack(msg),
         addresses::PRESENCE => decode_presence(msg),
+        addresses::BYE => decode_bye(msg),
         addresses::SYSTEM_HEARTBEAT => decode_heartbeat(msg),
         addresses::DISCOVERY => decode_discovery(msg),
         addr if addr.ends_with("/flash") => decode_flash(msg),
@@ -183,6 +194,13 @@ fn decode_presence(msg: OscMessage) -> Result<PatchEvent> {
         timestamp: Utc.timestamp_millis_opt(ts_ms).single()
             .context("Invalid timestamp")?,
     }))
+}
+
+fn decode_bye(msg: OscMessage) -> Result<PatchEvent> {
+    if msg.args.is_empty() {
+        bail!("Expected 1 arg for /patch/bye, got 0");
+    }
+    Ok(PatchEvent::Bye { peer_id: parse_uuid(&msg.args[0])? })
 }
 
 fn decode_heartbeat(msg: OscMessage) -> Result<PatchEvent> {
@@ -336,6 +354,22 @@ mod tests {
             }
             other => panic!("expected Ack, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn bye_round_trip() {
+        let pid = Uuid::new_v4();
+        let bytes = encode_bye(pid).unwrap();
+        match decode_packet(&bytes).unwrap() {
+            PatchEvent::Bye { peer_id } => assert_eq!(peer_id, pid),
+            other => panic!("expected Bye, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn empty_bye_is_rejected() {
+        let msg = OscMessage { addr: "/patch/bye".to_string(), args: vec![] };
+        assert!(decode_message(msg).is_err());
     }
 
     #[test]
