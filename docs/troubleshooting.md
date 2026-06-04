@@ -11,7 +11,7 @@ Patch uses UDP multicast/broadcast for discovery — peers must be reachable at 
 Very common in venues. Devices on the same SSID can't talk directly. Fix: add static peers manually (**Settings → Static Peers**) using each device's IP and port 9000. See [Networking](networking.md#ap-isolated-networks).
 
 **3. Check the network interface selection**
-Go to **Settings → Network Interface**. If a specific NIC is selected, make sure it's the one connected to the show network. Try switching to **Auto** and restarting.
+Go to **Settings → Network Interface**. If a specific NIC is selected, make sure it's the one connected to the show network — or just switch to **Auto** (applies within a few seconds, no restart). Patch always listens on every interface, so Auto is the safest choice.
 
 **4. Firewall blocking UDP port 9000**
 Ensure inbound UDP port 9000 is open on each device:

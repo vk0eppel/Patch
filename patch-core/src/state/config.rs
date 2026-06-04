@@ -61,8 +61,9 @@ pub struct Config {
     pub client_name: String,
     /// UDP port for OSC transport.
     pub osc_port: u16,
-    /// Network interface name to bind to (e.g. "en0", "eth0").
-    /// None = bind to all interfaces.
+    /// Interface to scope the discovery beacon to (e.g. "en0", "eth0"). The OSC
+    /// socket always binds `0.0.0.0` (listens on all); this only limits which
+    /// NIC's subnet the presence broadcast is sent on. None = announce on all.
     pub network_interface: Option<String>,
     /// Manually-added peer addresses (ip:port).
     pub static_peers: Vec<StaticPeer>,

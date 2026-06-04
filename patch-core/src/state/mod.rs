@@ -111,8 +111,9 @@ impl AppState {
         Ok(())
     }
 
-    /// Persist a new network interface selection (None = bind all).
-    /// Takes effect on next restart — transport is already bound.
+    /// Persist the discovery-beacon interface scope (None = announce on all).
+    /// Applies live — the heartbeat re-reads it each tick; the socket always
+    /// binds 0.0.0.0, so there's nothing to rebind.
     pub async fn set_network_interface(&self, iface: Option<String>) -> anyhow::Result<()> {
         self.0.config.write().await.network_interface = iface;
         self.save_config().await

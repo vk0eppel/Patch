@@ -302,7 +302,7 @@ Key fields:
 client_id = "..."           # UUID — stable across sessions
 client_name = "FOH Engineer"
 osc_port = 9000             # UDP port for OSC
-network_interface = "en0"   # Optional — bind to specific NIC
+network_interface = "en0"   # Optional — scopes the discovery beacon to one NIC (socket always binds 0.0.0.0)
 heartbeat_interval_secs = 7
 peer_timeout_secs = 30
 flash_on_critical = true    # Auto-flash channel when priority-3 message arrives

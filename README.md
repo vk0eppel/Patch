@@ -163,7 +163,7 @@ Flash/page a channel from any OSC source:
 client_id = "..."              # UUID — generated once, stable across sessions
 client_name = "FOH Engineer"   # Editable from the Settings screen
 osc_port = 9000
-network_interface = "en0"      # Omit to bind all interfaces
+network_interface = "en0"      # Scopes the discovery beacon to one NIC; omit to announce on all (Patch always listens on all)
 flash_on_critical = true       # Auto-flash on priority-3 messages (Settings → Behavior)
 flash_on_message = false       # Auto-flash on every message (Settings → Behavior)
 flash_count = 4                # Flash pulse count per event, 3–7 (Settings → Behavior)
