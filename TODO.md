@@ -11,32 +11,31 @@ Goal: the user should see *who's online and when*, with good precision, without 
 **Current model (sound, keep it):** presence broadcast every 7s (`discovery/mod.rs`); `last_seen`
 refreshed on **every** received packet (`state/mod.rs::touch_peer_address`); the Flutter dot is green
 when `last_seen ≤ 35s`, gray otherwise (`peers_panel.dart`); peers never auto-expire; the panel
-re-renders on a 10s `Timer`. The gap is that the UI only shows a binary dot — not *when* a peer was
-last heard. Items below are additive and low-risk; ordered by priority.
+re-renders on a 3s `Timer` and shows a per-peer "last seen" relative time. The top three items below
+are now **done** (relative time, getPeers debounce, mDNS removal); the remaining two are low-priority
+tuning, ordered by priority.
 
-### [High] Show a per-peer "last seen" relative time
-**File:** `patch_app/lib/widgets/peers_panel.dart` (`_PeerTile`) · **Effort:** small
-The data already exists (`peer.lastSeen`). Add a relative-time line ("now" / "12 s ago" / "3 m ago")
-under each peer so the panel answers *when*, not just online/offline. Tighten the existing
-`Timer.periodic` from 10 s → ~3 s so the counter feels live (cheap — just `setState`). This is the
-single highest-value, lowest-risk win for the stated goal; pure additive UI, no engine change.
+### ~~[High] Show a per-peer "last seen" relative time~~ ✅ Done
+**File:** `patch_app/lib/widgets/peers_panel.dart` (`_PeerTile`)
+`_PeerTile` now shows a relative-time subtitle ("now" / "30s ago" / "3m ago" / "2h ago" / "1d ago")
+for dynamic peers, leading the line ahead of the address; manual/static peers (synthetic `lastSeen`)
+show just their address. The panel `Timer.periodic` is tightened 10 s → 3 s so the counter stays
+current. Covered by `test/peers_panel_test.dart`. Pure UI, no engine change.
 
-### [Med] Throttle `PeerUpdated` / `getPeers()` churn
-**Files:** `patch-core/src/state/mod.rs` (`touch_peer_address`), `patch_app/lib/screens/home_screen.dart`
-**Effort:** small
-`touch_peer_address` emits `PeerUpdated` on *every* received packet, and `home_screen` answers each
-with a full `getPeers()` FFI round-trip — so a busy channel triggers one peer-list fetch per message.
-Precision doesn't need that: throttle the emit to ≤1/s per peer (the registry still updates
-`last_seen`; the panel timer recomputes the dot), or debounce `getPeers()` on the Dart side. Cuts
-event/FFI spam and broadcast-bus lag (the `256`-slot bus can log "lagged") with no loss of precision.
+### ~~[Med] Throttle `PeerUpdated` / `getPeers()` churn~~ ✅ Done
+**File:** `patch_app/lib/screens/home_screen.dart`
+The `peer_updated` handler now coalesces bursts via `_schedulePeersRefresh()` — a trailing-edge
+~800 ms debounce — so a busy channel does at most ~1 `getPeers()` fetch/window instead of one per
+message. `last_seen` still updates in the registry each packet, and the panel's 3 s timer recomputes
+the dot/relative-time, so no precision is lost. Dart-side only (the `PeerUpdated` event itself is
+cheap); the Rust emit was left as-is.
 
-### [Med] Act on mDNS `ServiceRemoved`
-**File:** `patch-core/src/discovery/mod.rs` (`ServiceRemoved` arm — currently debug-log only)
-**Effort:** small
-When a peer cleanly leaves, mDNS reports it immediately. Map `fullname` → peer and mark it offline now
-(age `last_seen` + emit `PeerUpdated`, or `PeerExpired`) instead of waiting out the 35 s window.
-Improves *offline* precision on graceful exits. (Won't help unicast-only / AP-isolated peers that never
-reached us via mDNS — those still rely on the heartbeat timeout.)
+### ~~[Med] Act on mDNS `ServiceRemoved`~~ ✅ Done
+**File:** `patch-core/src/discovery/mod.rs`
+The browse task keeps a `fullname → peer_id` map (populated at `ServiceResolved`); on `ServiceRemoved`
+it looks up the peer and calls `expire_peer` → `PeerExpired`, dropping it immediately instead of
+waiting out the timeout. A transient mDNS blip self-heals: the peer's next OSC presence re-adds it.
+(Doesn't help unicast-only / AP-isolated peers that never reached us via mDNS.)
 
 ### [Low] Derive the online threshold from the heartbeat (or tighten it)
 **Files:** `patch_app/lib/widgets/peers_panel.dart` (hardcoded `35`), `state/config.rs` · **Effort:** trivial
@@ -134,10 +133,9 @@ and the engine continues with OSC beacon + static peer discovery only.
 
 GitHub Actions workflow (on push-to-main + every PR) with two parallel jobs: **rust** runs
 `cargo fmt -p patch_core --check`, `cargo clippy -p patch_core --all-targets -- -D warnings`, and
-`cargo test -p patch_core`; **flutter** runs `flutter pub get` + `flutter analyze`. Toolchains are
-pinned (Rust 1.95.0, Flutter 3.44.1) so rustfmt/clippy version drift can't turn CI red on unrelated
-changes. `flutter test` is intentionally **excluded** until the broken default `widget_test.dart` is
-replaced (see the item below).
+`cargo test -p patch_core`; **flutter** runs `flutter pub get`, `flutter analyze`, and `flutter test`.
+Toolchains are pinned (Rust 1.95.0, Flutter 3.44.1) so rustfmt/clippy version drift can't turn CI red
+on unrelated changes.
 
 ### ~~[Med] Broken default Dart test + no Dart unit coverage~~ ✅ Done
 **Files:** `patch_app/test/models_test.dart`, `patch_app/test/message_list_test.dart`, `.github/workflows/ci.yml`

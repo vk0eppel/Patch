@@ -76,6 +76,11 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _hideKeyboard = true;
   StreamSubscription<Map<String, dynamic>>? _eventSub;
 
+  /// Coalesces `peer_updated` bursts into one `getPeers()` fetch. `last_seen` is
+  /// refreshed on every received packet, so a busy channel fires `peer_updated`
+  /// per message; without this each one would do a full peer-list FFI round-trip.
+  Timer? _peersRefresh;
+
   // ── Derived state ───────────────────────────────────────────────────────────
 
   List<PatchChannel> get _selectedChannels =>
@@ -123,8 +128,17 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
+    _peersRefresh?.cancel();
     _eventSub?.cancel();
     super.dispose();
+  }
+
+  /// Debounced full peer-list refresh (trailing edge, ~800 ms).
+  void _schedulePeersRefresh() {
+    _peersRefresh ??= Timer(const Duration(milliseconds: 800), () {
+      _peersRefresh = null;
+      widget.bridge.getPeers();
+    });
   }
 
   /// Global F-key handler — fires the first shortcut whose keyBinding matches.
@@ -224,9 +238,10 @@ class _HomeScreenState extends State<HomeScreen> {
         });
 
       case 'peer_updated':
-        // The event carries only PeerPresence (no address). Refresh the full
-        // peer list so we always show the transport-resolved IP.
-        widget.bridge.getPeers();
+        // The event carries only PeerPresence (no address) and fires on every
+        // received packet, so coalesce bursts into one full-list refresh rather
+        // than a getPeers() per message.
+        _schedulePeersRefresh();
 
       case 'peer_expired':
         // Refresh the full list — a static-peer-backed entry should

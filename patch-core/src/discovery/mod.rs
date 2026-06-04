@@ -48,6 +48,10 @@ impl Discovery {
             let browse_state = state.clone();
             let receiver = mdns.browse(service_type)?;
             tokio::spawn(async move {
+                // Map a service's full mDNS name → its peer_id, so a later
+                // ServiceRemoved (which carries no TXT props) can be matched back
+                // to the peer and expired promptly.
+                let mut resolved_ids: HashMap<String, Uuid> = HashMap::new();
                 while let Ok(event) = receiver.recv_async().await {
                     match event {
                         ServiceEvent::ServiceResolved(info) => {
@@ -94,6 +98,7 @@ impl Discovery {
                                 channels: Vec::new(),
                                 timestamp: Utc::now(),
                             };
+                            resolved_ids.insert(info.get_fullname().to_string(), peer_id);
                             browse_state
                                 .upsert_peer_with_mode(presence, DiscoveryMode::Mdns)
                                 .await;
@@ -105,6 +110,12 @@ impl Discovery {
                         }
                         ServiceEvent::ServiceRemoved(_, fullname) => {
                             debug!("mDNS removed: {}", fullname);
+                            // Drop the peer now instead of waiting out the heartbeat
+                            // timeout. If it was a transient mDNS blip and the peer
+                            // is still up, its next OSC presence re-adds it.
+                            if let Some(peer_id) = resolved_ids.remove(&fullname) {
+                                browse_state.expire_peer(peer_id).await;
+                            }
                         }
                         _ => {}
                     }

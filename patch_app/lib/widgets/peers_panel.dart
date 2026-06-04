@@ -24,7 +24,8 @@ class _PeersPanelState extends State<PeersPanel> {
   @override
   void initState() {
     super.initState();
-    _ticker = Timer.periodic(const Duration(seconds: 10), (_) {
+    // 3 s so the per-peer "last seen" counter stays visibly current.
+    _ticker = Timer.periodic(const Duration(seconds: 3), (_) {
       if (mounted) setState(() {});
     });
   }
@@ -101,12 +102,48 @@ class _PeerTile extends StatelessWidget {
   final PeerInfo peer;
   const _PeerTile({required this.peer});
 
+  // Dynamic-peer dot thresholds (seconds since last packet). 14 s = 2× the 7 s
+  // heartbeat (one dropped beat tolerated); 35 s = 5×. See the [Low] TODO about
+  // deriving these from `heartbeat_interval_secs`.
+  static const int _kHealthySecs = 14;
+  static const int _kStaleSecs = 35;
+
+  bool get _isManual =>
+      peer.discoveryMode == 'manual_ip' || peer.discoveryMode == 'ManualIp';
+
+  /// Three-state health: green = healthy, amber = a heartbeat or more missed
+  /// (going quiet), gray = offline or a configured-only (ManualIp) peer.
+  Color get _dotColor {
+    if (_isManual) return PatchTheme.textMuted;
+    final age = DateTime.now().difference(peer.lastSeen).inSeconds;
+    if (age <= _kHealthySecs) return PatchTheme.success;
+    if (age <= _kStaleSecs) return PatchTheme.warning;
+    return PatchTheme.textMuted;
+  }
+
   String get _discoveryIcon {
     return switch (peer.discoveryMode) {
       'Mdns' || 'mdns' => '🔍',
       'ManualIp' || 'manual_ip' => '📌',
       _ => '📡',
     };
+  }
+
+  /// Secondary line. For dynamic peers this leads with *when* we last heard from
+  /// them (the whole point — see who's online and how recently); static/manual
+  /// peers have a synthetic `lastSeen`, so we just show their configured address.
+  String get _subtitle {
+    final addr = peer.address.isNotEmpty ? peer.address : 'unknown IP';
+    return _isManual ? addr : '${_relativeLastSeen(peer.lastSeen)} · $addr';
+  }
+
+  static String _relativeLastSeen(DateTime t) {
+    final d = DateTime.now().difference(t);
+    if (d.isNegative || d.inSeconds < 5) return 'now';
+    if (d.inSeconds < 60) return '${d.inSeconds}s ago';
+    if (d.inMinutes < 60) return '${d.inMinutes}m ago';
+    if (d.inHours < 24) return '${d.inHours}h ago';
+    return '${d.inDays}d ago';
   }
 
   @override
@@ -131,7 +168,7 @@ class _PeerTile extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  peer.address.isNotEmpty ? peer.address : 'unknown IP',
+                  _subtitle,
                   style: const TextStyle(
                     color: PatchTheme.textMuted,
                     fontSize: 10,
@@ -141,26 +178,16 @@ class _PeerTile extends StatelessWidget {
               ],
             ),
           ),
-          // Green = heard from within the last 35 s (5 × 7 s heartbeat interval).
-          // Gray = ManualIp synthetic entry (never contacted), or real entry gone quiet.
-          Builder(builder: (context) {
-            final bool isOnline;
-            if (peer.discoveryMode == 'ManualIp' ||
-                peer.discoveryMode == 'manual_ip') {
-              isOnline = false;
-            } else {
-              final age = DateTime.now().difference(peer.lastSeen);
-              isOnline = age.inSeconds <= 35;
-            }
-            return Container(
-              width: 7,
-              height: 7,
-              decoration: BoxDecoration(
-                color: isOnline ? PatchTheme.success : PatchTheme.textMuted,
-                shape: BoxShape.circle,
-              ),
-            );
-          }),
+          // Status dot: green (healthy) → amber (heartbeat missed, going quiet)
+          // → gray (offline, or a configured-only ManualIp peer).
+          Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(
+              color: _dotColor,
+              shape: BoxShape.circle,
+            ),
+          ),
         ],
       ),
     );
