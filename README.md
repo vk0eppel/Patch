@@ -30,7 +30,7 @@ Inspired by [Wavetool](https://wavetool.fi/) chat and [SideChain's TheaterChat](
 - **Session presets** — save and restore named channel layouts; accessible from the folder icon in the sidebar; import/export `.toml` files to share layouts across machines
 - **Hybrid discovery** — mDNS/Bonjour auto-discovery + OSC beacon broadcast every 7s + manual static IP for AP-isolated or VLAN-segmented show networks
 - **Static peer management** — add/remove known peers by IP from the Settings screen; static peers are always contacted regardless of discovery state, bypassing AP isolation
-- **Peer presence at a glance** — the peers panel shows who's online with a per-peer "last seen" time and a green/amber/grey status dot (amber = a heartbeat or more missed, so you catch a node going quiet before it drops); a peer leaving (graceful quit or mDNS departure) clears promptly
+- **Peer presence at a glance** — the peers panel shows who's online with a per-peer "last seen" time and a green/amber/grey status dot (amber = a heartbeat or more missed, so you catch a node going quiet before it drops); a peer leaving (graceful quit or mDNS departure) goes grey promptly but stays in the list, so you can still see who was connected
 - **Configurable identity** — set your display name and network interface from the settings screen; NIC picker filters out virtual/tunnel interfaces and shows only real NICs with IPv4 addresses; changes persist immediately
 - **Priority levels** — info / warning / critical; critical messages are visually distinct and require ACK
 - **Clear inactive peers** — remove grey-dot dynamic peers from the panel via the 👤 button in the peers panel header; static/manual peers are never removed; cleared peers reappear automatically when they come back online
@@ -184,6 +184,7 @@ label = "Monitor World"
 
 - [x] OSC transport — unicast to known peers, broadcast for presence/discovery
 - [x] Hybrid peer discovery (mDNS + OSC beacon + static IP)
+- [x] Per-interface subnet-directed discovery beacons (reliable on machines with a VPN/Ethernet alongside Wi-Fi)
 - [x] Peer address resolution from UDP source + mDNS
 - [x] Channel model with per-channel shortcuts — create, edit, delete at runtime
 - [x] Flash / page per channel (local + remote)

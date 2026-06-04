@@ -82,11 +82,24 @@ impl Transport {
         Ok(())
     }
 
-    /// Broadcast raw OSC bytes on the LAN (255.255.255.255).
-    /// Used only for presence heartbeats and discovery beacons.
-    pub async fn broadcast(&self, bytes: Vec<u8>, port: u16) -> Result<()> {
-        let addr: SocketAddr = format!("255.255.255.255:{}", port).parse()?;
-        self.send_to(bytes, addr).await
+    /// Broadcast raw OSC bytes (presence heartbeat / discovery beacon) to the
+    /// subnet-directed broadcast of every usable interface, so the OS routes a
+    /// copy out each NIC. `iface` pins to a single interface when set.
+    pub async fn broadcast(&self, bytes: Vec<u8>, port: u16, iface: Option<&str>) -> Result<()> {
+        for addr in broadcast_targets(iface, port) {
+            if let Err(e) = self.send_to(bytes.clone(), addr).await {
+                warn!("Presence broadcast to {} failed: {}", addr, e);
+            }
+        }
+        Ok(())
+    }
+
+    /// Same targets as [`broadcast`], but flushed directly on the socket
+    /// (used on shutdown so the `/patch/bye` actually goes out before exit).
+    pub async fn broadcast_now(&self, bytes: &[u8], port: u16, iface: Option<&str>) {
+        for addr in broadcast_targets(iface, port) {
+            let _ = self.send_now(bytes, addr).await;
+        }
     }
 
     /// Unicast raw OSC bytes to every known peer.
@@ -273,10 +286,12 @@ async fn handle_event(
                 .await;
         }
         PatchEvent::Bye { peer_id } => {
-            // Graceful departure — drop the peer now instead of waiting out the
-            // heartbeat timeout. expire_peer emits PeerExpired → the UI refreshes.
+            // Graceful departure — mark the peer offline (grey) immediately
+            // instead of waiting out the heartbeat timeout, but keep it in the
+            // list so the operator still sees who was connected.
             if peer_id != client_id {
-                state.expire_peer(peer_id).await;
+                tracing::info!("Received /patch/bye from {} — marking offline", peer_id);
+                state.mark_peer_offline(peer_id).await;
             }
         }
         PatchEvent::Flash(f) => {
@@ -369,6 +384,48 @@ fn is_usable_ip(s: &str) -> bool {
     !s.starts_with("127.") && s != "::1" && !s.to_lowercase().starts_with("fe80")
 }
 
+/// Subnet-directed broadcast targets (e.g. `192.168.1.255:9000`) for each usable
+/// IPv4 interface. Sending to these — instead of the limited `255.255.255.255` —
+/// lets the OS route a copy out every NIC by destination subnet, which fixes
+/// discovery on machines where `255.255.255.255` only leaves the primary
+/// interface (VPN/`utun`, Ethernet alongside Wi-Fi, etc.). When `iface_pin` is
+/// `Some`, only that interface is used. Falls back to `255.255.255.255` if no
+/// subnet broadcast can be determined, so discovery never goes fully silent.
+fn broadcast_targets(iface_pin: Option<&str>, port: u16) -> Vec<SocketAddr> {
+    let mut out: Vec<SocketAddr> = Vec::new();
+    let mut seen: HashSet<SocketAddr> = HashSet::new();
+
+    if let Ok(interfaces) = NetworkInterface::show() {
+        for iface in &interfaces {
+            if SKIP_PREFIXES.iter().any(|p| iface.name.starts_with(p)) {
+                continue;
+            }
+            if iface_pin.is_some_and(|pin| iface.name != pin) {
+                continue;
+            }
+            for a in &iface.addr {
+                let ip = a.ip();
+                if !ip.is_ipv4() || !is_usable_ip(&ip.to_string()) {
+                    continue;
+                }
+                if let Some(bcast) = a.broadcast() {
+                    let sa = SocketAddr::new(bcast, port);
+                    if seen.insert(sa) {
+                        out.push(sa);
+                    }
+                }
+            }
+        }
+    }
+
+    if out.is_empty() {
+        if let Ok(sa) = format!("255.255.255.255:{}", port).parse() {
+            out.push(sa);
+        }
+    }
+    out
+}
+
 /// Returns a list of available network interfaces for the UI selector.
 /// Filters out virtual/system interfaces and link-local addresses.
 /// Prefers IPv4 over IPv6 when an interface has both.
@@ -412,4 +469,33 @@ pub fn list_interfaces() -> Result<Vec<InterfaceInfo>> {
 pub struct InterfaceInfo {
     pub name: String,
     pub ip: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn broadcast_targets_non_empty_ipv4_on_port() {
+        let targets = broadcast_targets(None, 9000);
+        assert!(!targets.is_empty()); // real subnets, or the 255.255.255.255 fallback
+        assert!(targets.iter().all(|a| a.port() == 9000));
+        assert!(targets.iter().all(|a| a.ip().is_ipv4()));
+    }
+
+    #[test]
+    fn broadcast_targets_unknown_pin_falls_back_to_limited_broadcast() {
+        let targets = broadcast_targets(Some("definitely-not-a-real-iface-xyz"), 5000);
+        assert_eq!(targets, vec!["255.255.255.255:5000".parse().unwrap()]);
+    }
+
+    /// Diagnostic: prints the broadcast targets this machine would use.
+    /// Run with: `cargo test -p patch_core print_broadcast_targets -- --ignored --nocapture`
+    #[test]
+    #[ignore = "diagnostic only"]
+    fn print_broadcast_targets() {
+        for t in broadcast_targets(None, 9000) {
+            eprintln!("broadcast target: {t}");
+        }
+    }
 }

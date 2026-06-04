@@ -50,6 +50,15 @@ never actually hear from them unless they initiate. A light periodic unicast pre
 configured static peer would give them a real online state + real "last seen". Optional (adds a little
 traffic); gate it on the static-peer list so it only pings known addresses.
 
+### [Low] Departed peers have no distinct state (and a backdated "last seen")
+**Files:** `patch-core/src/state/{mod,peer}.rs`, `transport/mod.rs`, `peers_panel.dart` · **Effort:** medium
+On `/patch/bye` (and mDNS `ServiceRemoved`), `mark_peer_offline` backdates `last_seen` 60 s to force
+the dot grey while keeping the peer in the list — so a *just-departed* peer reads "1m ago" rather than
+"now", and a clean departure looks the same as one that merely went quiet. A proper fix is a `departed`
+flag on `Peer` (set on bye, cleared on the next OSC packet): keep the real `last_seen`, drive grey from
+the flag, and optionally render departed peers distinctly (e.g. a dimmed/"left" treatment — *not* red,
+which is the critical-alert colour). Needs a `Peer` field → FRB regen + `PeerInfo`/`_peerToMap` + a dot case.
+
 ## 🟢 General optimizations (low priority)
 
 ### `get_peers()` allocates per call
@@ -101,12 +110,13 @@ Note: retransmit currently uses a fixed 400 ms tick (bounded by `MAX_RETRIES`) r
 **Files:** `patch-core/src/transport/mod.rs`, `patch-core/src/discovery/mod.rs`, `patch-core/src/state/config.rs`
 **Effort:** large
 
-Currently Patch uses UDP broadcast for presence/discovery (LAN-only, blocked by routers)
-and UDP unicast to known peers for messages. Multicast would allow group delivery that
-can be routed across VLANs on networks that support multicast routing.
+Currently Patch uses UDP broadcast for presence/discovery (per-interface **subnet-directed**
+broadcast — see `transport::broadcast_targets` — which is LAN-only and stops at routers) and
+UDP unicast to known peers for messages. Multicast would allow group delivery that can be routed
+across VLANs on networks that support multicast routing.
 
 Scope is TBD — options include:
-- Multicast for presence/discovery only (replace 255.255.255.255 broadcast with a multicast group, e.g. `239.0.0.1:9000`), keeping unicast for messages
+- Multicast for presence/discovery only (replace the subnet-directed broadcast with a multicast group, e.g. `239.0.0.1:9000`), keeping unicast for messages
 - Multicast for messages too (all receivers in the group get every message, no per-peer send loop)
 - A config toggle so users can opt in on complex show networks (VLAN-segmented, multi-subnet)
 

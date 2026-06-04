@@ -12,7 +12,6 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::osc::{codec::encode_presence, types::PeerPresence};
-use crate::state::peer::DiscoveryMode;
 use crate::state::{AppState, Config};
 use crate::transport::Transport;
 
@@ -99,22 +98,22 @@ impl Discovery {
                                 timestamp: Utc::now(),
                             };
                             resolved_ids.insert(info.get_fullname().to_string(), peer_id);
+                            // Record the address for unicast, but do NOT refresh
+                            // liveness — mDNS can replay from a stale cache long
+                            // after a peer quits. `last_seen` is driven only by
+                            // received OSC packets (`touch_peer_address`).
                             browse_state
-                                .upsert_peer_with_mode(presence, DiscoveryMode::Mdns)
+                                .resolve_peer_address(presence, addr, port)
                                 .await;
-                            // Wire the resolved IP+port into the peer record so
-                            // unicast sends work immediately after mDNS discovery.
-                            if !addr.is_empty() {
-                                browse_state.touch_peer_address(peer_id, addr, port).await;
-                            }
                         }
                         ServiceEvent::ServiceRemoved(_, fullname) => {
                             debug!("mDNS removed: {}", fullname);
-                            // Drop the peer now instead of waiting out the heartbeat
-                            // timeout. If it was a transient mDNS blip and the peer
-                            // is still up, its next OSC presence re-adds it.
+                            // Mark offline (grey) now instead of waiting out the
+                            // heartbeat timeout, but keep it in the list. If it was
+                            // a transient mDNS blip and the peer is still up, its
+                            // next OSC presence greens it again.
                             if let Some(peer_id) = resolved_ids.remove(&fullname) {
-                                browse_state.expire_peer(peer_id).await;
+                                browse_state.mark_peer_offline(peer_id).await;
                             }
                         }
                         _ => {}
@@ -144,19 +143,22 @@ impl Discovery {
                     .iter()
                     .map(|c| c.id.clone())
                     .collect();
-                // Re-read the name on every tick so renames propagate to peers
-                // within one heartbeat interval without requiring a restart.
-                let current_name = hb_state.config().await.client_name.clone();
+                // Re-read config every tick so a rename (or a NIC change)
+                // propagates within one heartbeat without a restart.
+                let cfg = hb_state.config().await;
                 let presence = PeerPresence {
                     peer_id: client_id,
-                    peer_name: current_name,
+                    peer_name: cfg.client_name.clone(),
                     channels,
                     timestamp: Utc::now(),
                 };
                 match encode_presence(&presence) {
                     Ok(bytes) => {
                         debug!("Heartbeat — broadcasting presence on port {}", osc_port);
-                        if let Err(e) = hb_transport.broadcast(bytes, osc_port).await {
+                        if let Err(e) = hb_transport
+                            .broadcast(bytes, osc_port, cfg.network_interface.as_deref())
+                            .await
+                        {
                             warn!("Presence broadcast failed: {}", e);
                         }
                     }

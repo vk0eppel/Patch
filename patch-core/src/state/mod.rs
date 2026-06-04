@@ -306,10 +306,11 @@ impl AppState {
         self.publish(AppEvent::PeerUpdated(presence)).await;
     }
 
-    /// Update the network address and last_seen of a known peer (called from
-    /// transport on receive and from mDNS resolution). Emits PeerUpdated so
-    /// the Flutter side refreshes the dot colour. No-op if the peer isn't in
-    /// the registry yet — it will be populated when their presence packet arrives.
+    /// Update the network address and `last_seen` of a known peer. Called from
+    /// transport on **received OSC packets** only (real liveness) — NOT from mDNS
+    /// resolution (see `resolve_peer_address`). Emits PeerUpdated so the Flutter
+    /// side refreshes the dot. No-op if the peer isn't in the registry yet — it
+    /// will be populated when their presence packet arrives.
     pub async fn touch_peer_address(&self, peer_id: Uuid, address: String, port: u16) {
         let presence = {
             let mut peers = self.0.peers.write().await;
@@ -327,6 +328,42 @@ impl AppState {
                 timestamp: peer.last_seen,
             }
         };
+        self.publish(AppEvent::PeerUpdated(presence)).await;
+    }
+
+    /// Record a peer's mDNS-resolved address **without** refreshing liveness.
+    ///
+    /// mDNS resolution can be replayed from a stale cache long after a peer has
+    /// quit, so it proves only that we have an address to unicast to — not that
+    /// the peer is currently up. Liveness (`last_seen`) must come solely from
+    /// real OSC traffic (`touch_peer_address`). So: a peer we already know keeps
+    /// its existing `last_seen` and just gets its address + `Mdns` classification
+    /// refreshed; a peer seen *only* via mDNS so far is inserted as already-stale
+    /// (grey) until an OSC packet greens it (≤ one heartbeat on a normal LAN).
+    /// Without this, repeated cached mDNS resolutions kept a departed peer green
+    /// until the mDNS record's TTL finally expired.
+    pub async fn resolve_peer_address(&self, presence: PeerPresence, address: String, port: u16) {
+        {
+            let mut peers = self.0.peers.write().await;
+            match peers.get_mut(&presence.peer_id) {
+                Some(peer) => {
+                    if !address.is_empty() {
+                        peer.address = address;
+                        peer.osc_port = port;
+                    }
+                    peer.discovery_mode = peer::DiscoveryMode::Mdns;
+                }
+                None => {
+                    let mut new_peer = peer::Peer::from_presence(presence.clone());
+                    new_peer.discovery_mode = peer::DiscoveryMode::Mdns;
+                    new_peer.address = address;
+                    new_peer.osc_port = port;
+                    // Backdate past the UI's stale threshold so the dot starts grey.
+                    new_peer.last_seen = chrono::Utc::now() - chrono::Duration::seconds(60);
+                    peers.insert(presence.peer_id, new_peer);
+                }
+            }
+        }
         self.publish(AppEvent::PeerUpdated(presence)).await;
     }
 
@@ -353,11 +390,38 @@ impl AppState {
         self.0.peers.read().await.contains_key(&peer_id)
     }
 
+    /// Fully remove a peer from the registry (emits `PeerExpired`). Graceful
+    /// departures (`/patch/bye`, mDNS `ServiceRemoved`) deliberately use
+    /// `mark_peer_offline` instead — a quitting peer stays visible (grey) rather
+    /// than vanishing — and the manual "clear inactive peers" button removes via
+    /// `clear_stale_peers`. Retained as a utility (no current caller).
     pub async fn expire_peer(&self, peer_id: Uuid) {
         let mut peers = self.0.peers.write().await;
         peers.remove(&peer_id);
         drop(peers);
         self.publish(AppEvent::PeerExpired(peer_id)).await;
+    }
+
+    /// Mark a peer offline without removing it (e.g. on `/patch/bye`). Backdates
+    /// `last_seen` past the UI's stale threshold so the dot goes grey
+    /// immediately while the peer stays in the list. A reconnect (any received
+    /// OSC packet) refreshes `last_seen` via `touch_peer_address` and greens it
+    /// again. No-op if the peer isn't currently known.
+    pub async fn mark_peer_offline(&self, peer_id: Uuid) {
+        let presence = {
+            let mut peers = self.0.peers.write().await;
+            let Some(peer) = peers.get_mut(&peer_id) else {
+                return;
+            };
+            peer.last_seen = chrono::Utc::now() - chrono::Duration::seconds(60);
+            PeerPresence {
+                peer_id: peer.peer_id,
+                peer_name: peer.peer_name.clone(),
+                channels: peer.channels.clone(),
+                timestamp: peer.last_seen,
+            }
+        };
+        self.publish(AppEvent::PeerUpdated(presence)).await;
     }
 
     pub async fn get_peers(&self) -> Vec<peer::Peer> {
@@ -720,6 +784,66 @@ mod tests {
     async fn reorder_macros_unknown_channel_errors() {
         let st = test_state();
         assert!(st.reorder_macros("nope", vec!["x".into()]).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn mdns_resolution_does_not_refresh_liveness() {
+        let st = test_state();
+        let pid = Uuid::new_v4();
+        let old = chrono::Utc::now() - chrono::Duration::seconds(120);
+        // Known peer, last actually heard (via OSC) 120 s ago — stale.
+        st.upsert_peer_with_mode(presence(pid, old), peer::DiscoveryMode::OscBeacon)
+            .await;
+        // A cached mDNS record re-resolves it with an address.
+        st.resolve_peer_address(presence(pid, chrono::Utc::now()), "10.0.0.2".into(), 9000)
+            .await;
+
+        let p = st
+            .get_peers()
+            .await
+            .into_iter()
+            .find(|p| p.peer_id == pid)
+            .unwrap();
+        assert_eq!(p.address, "10.0.0.2"); // address updated for unicast
+        assert!(matches!(p.discovery_mode, peer::DiscoveryMode::Mdns)); // reclassified
+        assert!(p.is_stale(35)); // last_seen NOT refreshed — still stale
+    }
+
+    #[tokio::test]
+    async fn mdns_only_peer_starts_stale() {
+        let st = test_state();
+        let pid = Uuid::new_v4();
+        // First (and only) contact is mDNS — no OSC liveness yet.
+        st.resolve_peer_address(presence(pid, chrono::Utc::now()), "10.0.0.3".into(), 9000)
+            .await;
+
+        let p = st
+            .get_peers()
+            .await
+            .into_iter()
+            .find(|p| p.peer_id == pid)
+            .unwrap();
+        assert_eq!(p.address, "10.0.0.3");
+        assert!(p.is_stale(35)); // grey until a real OSC packet arrives
+    }
+
+    #[tokio::test]
+    async fn mark_peer_offline_keeps_peer_but_makes_it_stale() {
+        let st = test_state();
+        let pid = Uuid::new_v4();
+        // A live peer (heard just now, with an address).
+        st.upsert_peer(presence(pid, chrono::Utc::now())).await;
+        st.touch_peer_address(pid, "10.0.0.4".into(), 9000).await;
+        // Graceful departure (e.g. /patch/bye).
+        st.mark_peer_offline(pid).await;
+
+        let peers = st.get_peers().await;
+        let p = peers
+            .iter()
+            .find(|p| p.peer_id == pid)
+            .expect("peer kept in the list");
+        assert!(p.is_stale(35)); // grey now
+        assert!(p.has_address()); // address retained for a possible reconnect
     }
 
     /// Exercises the real save path (`save_config` → `spawn_blocking`) end to end:

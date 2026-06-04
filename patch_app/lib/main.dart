@@ -1,3 +1,5 @@
+import 'dart:ui' show AppExitResponse;
+
 import 'package:flutter/material.dart';
 
 import 'bridge/bridge_client.dart';
@@ -30,26 +32,36 @@ class AppRoot extends StatefulWidget {
   State<AppRoot> createState() => _AppRootState();
 }
 
-class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
+class _AppRootState extends State<AppRoot> {
   late final BridgeClient _bridge;
+  late final AppLifecycleListener _lifecycle;
   bool _connected = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _bridge = BridgeClient();
+    // `onExitRequested` is AWAITED by the framework before the app actually
+    // terminates (Cmd-Q / last-window-close on desktop), so the /patch/bye UDP
+    // send has time to flush — unlike the fire-and-forget `detached` event,
+    // which usually loses the race with process teardown. `onDetach` stays as a
+    // best-effort fallback for platforms that don't route an exit request.
+    _lifecycle = AppLifecycleListener(
+      onExitRequested: _onExitRequested,
+      onDetach: () {
+        _bridge.shutdown();
+      },
+    );
     _connect();
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // App is being torn down (more reliable than dispose on desktop close) —
-    // fire the departure announcement so peers drop us promptly. Best-effort.
-    if (state == AppLifecycleState.detached) {
-      _bridge.shutdown();
-    }
+  Future<AppExitResponse> _onExitRequested() async {
+    try {
+      // Bounded so a slow/failed goodbye never hangs the quit.
+      await _bridge.shutdown().timeout(const Duration(seconds: 1));
+    } catch (_) {}
+    return AppExitResponse.exit;
   }
 
   Future<void> _connect() async {
@@ -66,7 +78,7 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
+    _lifecycle.dispose();
     _bridge.dispose();
     super.dispose();
   }

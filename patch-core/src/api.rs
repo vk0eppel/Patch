@@ -175,6 +175,7 @@ pub async fn shutdown() -> Result<()> {
     let Some(h) = ENGINE.get() else { return Ok(()) }; // never initialized
     let config = h.state.config().await;
     let bytes = encode_bye(config.client_id)?;
+    tracing::info!("Shutdown — broadcasting /patch/bye ({})", config.client_id);
 
     // Unicast to resolved peers (covers static / AP-isolated).
     for peer in h.state.get_peers().await {
@@ -188,10 +189,10 @@ pub async fn shutdown() -> Result<()> {
                 .await;
         }
     }
-    // Broadcast for anyone we haven't resolved yet.
-    if let Ok(addr) = format!("255.255.255.255:{}", config.osc_port).parse::<SocketAddr>() {
-        let _ = h.transport.send_now(&bytes, addr).await;
-    }
+    // Broadcast (per-interface) for anyone we haven't resolved yet.
+    h.transport
+        .broadcast_now(&bytes, config.osc_port, config.network_interface.as_deref())
+        .await;
     Ok(())
 }
 

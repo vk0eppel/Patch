@@ -28,8 +28,10 @@ To clean up the list after a show or when moving between networks, tap the **�
 
 If your device has multiple NICs (e.g. Ethernet + Wi-Fi), go to **Settings → Network Interface** and select the one connected to the show network. Patch will only send and receive on that interface.
 
-- **Auto** — binds to all interfaces (`0.0.0.0`). Fine for single-NIC devices.
-- **Named interface** — e.g. `en0` (Ethernet), `en1` (Wi-Fi). Useful when both are active and only one reaches the show network.
+- **Auto** — binds to all interfaces (`0.0.0.0`) and sends discovery beacons out **every** active interface (each to its own subnet broadcast). Best for most setups, including machines with a VPN or Ethernet alongside Wi-Fi.
+- **Named interface** — e.g. `en0` (Ethernet), `en1` (Wi-Fi). Restricts discovery to that one interface — use it only if Auto reaches a network you don't want Patch on.
+
+> **One-way discovery?** If machine A sees B but B doesn't see A, it's almost always because A's broadcasts are leaving the wrong interface (a VPN/`utun` or Ethernet is its default route). On **Auto**, Patch now beacons out every interface's subnet, which fixes this without fiddling — make sure both are on Auto and restart. As a guaranteed fallback, add each machine as a **static peer** of the other (Settings → Static Peers).
 
 > The NIC picker filters out loopback, virtual, and link-local-only interfaces automatically. Only real NICs with routable IPv4 addresses are shown.
 
