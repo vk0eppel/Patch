@@ -238,14 +238,59 @@ pub fn default_channels() -> Vec<Channel> {
 mod tests {
     use super::*;
 
-    /// The checked-in sample `patch.toml` must stay deserialisable into the
-    /// current `Config` schema (guards against field drift like the old
-    /// `shortcuts`/`bridge_port` leftovers).
+    /// A config in the documented `patch.toml` format must stay deserialisable
+    /// into the current `Config` schema — guards against field drift (e.g. the
+    /// old `shortcuts`/`bridge_port` leftovers). Kept inline rather than reading
+    /// the on-disk `patch.toml`, which is gitignored (a per-user runtime file,
+    /// absent on a clean CI checkout).
     #[test]
-    fn sample_patch_toml_deserializes() {
-        let raw = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/patch.toml"));
-        let cfg: Config = toml::from_str(raw).expect("sample patch.toml must deserialize");
-        assert_eq!(cfg.default_channels.len(), 5);
-        assert!(cfg.network_interface.is_none());
+    fn representative_config_deserializes() {
+        let raw = r##"
+client_id = "00000000-0000-0000-0000-000000000000"
+client_name = "FOH Engineer"
+osc_port = 9000
+network_interface = "en0"
+heartbeat_interval_secs = 7
+peer_timeout_secs = 30
+flash_on_critical = true
+flash_on_message = false
+flash_count = 4
+macros_columns = 2
+hide_keyboard = true
+
+[[static_peers]]
+address = "192.168.1.50"
+port = 9000
+label = "Monitor World"
+
+[[default_channels]]
+id = "rf"
+display_name = "RF"
+color = "#1E88E5"
+flash_on_critical = true
+flash_on_message = false
+
+[[default_channels.macros]]
+label = "CLEAR"
+payload = "Channel clear"
+key_binding = "F1"
+priority = 1
+
+[[default_channels]]
+id = "audio"
+display_name = "AUDIO"
+color = "#E53935"
+macros = []
+flash_on_critical = true
+flash_on_message = false
+"##;
+        let cfg: Config = toml::from_str(raw).expect("representative config must deserialize");
+        assert_eq!(cfg.default_channels.len(), 2);
+        assert_eq!(cfg.static_peers.len(), 1);
+        assert_eq!(cfg.network_interface.as_deref(), Some("en0"));
+        assert_eq!(cfg.macros_columns, 2);
+        let rf = cfg.default_channels.iter().find(|c| c.id == "rf").unwrap();
+        assert_eq!(rf.macros.len(), 1);
+        assert_eq!(rf.macros[0].label, "CLEAR");
     }
 }

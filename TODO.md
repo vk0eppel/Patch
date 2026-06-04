@@ -237,18 +237,13 @@ can be received again.
 `DiscoveryMode::Mdns`, and the mode sticks across later OSC heartbeats (a peer already
 classified as `Mdns` isn't downgraded), so the 🔍 icon shows.
 
-### ~~Stale `bridge_port` in sample config~~ ✅ Done
-**File:** `patch-core/patch.toml`
-
-The sample was rewritten to the current `Config` schema — `bridge_port` removed, placeholder
-`client_id`, and the new fields (`flash_count`, `macros_columns`, `hide_keyboard`).
-
-### ~~Sample config channels don't match `default_channels()`~~ ✅ Done
-**File:** `patch-core/patch.toml`
-
-Now matches `state/config.rs::default_channels()` (`audio`, `rf`, `lighting`, `video`, `stage`)
-and uses the current `macros` field (the old `shortcuts` field is gone). A regression test
-(`state::config::tests::sample_patch_toml_deserializes`) keeps it from drifting again.
+### ~~Stale `bridge_port` / channels in the sample config~~ ✅ Done
+**Note:** `patch-core/patch.toml` is **gitignored** (a per-user runtime file, not a shipped sample),
+so it was never really a repo artifact. The documented format lives in the README, and schema drift
+is now guarded by an inline regression test `state::config::tests::representative_config_deserializes`
+(parses a full current-format config — all top-level fields, static peers, channels with/without
+macros). Kept inline rather than reading the on-disk `patch.toml`, which is absent on a clean CI
+checkout (that earlier broke the Rust CI job).
 
 ### ~~`RegExp` compiled on every dialog open in settings~~ ✅ Done
 **File:** `patch_app/lib/screens/settings_screen.dart`
