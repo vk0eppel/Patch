@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 /// A logical communication channel.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,7 +27,11 @@ pub struct Channel {
 }
 
 impl Channel {
-    pub fn new(id: impl Into<String>, display_name: impl Into<String>, color: impl Into<String>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        display_name: impl Into<String>,
+        color: impl Into<String>,
+    ) -> Self {
         Self {
             id: id.into(),
             display_name: display_name.into(),

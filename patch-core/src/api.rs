@@ -64,10 +64,10 @@ pub async fn init(config_dir: Option<String>) -> Result<()> {
 
             let state = AppState::new(config.clone());
             let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
-            let transport = Arc::new(
-                Transport::new(&config, state.clone(), Arc::clone(&reliability)).await?,
-            );
-            let discovery = Arc::new(Discovery::new(&config, state.clone(), Arc::clone(&transport)).await?);
+            let transport =
+                Arc::new(Transport::new(&config, state.clone(), Arc::clone(&reliability)).await?);
+            let discovery =
+                Arc::new(Discovery::new(&config, state.clone(), Arc::clone(&transport)).await?);
 
             // Retransmit poller for unacked critical messages. drain_retransmits
             // increments each entry's retry counter and surfaces it until it is
@@ -75,8 +75,7 @@ pub async fn init(config_dir: Option<String>) -> Result<()> {
             let rt_transport = Arc::clone(&transport);
             let rt_reliability = Arc::clone(&reliability);
             tokio::spawn(async move {
-                let mut interval =
-                    tokio::time::interval(std::time::Duration::from_millis(400));
+                let mut interval = tokio::time::interval(std::time::Duration::from_millis(400));
                 loop {
                     interval.tick().await;
                     let due = rt_reliability.lock().await.drain_retransmits();
@@ -115,7 +114,9 @@ fn init_tracing() {
 /// Internal: borrow the live engine. Panics if `init()` hasn't completed.
 #[frb(ignore)]
 pub fn engine() -> &'static EngineHandle {
-    ENGINE.get().expect("patch_core::api::init() must be called before any other API function")
+    ENGINE
+        .get()
+        .expect("patch_core::api::init() must be called before any other API function")
 }
 
 // ── Messaging ────────────────────────────────────────────────────────────────
@@ -125,14 +126,26 @@ pub async fn send_message(channel_id: String, payload: String, priority: i32) ->
     let h = engine();
     let prio = Priority::try_from(priority).unwrap_or(Priority::Info);
     let config = h.state.config().await;
-    let msg = PatchMessage::new(config.client_id, &config.client_name, channel_id, prio, payload);
+    let msg = PatchMessage::new(
+        config.client_id,
+        &config.client_name,
+        channel_id,
+        prio,
+        payload,
+    );
     let bytes = encode_message(&msg)?;
-    let targets = h.transport.send_to_peers(bytes.clone(), &h.state, &config).await?;
+    let targets = h
+        .transport
+        .send_to_peers(bytes.clone(), &h.state, &config)
+        .await?;
     let id = msg.message_id.to_string();
     // Critical messages require ACKs — register for retransmit until every
     // contacted peer acknowledges (or MAX_RETRIES is exceeded).
     if msg.is_critical() && !targets.is_empty() {
-        h.reliability.lock().await.track(msg.message_id, bytes, targets);
+        h.reliability
+            .lock()
+            .await
+            .track(msg.message_id, bytes, targets);
     }
     h.state.store_message(msg).await;
     Ok(id)
@@ -169,7 +182,10 @@ pub async fn shutdown() -> Result<()> {
             continue;
         }
         if let Ok(ip) = peer.address.parse::<IpAddr>() {
-            let _ = h.transport.send_now(&bytes, SocketAddr::new(ip, peer.osc_port)).await;
+            let _ = h
+                .transport
+                .send_now(&bytes, SocketAddr::new(ip, peer.osc_port))
+                .await;
         }
     }
     // Broadcast for anyone we haven't resolved yet.
@@ -190,7 +206,10 @@ pub async fn get_peers() -> Vec<crate::state::peer::Peer> {
 }
 
 pub async fn get_messages(channel_id: String, limit: u32) -> Vec<PatchMessage> {
-    engine().state.get_messages(&channel_id, limit as usize).await
+    engine()
+        .state
+        .get_messages(&channel_id, limit as usize)
+        .await
 }
 
 pub fn get_interfaces() -> Result<Vec<InterfaceInfo>> {
@@ -272,8 +291,14 @@ pub async fn set_channel_flash(
     flash_on_message: Option<bool>,
     flash_count: Option<u8>,
 ) -> Result<()> {
-    engine().state
-        .set_channel_flash(&channel_id, flash_on_critical, flash_on_message, flash_count)
+    engine()
+        .state
+        .set_channel_flash(
+            &channel_id,
+            flash_on_critical,
+            flash_on_message,
+            flash_count,
+        )
         .await
 }
 
@@ -295,10 +320,21 @@ pub async fn clear_stale_peers(max_age_secs: u64) -> Result<()> {
     Ok(())
 }
 
-pub async fn upsert_channel(id: String, display_name: Option<String>, color: Option<String>) -> Result<()> {
+pub async fn upsert_channel(
+    id: String,
+    display_name: Option<String>,
+    color: Option<String>,
+) -> Result<()> {
     // Validate that the id is safe to embed in an OSC address path.
-    if id.is_empty() || id.chars().any(|c| !matches!(c, 'a'..='z' | '0'..='9' | '_' | '-')) {
-        anyhow::bail!("channel id '{}' is invalid — use only lowercase letters, digits, _ or -", id);
+    if id.is_empty()
+        || id
+            .chars()
+            .any(|c| !matches!(c, 'a'..='z' | '0'..='9' | '_' | '-'))
+    {
+        anyhow::bail!(
+            "channel id '{}' is invalid — use only lowercase letters, digits, _ or -",
+            id
+        );
     }
     let id_for_name = id.clone();
     let display_name = display_name.unwrap_or(id_for_name);
@@ -307,7 +343,7 @@ pub async fn upsert_channel(id: String, display_name: Option<String>, color: Opt
     let cfg = h.state.config().await;
     let mut channel = Channel::new(id, display_name, color);
     channel.flash_on_critical = cfg.flash_on_critical;
-    channel.flash_on_message  = cfg.flash_on_message;
+    channel.flash_on_message = cfg.flash_on_message;
     h.state.upsert_channel(channel).await;
     Ok(())
 }
@@ -330,7 +366,7 @@ fn csv_escape(s: &str) -> String {
     let needs_guard = s
         .chars()
         .next()
-        .map_or(false, |c| matches!(c, '=' | '+' | '-' | '@' | '\t' | '\r'));
+        .is_some_and(|c| matches!(c, '=' | '+' | '-' | '@' | '\t' | '\r'));
     let mut out = String::with_capacity(s.len() + 2);
     if needs_guard {
         out.push('\'');
@@ -346,7 +382,7 @@ pub async fn export_messages(channel_id: Option<String>, path: String) -> Result
     let msgs = engine().state.get_all_messages().await;
     let filtered: Vec<_> = match channel_id.as_deref() {
         Some(id) => msgs.into_iter().filter(|m| m.channel_id == id).collect(),
-        None     => msgs,
+        None => msgs,
     };
 
     let include_channel = channel_id.is_none();
@@ -362,19 +398,23 @@ pub async fn export_messages(channel_id: Option<String>, path: String) -> Result
     for m in &filtered {
         let ts = m.timestamp.format("%Y-%m-%dT%H:%M:%S").to_string();
         let priority = match m.priority {
-            crate::osc::types::Priority::Debug    => "debug",
-            crate::osc::types::Priority::Info     => "info",
-            crate::osc::types::Priority::Warning  => "warning",
+            crate::osc::types::Priority::Debug => "debug",
+            crate::osc::types::Priority::Info => "info",
+            crate::osc::types::Priority::Warning => "warning",
             crate::osc::types::Priority::Critical => "critical",
         };
         // Payload/sender/channel are network-sourced — neutralise spreadsheet
         // formula injection in addition to RFC 4180 quote-escaping.
         let payload = csv_escape(&m.payload);
-        let sender  = csv_escape(&m.sender_name);
+        let sender = csv_escape(&m.sender_name);
         if include_channel {
             out.push_str(&format!(
                 "{},\"{}\",\"{}\",{},\"{}\"\n",
-                ts, csv_escape(&m.channel_id), sender, priority, payload
+                ts,
+                csv_escape(&m.channel_id),
+                sender,
+                priority,
+                payload
             ));
         } else {
             out.push_str(&format!(
@@ -403,8 +443,17 @@ pub async fn upsert_macro(
     if label.is_empty() {
         anyhow::bail!("label must be non-empty");
     }
-    engine().state
-        .upsert_macro(&channel_id, MacroMessage { label, payload, key_binding, priority })
+    engine()
+        .state
+        .upsert_macro(
+            &channel_id,
+            MacroMessage {
+                label,
+                payload,
+                key_binding,
+                priority,
+            },
+        )
         .await
 }
 
@@ -414,7 +463,10 @@ pub async fn delete_macro(channel_id: String, label: String) -> Result<()> {
 
 /// Reorder a channel's macros to match `ordered_labels` (drag-to-reorder).
 pub async fn reorder_macros(channel_id: String, ordered_labels: Vec<String>) -> Result<()> {
-    engine().state.reorder_macros(&channel_id, ordered_labels).await
+    engine()
+        .state
+        .reorder_macros(&channel_id, ordered_labels)
+        .await
 }
 
 // ── Sessions ─────────────────────────────────────────────────────────────────
@@ -448,7 +500,11 @@ pub async fn save_session(name: String) -> Result<SessionSaved> {
 /// Export the current channel layout to an arbitrary file path (file-picker).
 pub async fn export_layout(path: String, name: String) -> Result<()> {
     let name = name.trim().to_string();
-    let name = if name.is_empty() { "Exported Layout".to_string() } else { name };
+    let name = if name.is_empty() {
+        "Exported Layout".to_string()
+    } else {
+        name
+    };
     let h = engine();
     let channels = h.state.get_channels().await;
     let cfg = h.state.config().await;
@@ -469,10 +525,14 @@ pub async fn import_layout(path: String) -> Result<SessionLoaded> {
     let slug = std::path::Path::new(&path)
         .file_stem()
         .and_then(|s| s.to_str())
-        .map(|s| session::slugify(s))
+        .map(session::slugify)
         .unwrap_or_else(|| session::slugify(&name));
     engine().state.apply_session(sess.channels).await?;
-    Ok(SessionLoaded { slug, name, channel_count })
+    Ok(SessionLoaded {
+        slug,
+        name,
+        channel_count,
+    })
 }
 
 pub async fn load_session(slug: String) -> Result<SessionLoaded> {
@@ -481,7 +541,11 @@ pub async fn load_session(slug: String) -> Result<SessionLoaded> {
     let name = sess.name.clone();
     let channel_count = sess.channels.len() as u32;
     engine().state.apply_session(sess.channels).await?;
-    Ok(SessionLoaded { slug, name, channel_count })
+    Ok(SessionLoaded {
+        slug,
+        name,
+        channel_count,
+    })
 }
 
 pub fn list_sessions() -> Result<Vec<SessionMeta>> {
@@ -500,9 +564,7 @@ pub fn delete_session(slug: String) -> Result<()> {
 ///
 /// `async` so FRB invokes us with its Tokio runtime as the ambient context —
 /// otherwise `tokio::spawn` below has no reactor to attach to.
-pub async fn subscribe_events(
-    sink: crate::frb_generated::StreamSink<PatchAppEvent>,
-) -> Result<()> {
+pub async fn subscribe_events(sink: crate::frb_generated::StreamSink<PatchAppEvent>) -> Result<()> {
     let mut rx = engine().state.subscribe();
     tokio::spawn(async move {
         loop {
@@ -529,26 +591,40 @@ pub async fn subscribe_events(
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PatchAppEvent {
     Message(PatchMessage),
-    MessageAcked { message_id: String, peer_id: String },
+    MessageAcked {
+        message_id: String,
+        peer_id: String,
+    },
     PeerUpdated(crate::osc::types::PeerPresence),
-    PeerExpired { peer_id: String },
+    PeerExpired {
+        peer_id: String,
+    },
     ChannelFlash(ChannelFlash),
     ChannelListUpdated,
-    ClientNameChanged { name: String },
+    ClientNameChanged {
+        name: String,
+    },
     /// The OS denied network access (iOS/macOS Local Network permission).
-    PermissionDenied { context: String },
+    PermissionDenied {
+        context: String,
+    },
 }
 
 impl From<AppEvent> for PatchAppEvent {
     fn from(ev: AppEvent) -> Self {
         match ev {
             AppEvent::MessageReceived(m) => Self::Message(m),
-            AppEvent::MessageAcked { message_id, peer_id } => Self::MessageAcked {
+            AppEvent::MessageAcked {
+                message_id,
+                peer_id,
+            } => Self::MessageAcked {
                 message_id: message_id.to_string(),
                 peer_id: peer_id.to_string(),
             },
             AppEvent::PeerUpdated(p) => Self::PeerUpdated(p),
-            AppEvent::PeerExpired(id) => Self::PeerExpired { peer_id: id.to_string() },
+            AppEvent::PeerExpired(id) => Self::PeerExpired {
+                peer_id: id.to_string(),
+            },
             AppEvent::ChannelFlash(f) => Self::ChannelFlash(f),
             AppEvent::ChannelListUpdated => Self::ChannelListUpdated,
             AppEvent::ClientNameChanged(name) => Self::ClientNameChanged { name },
@@ -582,4 +658,3 @@ mod tests {
         assert_eq!(csv_escape("=a\"b"), "'=a\"\"b");
     }
 }
-

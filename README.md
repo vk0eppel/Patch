@@ -1,5 +1,7 @@
 # Patch
 
+[![CI](https://github.com/vk0eppel/Patch/actions/workflows/ci.yml/badge.svg)](https://github.com/vk0eppel/Patch/actions/workflows/ci.yml)
+
 **Operational communication for live production teams.**
 
 Patch is a lightweight, cross-platform real-time messaging system built for AV, broadcast, theatre, and touring crews. It uses OSC (Open Sound Control) over UDP as its primary transport — the same protocol your show-control gear already speaks.

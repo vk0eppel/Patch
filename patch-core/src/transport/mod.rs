@@ -10,11 +10,11 @@ use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, warn};
 use uuid::Uuid;
 
-use chrono::Utc;
 use crate::osc::codec::{decode_packet, encode_ack, PatchEvent};
 use crate::osc::types::PeerPresence;
 use crate::reliability::ReliabilityManager;
 use crate::state::{AppEvent, AppState, Config};
+use chrono::Utc;
 
 pub struct Transport {
     /// Kept alive so the socket isn't dropped while the send/receive loops run.
@@ -35,7 +35,9 @@ impl Transport {
             .await
             .with_context(|| format!("Failed to bind UDP socket on {}", bind_addr))?;
 
-        socket.set_broadcast(true).context("Failed to enable UDP broadcast")?;
+        socket
+            .set_broadcast(true)
+            .context("Failed to enable UDP broadcast")?;
         tracing::info!("UDP socket bound on {}", bind_addr);
 
         let socket = Arc::new(socket);
@@ -63,14 +65,20 @@ impl Transport {
 
     /// Send raw OSC bytes to a specific address.
     pub async fn send_to(&self, bytes: Vec<u8>, addr: SocketAddr) -> Result<()> {
-        self.send_tx.send((bytes, addr)).await.context("Send channel closed")
+        self.send_tx
+            .send((bytes, addr))
+            .await
+            .context("Send channel closed")
     }
 
     /// Send raw OSC bytes immediately on the socket, bypassing the send queue.
     /// Used on shutdown so the departure packet actually flushes before the
     /// process exits (a queued send may never be drained in time).
     pub async fn send_now(&self, bytes: &[u8], addr: SocketAddr) -> Result<()> {
-        self.socket.send_to(bytes, addr).await.context("Direct send failed")?;
+        self.socket
+            .send_to(bytes, addr)
+            .await
+            .context("Direct send failed")?;
         Ok(())
     }
 
@@ -170,9 +178,11 @@ async fn receive_loop(
             }
             Err(e) => {
                 if e.kind() == std::io::ErrorKind::PermissionDenied {
-                    state.publish(crate::state::AppEvent::PermissionDenied {
-                        context: "OSC socket blocked — check Local Network permission".into(),
-                    }).await;
+                    state
+                        .publish(crate::state::AppEvent::PermissionDenied {
+                            context: "OSC socket blocked — check Local Network permission".into(),
+                        })
+                        .await;
                 }
                 error!("UDP receive error: {}", e);
             }
@@ -192,16 +202,18 @@ async fn handle_event(
     // we can unicast back to that peer later.  Skip our own packets — the Mac
     // receives its own broadcast, and we don't want to add ourselves as a peer.
     let sender_id: Option<Uuid> = match &event {
-        PatchEvent::Message(m)    => Some(m.sender_id),
-        PatchEvent::Presence(p)   => Some(p.peer_id),
-        PatchEvent::Flash(f)      => Some(f.sender_id),
+        PatchEvent::Message(m) => Some(m.sender_id),
+        PatchEvent::Presence(p) => Some(p.peer_id),
+        PatchEvent::Flash(f) => Some(f.sender_id),
         PatchEvent::Heartbeat { peer_id } => Some(*peer_id),
         PatchEvent::Discovery { peer_id, .. } => Some(*peer_id),
         _ => None,
     };
     if let Some(id) = sender_id {
         if id != client_id {
-            state.touch_peer_address(id, from.ip().to_string(), from.port()).await;
+            state
+                .touch_peer_address(id, from.ip().to_string(), from.port())
+                .await;
         }
     }
 
@@ -218,35 +230,47 @@ async fn handle_event(
                 };
                 state.upsert_peer(presence).await;
                 // touch_peer_address was a no-op above (no entry yet); now it works.
-                state.touch_peer_address(
-                    msg.sender_id,
-                    from.ip().to_string(),
-                    from.port(),
-                ).await;
+                state
+                    .touch_peer_address(msg.sender_id, from.ip().to_string(), from.port())
+                    .await;
             }
             // ACK critical messages so the sender can stop retransmitting.
             if msg.is_critical() {
                 match encode_ack(msg.message_id, client_id) {
-                    Ok(ack_bytes) => { let _ = send_tx.send((ack_bytes, from)).await; }
+                    Ok(ack_bytes) => {
+                        let _ = send_tx.send((ack_bytes, from)).await;
+                    }
                     Err(e) => warn!("Failed to encode ACK: {}", e),
                 }
             }
             state.store_message(msg).await;
         }
-        PatchEvent::Ack { message_id, peer_id } => {
+        PatchEvent::Ack {
+            message_id,
+            peer_id,
+        } => {
             // Clear the in-flight retransmit entry, then notify the UI.
             reliability.lock().await.ack(message_id, peer_id);
-            state.publish(AppEvent::MessageAcked { message_id, peer_id }).await;
+            state
+                .publish(AppEvent::MessageAcked {
+                    message_id,
+                    peer_id,
+                })
+                .await;
         }
         PatchEvent::Presence(p) => {
             // Ignore our own presence broadcast — we receive it on the same socket.
-            if p.peer_id == client_id { return; }
+            if p.peer_id == client_id {
+                return;
+            }
             let peer_id = p.peer_id;
             state.upsert_peer(p).await;
             // touch_peer_address at the top of this fn was a no-op (no entry yet);
             // resolve the address now so the first unicast back isn't delayed a
             // full heartbeat interval.
-            state.touch_peer_address(peer_id, from.ip().to_string(), from.port()).await;
+            state
+                .touch_peer_address(peer_id, from.ip().to_string(), from.port())
+                .await;
         }
         PatchEvent::Bye { peer_id } => {
             // Graceful departure — drop the peer now instead of waiting out the
@@ -265,19 +289,24 @@ async fn handle_event(
                     timestamp: Utc::now(),
                 };
                 state.upsert_peer(presence).await;
-                state.touch_peer_address(
-                    f.sender_id,
-                    from.ip().to_string(),
-                    from.port(),
-                ).await;
+                state
+                    .touch_peer_address(f.sender_id, from.ip().to_string(), from.port())
+                    .await;
             }
             state.publish(AppEvent::ChannelFlash(f)).await;
         }
         PatchEvent::Heartbeat { peer_id } => {
             debug!("Heartbeat from {}", peer_id);
         }
-        PatchEvent::Discovery { peer_id, peer_name, osc_port } => {
-            debug!("Discovery: {} ({}) on port {}", peer_name, peer_id, osc_port);
+        PatchEvent::Discovery {
+            peer_id,
+            peer_name,
+            osc_port,
+        } => {
+            debug!(
+                "Discovery: {} ({}) on port {}",
+                peer_name, peer_id, osc_port
+            );
         }
         PatchEvent::Unknown(msg) => {
             debug!("Unknown OSC: {}", msg.addr);
@@ -299,7 +328,8 @@ fn bind_address(config: &Config) -> Result<String> {
     match &config.network_interface {
         None => Ok(format!("0.0.0.0:{}", config.osc_port)),
         Some(iface_name) => {
-            let interfaces = NetworkInterface::show().context("Failed to enumerate network interfaces")?;
+            let interfaces =
+                NetworkInterface::show().context("Failed to enumerate network interfaces")?;
             let iface = interfaces
                 .iter()
                 .find(|i| i.name == *iface_name)
@@ -311,9 +341,11 @@ fn bind_address(config: &Config) -> Result<String> {
                 .iter()
                 .map(|a| a.ip())
                 .filter(|ip| is_usable_ip(&ip.to_string()))
-                .find(|ip| ip.is_ipv4())            // IPv4 first
+                .find(|ip| ip.is_ipv4()) // IPv4 first
                 .or_else(|| {
-                    iface.addr.iter()
+                    iface
+                        .addr
+                        .iter()
                         .map(|a| a.ip())
                         .find(|ip| is_usable_ip(&ip.to_string())) // any usable IPv6 fallback
                 })
@@ -328,16 +360,13 @@ fn bind_address(config: &Config) -> Result<String> {
 // Name prefixes of macOS/Linux virtual or system interfaces that are never
 // useful for OSC binding and should be hidden from the UI selector.
 const SKIP_PREFIXES: &[&str] = &[
-    "utun", "awdl", "llw", "stf", "gif", "p2p",
-    "XHC", "anpi", "bridge", "vmnet", "veth", "docker",
+    "utun", "awdl", "llw", "stf", "gif", "p2p", "XHC", "anpi", "bridge", "vmnet", "veth", "docker",
 ];
 
 /// Returns true for IPs that are usable as OSC bind addresses.
 /// Rejects loopback, link-local IPv6 (fe80::...), and the IPv6 loopback (::1).
 fn is_usable_ip(s: &str) -> bool {
-    !s.starts_with("127.")
-        && s != "::1"
-        && !s.to_lowercase().starts_with("fe80")
+    !s.starts_with("127.") && s != "::1" && !s.to_lowercase().starts_with("fe80")
 }
 
 /// Returns a list of available network interfaces for the UI selector.
@@ -362,12 +391,17 @@ pub fn list_interfaces() -> Result<Vec<InterfaceInfo>> {
             .collect();
 
         // Prefer IPv4 (contains '.'); fall back to first IPv6 if no IPv4.
-        let ip = addrs.iter().find(|s| s.contains('.'))
+        let ip = addrs
+            .iter()
+            .find(|s| s.contains('.'))
             .or_else(|| addrs.first())
             .cloned();
 
         if let Some(ip) = ip {
-            result.push(InterfaceInfo { name: iface.name.clone(), ip });
+            result.push(InterfaceInfo {
+                name: iface.name.clone(),
+                ip,
+            });
         }
     }
 

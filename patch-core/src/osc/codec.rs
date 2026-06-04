@@ -29,8 +29,7 @@ pub fn encode_message(msg: &PatchMessage) -> Result<Vec<u8>> {
             OscType::String(msg.payload.clone()),
         ],
     };
-    rosc::encoder::encode(&OscPacket::Message(osc))
-        .context("Failed to encode channel message")
+    rosc::encoder::encode(&OscPacket::Message(osc)).context("Failed to encode channel message")
 }
 
 /// Encode a presence/heartbeat packet.
@@ -87,12 +86,23 @@ pub fn encode_ack(message_id: Uuid, peer_id: Uuid) -> Result<Vec<u8>> {
 #[derive(Debug)]
 pub enum PatchEvent {
     Message(PatchMessage),
-    Ack { message_id: Uuid, peer_id: Uuid },
+    Ack {
+        message_id: Uuid,
+        peer_id: Uuid,
+    },
     Presence(PeerPresence),
-    Bye { peer_id: Uuid },
+    Bye {
+        peer_id: Uuid,
+    },
     Flash(ChannelFlash),
-    Heartbeat { peer_id: Uuid },
-    Discovery { peer_id: Uuid, peer_name: String, osc_port: u16 },
+    Heartbeat {
+        peer_id: Uuid,
+    },
+    Discovery {
+        peer_id: Uuid,
+        peer_name: String,
+        osc_port: u16,
+    },
     Unknown(OscMessage),
 }
 
@@ -131,7 +141,9 @@ const MAX_PAYLOAD_LEN: usize = 4096;
 fn valid_channel_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 64
-        && id.chars().all(|c| matches!(c, 'a'..='z' | '0'..='9' | '_' | '-'))
+        && id
+            .chars()
+            .all(|c| matches!(c, 'a'..='z' | '0'..='9' | '_' | '-'))
 }
 
 fn decode_patch_message(msg: OscMessage) -> Result<PatchEvent> {
@@ -143,7 +155,10 @@ fn decode_patch_message(msg: OscMessage) -> Result<PatchEvent> {
     }
     let args = msg.args;
     if args.len() < 6 {
-        bail!("Expected 6 args for /patch/channel/.../message, got {}", args.len());
+        bail!(
+            "Expected 6 args for /patch/channel/.../message, got {}",
+            args.len()
+        );
     }
     let sender_id = parse_uuid(&args[0])?;
     let sender_name = parse_string(&args[1])?;
@@ -152,7 +167,11 @@ fn decode_patch_message(msg: OscMessage) -> Result<PatchEvent> {
     let priority = Priority::try_from(parse_int(&args[4])?)?;
     let payload = parse_string(&args[5])?;
     if payload.len() > MAX_PAYLOAD_LEN {
-        bail!("Rejected message: payload {} bytes exceeds max {}", payload.len(), MAX_PAYLOAD_LEN);
+        bail!(
+            "Rejected message: payload {} bytes exceeds max {}",
+            payload.len(),
+            MAX_PAYLOAD_LEN
+        );
     }
 
     Ok(PatchEvent::Message(PatchMessage {
@@ -160,7 +179,9 @@ fn decode_patch_message(msg: OscMessage) -> Result<PatchEvent> {
         sender_id,
         sender_name,
         channel_id,
-        timestamp: Utc.timestamp_millis_opt(ts_ms).single()
+        timestamp: Utc
+            .timestamp_millis_opt(ts_ms)
+            .single()
             .context("Invalid timestamp")?,
         priority,
         payload,
@@ -191,7 +212,9 @@ fn decode_presence(msg: OscMessage) -> Result<PatchEvent> {
         peer_id,
         peer_name,
         channels,
-        timestamp: Utc.timestamp_millis_opt(ts_ms).single()
+        timestamp: Utc
+            .timestamp_millis_opt(ts_ms)
+            .single()
             .context("Invalid timestamp")?,
     }))
 }
@@ -200,7 +223,9 @@ fn decode_bye(msg: OscMessage) -> Result<PatchEvent> {
     if msg.args.is_empty() {
         bail!("Expected 1 arg for /patch/bye, got 0");
     }
-    Ok(PatchEvent::Bye { peer_id: parse_uuid(&msg.args[0])? })
+    Ok(PatchEvent::Bye {
+        peer_id: parse_uuid(&msg.args[0])?,
+    })
 }
 
 fn decode_heartbeat(msg: OscMessage) -> Result<PatchEvent> {
@@ -245,18 +270,27 @@ fn decode_flash(msg: OscMessage) -> Result<PatchEvent> {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn parse_string(t: &OscType) -> Result<String> {
-    if let OscType::String(s) = t { Ok(s.clone()) }
-    else { bail!("Expected OSC String, got {:?}", t) }
+    if let OscType::String(s) = t {
+        Ok(s.clone())
+    } else {
+        bail!("Expected OSC String, got {:?}", t)
+    }
 }
 
 fn parse_int(t: &OscType) -> Result<i32> {
-    if let OscType::Int(i) = t { Ok(*i) }
-    else { bail!("Expected OSC Int, got {:?}", t) }
+    if let OscType::Int(i) = t {
+        Ok(*i)
+    } else {
+        bail!("Expected OSC Int, got {:?}", t)
+    }
 }
 
 fn parse_long(t: &OscType) -> Result<i64> {
-    if let OscType::Long(l) = t { Ok(*l) }
-    else { bail!("Expected OSC Long, got {:?}", t) }
+    if let OscType::Long(l) = t {
+        Ok(*l)
+    } else {
+        bail!("Expected OSC Long, got {:?}", t)
+    }
 }
 
 fn parse_uuid(t: &OscType) -> Result<Uuid> {
@@ -348,7 +382,10 @@ mod tests {
         let (mid, pid) = (Uuid::new_v4(), Uuid::new_v4());
         let bytes = encode_ack(mid, pid).unwrap();
         match decode_packet(&bytes).unwrap() {
-            PatchEvent::Ack { message_id, peer_id } => {
+            PatchEvent::Ack {
+                message_id,
+                peer_id,
+            } => {
                 assert_eq!(message_id, mid);
                 assert_eq!(peer_id, pid);
             }
@@ -368,7 +405,10 @@ mod tests {
 
     #[test]
     fn empty_bye_is_rejected() {
-        let msg = OscMessage { addr: "/patch/bye".to_string(), args: vec![] };
+        let msg = OscMessage {
+            addr: "/patch/bye".to_string(),
+            args: vec![],
+        };
         assert!(decode_message(msg).is_err());
     }
 
@@ -411,9 +451,15 @@ mod tests {
 
     #[test]
     fn unknown_address_decodes_to_unknown() {
-        let msg = OscMessage { addr: "/foo/bar".to_string(), args: vec![] };
+        let msg = OscMessage {
+            addr: "/foo/bar".to_string(),
+            args: vec![],
+        };
         let bytes = rosc::encoder::encode(&OscPacket::Message(msg)).unwrap();
-        assert!(matches!(decode_packet(&bytes).unwrap(), PatchEvent::Unknown(_)));
+        assert!(matches!(
+            decode_packet(&bytes).unwrap(),
+            PatchEvent::Unknown(_)
+        ));
     }
 
     fn message_with(addr: &str, payload: &str) -> OscMessage {

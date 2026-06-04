@@ -18,14 +18,19 @@ pub use config::Config;
 #[derive(Debug, Clone)]
 pub enum AppEvent {
     MessageReceived(PatchMessage),
-    MessageAcked { message_id: Uuid, peer_id: Uuid },
+    MessageAcked {
+        message_id: Uuid,
+        peer_id: Uuid,
+    },
     PeerUpdated(PeerPresence),
     PeerExpired(Uuid),
     ChannelFlash(ChannelFlash),
     ChannelListUpdated,
     ClientNameChanged(String),
     /// Emitted when the OS denies network access (iOS/macOS Local Network permission).
-    PermissionDenied { context: String },
+    PermissionDenied {
+        context: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -154,8 +159,12 @@ impl AppState {
             let ch = channels
                 .get_mut(channel_id)
                 .ok_or_else(|| anyhow::anyhow!("Channel '{}' not found", channel_id))?;
-            if let Some(v) = flash_on_critical { ch.flash_on_critical = v; }
-            if let Some(v) = flash_on_message  { ch.flash_on_message  = v; }
+            if let Some(v) = flash_on_critical {
+                ch.flash_on_critical = v;
+            }
+            if let Some(v) = flash_on_message {
+                ch.flash_on_message = v;
+            }
             // flash_count: None = leave unchanged, Some(0) = clear override (use global),
             // Some(n) = set per-channel override to n.
             if let Some(v) = flash_count {
@@ -176,24 +185,37 @@ impl AppState {
         label: Option<String>,
     ) -> anyhow::Result<()> {
         // Validate the IP address before storing.
-        address.parse::<std::net::IpAddr>()
+        address
+            .parse::<std::net::IpAddr>()
             .map_err(|_| anyhow::anyhow!("Invalid IP address: '{}'", address))?;
         if port == 0 {
             anyhow::bail!("Port 0 is not valid for a static peer");
         }
         {
             let mut cfg = self.0.config.write().await;
-            if cfg.static_peers.iter().any(|p| p.address == address && p.port == port) {
+            if cfg
+                .static_peers
+                .iter()
+                .any(|p| p.address == address && p.port == port)
+            {
                 anyhow::bail!("Peer {}:{} is already configured", address, port);
             }
-            cfg.static_peers.push(config::StaticPeer { address, port, label });
+            cfg.static_peers.push(config::StaticPeer {
+                address,
+                port,
+                label,
+            });
         }
         self.save_config().await
     }
 
     pub async fn remove_static_peer(&self, address: &str, port: u16) -> anyhow::Result<()> {
-        self.0.config.write().await
-            .static_peers.retain(|p| !(p.address == address && p.port == port));
+        self.0
+            .config
+            .write()
+            .await
+            .static_peers
+            .retain(|p| !(p.address == address && p.port == port));
         self.save_config().await
     }
 
@@ -255,7 +277,8 @@ impl AppState {
 
     /// Insert/update a peer discovered via the OSC presence beacon.
     pub async fn upsert_peer(&self, presence: PeerPresence) {
-        self.upsert_peer_with_mode(presence, peer::DiscoveryMode::OscBeacon).await;
+        self.upsert_peer_with_mode(presence, peer::DiscoveryMode::OscBeacon)
+            .await;
     }
 
     /// Insert/update a peer, classifying it with an explicit discovery mode.
@@ -290,7 +313,9 @@ impl AppState {
     pub async fn touch_peer_address(&self, peer_id: Uuid, address: String, port: u16) {
         let presence = {
             let mut peers = self.0.peers.write().await;
-            let Some(peer) = peers.get_mut(&peer_id) else { return };
+            let Some(peer) = peers.get_mut(&peer_id) else {
+                return;
+            };
             peer.address = address;
             peer.osc_port = port;
             peer.last_seen = chrono::Utc::now();
@@ -465,11 +490,7 @@ impl AppState {
     }
 
     /// Remove a macro from a channel by label.
-    pub async fn delete_macro(
-        &self,
-        channel_id: &str,
-        label: &str,
-    ) -> anyhow::Result<()> {
+    pub async fn delete_macro(&self, channel_id: &str, label: &str) -> anyhow::Result<()> {
         {
             let mut channels = self.0.channels.write().await;
             let ch = channels
@@ -517,10 +538,11 @@ mod tests {
     /// An in-memory state with no channels and no static peers. None of the
     /// methods exercised here touch disk, so no `set_data_dir` is needed.
     fn test_state() -> AppState {
-        let mut cfg = Config::default();
-        cfg.default_channels = Vec::new();
-        cfg.static_peers = Vec::new();
-        AppState::new(cfg)
+        AppState::new(Config {
+            default_channels: Vec::new(),
+            static_peers: Vec::new(),
+            ..Config::default()
+        })
     }
 
     fn msg(channel: &str) -> PatchMessage {
@@ -528,7 +550,12 @@ mod tests {
     }
 
     fn presence(id: Uuid, when: chrono::DateTime<chrono::Utc>) -> PeerPresence {
-        PeerPresence { peer_id: id, peer_name: "p".into(), channels: Vec::new(), timestamp: when }
+        PeerPresence {
+            peer_id: id,
+            peer_name: "p".into(),
+            channels: Vec::new(),
+            timestamp: when,
+        }
     }
 
     #[tokio::test]
@@ -551,9 +578,13 @@ mod tests {
         let all = st.get_all_messages().await;
         assert_eq!(all.len(), MAX_BUFFER);
         assert!(all.iter().all(|m| m.message_id != first.message_id)); // front evicted
-        // Eviction also drops the id from the dedup set, so it can re-arrive.
+                                                                       // Eviction also drops the id from the dedup set, so it can re-arrive.
         st.store_message(first.clone()).await;
-        assert!(st.get_all_messages().await.iter().any(|m| m.message_id == first.message_id));
+        assert!(st
+            .get_all_messages()
+            .await
+            .iter()
+            .any(|m| m.message_id == first.message_id));
     }
 
     #[tokio::test]
@@ -584,14 +615,15 @@ mod tests {
 
     #[tokio::test]
     async fn get_peers_merges_static_with_stable_id() {
-        let mut cfg = Config::default();
-        cfg.default_channels = Vec::new();
-        cfg.static_peers = vec![config::StaticPeer {
-            address: "192.168.1.50".into(),
-            port: 9000,
-            label: Some("Monitor World".into()),
-        }];
-        let st = AppState::new(cfg);
+        let st = AppState::new(Config {
+            default_channels: Vec::new(),
+            static_peers: vec![config::StaticPeer {
+                address: "192.168.1.50".into(),
+                port: 9000,
+                label: Some("Monitor World".into()),
+            }],
+            ..Config::default()
+        });
         let a = st.get_peers().await;
         assert_eq!(a.len(), 1);
         assert!(matches!(a[0].discovery_mode, peer::DiscoveryMode::ManualIp));
@@ -602,17 +634,19 @@ mod tests {
 
     #[tokio::test]
     async fn get_peers_suppresses_static_when_dynamic_present() {
-        let mut cfg = Config::default();
-        cfg.default_channels = Vec::new();
-        cfg.static_peers = vec![config::StaticPeer {
-            address: "192.168.1.50".into(),
-            port: 9000,
-            label: None,
-        }];
-        let st = AppState::new(cfg);
+        let st = AppState::new(Config {
+            default_channels: Vec::new(),
+            static_peers: vec![config::StaticPeer {
+                address: "192.168.1.50".into(),
+                port: 9000,
+                label: None,
+            }],
+            ..Config::default()
+        });
         let pid = Uuid::new_v4();
         st.upsert_peer(presence(pid, chrono::Utc::now())).await;
-        st.touch_peer_address(pid, "192.168.1.50".into(), 9000).await;
+        st.touch_peer_address(pid, "192.168.1.50".into(), 9000)
+            .await;
         let peers = st.get_peers().await;
         assert_eq!(peers.len(), 1); // no synthetic duplicate
         assert_eq!(peers[0].peer_id, pid);
@@ -629,7 +663,8 @@ mod tests {
         let fresh_dyn = Uuid::new_v4();
         st.upsert_peer(presence(fresh_dyn, now)).await;
         let stale_manual = Uuid::new_v4();
-        st.upsert_peer_with_mode(presence(stale_manual, old), peer::DiscoveryMode::ManualIp).await;
+        st.upsert_peer_with_mode(presence(stale_manual, old), peer::DiscoveryMode::ManualIp)
+            .await;
 
         let removed = st.clear_stale_peers(60).await;
         assert_eq!(removed, vec![stale_dyn]); // only the stale dynamic one
@@ -644,7 +679,7 @@ mod tests {
     async fn reorder_macros_applies_order_and_preserves_unlisted() {
         use channel::{Channel, MacroMessage};
         // upsert_channel/reorder_macros persist — pin a temp data dir.
-        let _guard = config::test_data_dir_guard();
+        let _guard = config::test_data_dir_guard().await;
         let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         config::set_data_dir(dir.clone());
@@ -653,7 +688,12 @@ mod tests {
         let mut ch = Channel::new("rf", "RF", "#1E88E5");
         ch.macros = ["a", "b", "c"]
             .iter()
-            .map(|l| MacroMessage { label: l.to_string(), payload: l.to_string(), key_binding: None, priority: 1 })
+            .map(|l| MacroMessage {
+                label: l.to_string(),
+                payload: l.to_string(),
+                key_binding: None,
+                priority: 1,
+            })
             .collect();
         st.upsert_channel(ch).await;
 
@@ -687,7 +727,7 @@ mod tests {
     /// test, so the process-global `set_data_dir` override is unambiguous.
     #[tokio::test]
     async fn config_mutations_persist_to_disk() {
-        let _guard = config::test_data_dir_guard();
+        let _guard = config::test_data_dir_guard().await;
         let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         config::set_data_dir(dir.clone());
@@ -696,7 +736,9 @@ mod tests {
         st.set_flash_count(6).await.unwrap();
         st.set_hide_keyboard(false).await.unwrap();
         st.set_macros_columns(2).await.unwrap();
-        st.add_static_peer("10.0.0.5".into(), 9000, Some("Booth".into())).await.unwrap();
+        st.add_static_peer("10.0.0.5".into(), 9000, Some("Booth".into()))
+            .await
+            .unwrap();
 
         let loaded = Config::load_or_default().unwrap();
         assert_eq!(loaded.flash_count, 6);

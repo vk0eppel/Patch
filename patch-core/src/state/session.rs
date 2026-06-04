@@ -24,7 +24,11 @@ pub struct SessionConfig {
 }
 
 impl SessionConfig {
-    pub fn new(name: impl Into<String>, channels: Vec<Channel>, static_peers: Vec<StaticPeer>) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        channels: Vec<Channel>,
+        static_peers: Vec<StaticPeer>,
+    ) -> Self {
         Self {
             name: name.into(),
             created_at: Utc::now(),
@@ -48,7 +52,13 @@ fn session_path(slug: &str) -> PathBuf {
 pub fn slugify(name: &str) -> String {
     name.to_lowercase()
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect::<String>()
         .trim_matches('_')
         .to_string()
@@ -75,8 +85,8 @@ pub fn save_session(session: &SessionConfig) -> Result<String> {
 /// Load a session by slug.
 pub fn load_session(slug: &str) -> Result<SessionConfig> {
     let path = session_path(slug);
-    let raw = std::fs::read_to_string(&path)
-        .with_context(|| format!("Session '{}' not found", slug))?;
+    let raw =
+        std::fs::read_to_string(&path).with_context(|| format!("Session '{}' not found", slug))?;
     toml::from_str(&raw).with_context(|| format!("Failed to parse session '{}'", slug))
 }
 

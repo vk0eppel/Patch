@@ -24,6 +24,7 @@ struct InFlight {
 }
 
 /// Manages retransmit state for critical messages.
+#[derive(Default)]
 pub struct ReliabilityManager {
     /// message_id → in-flight record
     in_flight: HashMap<Uuid, InFlight>,
@@ -31,22 +32,20 @@ pub struct ReliabilityManager {
 
 impl ReliabilityManager {
     pub fn new() -> Self {
-        Self { in_flight: HashMap::new() }
+        Self::default()
     }
 
     /// Register a critical message for ACK tracking.
-    pub fn track(
-        &mut self,
-        message_id: Uuid,
-        bytes: Vec<u8>,
-        targets: Vec<SocketAddr>,
-    ) {
-        self.in_flight.insert(message_id, InFlight {
-            bytes,
-            targets,
-            acked_by: Vec::new(),
-            retries: 0,
-        });
+    pub fn track(&mut self, message_id: Uuid, bytes: Vec<u8>, targets: Vec<SocketAddr>) {
+        self.in_flight.insert(
+            message_id,
+            InFlight {
+                bytes,
+                targets,
+                acked_by: Vec::new(),
+                retries: 0,
+            },
+        );
     }
 
     /// Record an ACK from a peer. Returns true if all targets have ACKed.

@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust engine — fmt · clippy · test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned to match the validated local toolchain so rustfmt/clippy output
+      # is reproducible (a newer rustfmt/clippy can reformat or add lints and
+      # turn `--check` / `-D warnings` red on unrelated changes).
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: cargo fmt -p patch_core --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy -p patch_core --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test -p patch_core
+
+  flutter:
+    name: Flutter — analyze
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned to the local version: pubspec requires Dart ^3.12, and the UI
+      # uses Dart 3.12 features (e.g. `(_, _)` wildcard params).
+      - name: Install Flutter 3.44.1
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.1
+          channel: stable
+          cache: true
+
+      - name: Pub get
+        working-directory: patch_app
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: patch_app
+        run: flutter analyze

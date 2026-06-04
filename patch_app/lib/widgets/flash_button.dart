@@ -45,7 +45,7 @@ class _FlashButtonState extends State<FlashButton>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _anim,
-      builder: (_, __) => ElevatedButton.icon(
+      builder: (_, _) => ElevatedButton.icon(
         onPressed: _handleFlash,
         icon: const Icon(Icons.flash_on, size: 18),
         label: const Text(

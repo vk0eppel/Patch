@@ -22,12 +22,16 @@ static DATA_DIR_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
 /// this at most once during `init`; the tests reset it per case (serialized via
 /// [`test_data_dir_guard`]) so each gets its own isolated temp directory.
 pub fn set_data_dir(path: PathBuf) {
-    *DATA_DIR_OVERRIDE.write().unwrap() = Some(path);
+    *DATA_DIR_OVERRIDE.write().unwrap_or_else(|e| e.into_inner()) = Some(path);
 }
 
 /// Resolves to the directory that holds `patch.toml` and the `sessions/` subdir.
 pub fn data_dir() -> PathBuf {
-    if let Some(p) = DATA_DIR_OVERRIDE.read().unwrap().as_ref() {
+    if let Some(p) = DATA_DIR_OVERRIDE
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+    {
         return p.clone();
     }
     dirs::data_dir()
@@ -37,11 +41,12 @@ pub fn data_dir() -> PathBuf {
 
 /// Serializes disk-touching tests so the process-global data-dir override can be
 /// repointed at a per-test temp directory without races. Hold the returned guard
-/// for the duration of the test, then call [`set_data_dir`].
+/// for the duration of the test, then call [`set_data_dir`]. Async (tokio) mutex
+/// so the guard can be held across `.await` without tripping `await_holding_lock`.
 #[cfg(test)]
-pub(crate) fn test_data_dir_guard() -> std::sync::MutexGuard<'static, ()> {
-    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+pub(crate) async fn test_data_dir_guard() -> tokio::sync::MutexGuard<'static, ()> {
+    static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    LOCK.lock().await
 }
 
 fn config_path() -> PathBuf {
@@ -71,7 +76,7 @@ pub struct Config {
     #[serde(default = "default_true")]
     pub flash_on_critical: bool,
     /// Flash the channel on every incoming message, regardless of priority.
-    #[serde(default)]  // default = false
+    #[serde(default)] // default = false
     pub flash_on_message: bool,
     /// Number of flash pulses per flash event (3–7).
     #[serde(default = "default_four")]
@@ -111,9 +116,15 @@ impl Default for Config {
     }
 }
 
-fn default_true() -> bool { true }
-fn default_four() -> u8 { 4 }
-fn default_one()  -> u8 { 1 }
+fn default_true() -> bool {
+    true
+}
+fn default_four() -> u8 {
+    4
+}
+fn default_one() -> u8 {
+    1
+}
 
 impl Config {
     /// Load `patch.toml` from the platform data directory, migrating an existing
@@ -132,10 +143,7 @@ impl Config {
             let config: Config = toml::from_str(&raw)?;
             // Persist into the new location so subsequent saves don't fight CWD.
             config.save()?;
-            tracing::info!(
-                "Migrated legacy patch.toml → {}",
-                target.display()
-            );
+            tracing::info!("Migrated legacy patch.toml → {}", target.display());
             return Ok(config);
         }
 
@@ -161,6 +169,71 @@ fn whoami() -> String {
         .unwrap_or_else(|_| "crew".to_string())
 }
 
+pub fn default_channels() -> Vec<Channel> {
+    let specs = [
+        ("audio", "AUDIO", "#E53935"),
+        ("rf", "RF", "#1E88E5"),
+        ("lighting", "LIGHTING", "#F4511E"),
+        ("video", "VIDEO", "#00897B"),
+        ("stage", "STAGE", "#43A047"),
+    ];
+
+    specs
+        .iter()
+        .map(|(id, name, color)| {
+            let mut ch = Channel::new(*id, *name, *color);
+            match *id {
+                "audio" => {
+                    ch.macros = vec![
+                        MacroMessage {
+                            label: "YES".into(),
+                            payload: "Yes".into(),
+                            key_binding: Some("F1".into()),
+                            priority: 1,
+                        },
+                        MacroMessage {
+                            label: "NO".into(),
+                            payload: "No".into(),
+                            key_binding: Some("F2".into()),
+                            priority: 1,
+                        },
+                        MacroMessage {
+                            label: "PROBLEM W/".into(),
+                            payload: "Problem with:".into(),
+                            key_binding: Some("F3".into()),
+                            priority: 3,
+                        },
+                    ];
+                }
+                "rf" => {
+                    ch.macros = vec![
+                        MacroMessage {
+                            label: "CLEAR".into(),
+                            payload: "Channel clear".into(),
+                            key_binding: Some("F1".into()),
+                            priority: 1,
+                        },
+                        MacroMessage {
+                            label: "HOLD".into(),
+                            payload: "HOLD — do not transmit".into(),
+                            key_binding: Some("F2".into()),
+                            priority: 2,
+                        },
+                        MacroMessage {
+                            label: "LOW BATT".into(),
+                            payload: "Battery low — swap now".into(),
+                            key_binding: Some("F3".into()),
+                            priority: 3,
+                        },
+                    ];
+                }
+                _ => {}
+            }
+            ch
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,36 +248,4 @@ mod tests {
         assert_eq!(cfg.default_channels.len(), 5);
         assert!(cfg.network_interface.is_none());
     }
-}
-
-pub fn default_channels() -> Vec<Channel> {
-    let specs = [
-        ("audio",    "AUDIO",    "#E53935"),
-        ("rf",       "RF",       "#1E88E5"),
-        ("lighting", "LIGHTING", "#F4511E"),
-        ("video",    "VIDEO",    "#00897B"),
-        ("stage",    "STAGE",    "#43A047"),
-    ];
-
-    specs.iter().map(|(id, name, color)| {
-        let mut ch = Channel::new(*id, *name, *color);
-        match *id {
-            "audio" => {
-                ch.macros = vec![
-                    MacroMessage { label: "YES".into(),          payload: "Yes".into(),          key_binding: Some("F1".into()), priority: 1 },
-                    MacroMessage { label: "NO".into(),           payload: "No".into(),           key_binding: Some("F2".into()), priority: 1 },
-                    MacroMessage { label: "PROBLEM W/".into(),   payload: "Problem with:".into(),key_binding: Some("F3".into()), priority: 3 },
-                ];
-            }
-            "rf" => {
-                ch.macros = vec![
-                    MacroMessage { label: "CLEAR".into(),       payload: "Channel clear".into(),          key_binding: Some("F1".into()), priority: 1 },
-                    MacroMessage { label: "HOLD".into(),        payload: "HOLD — do not transmit".into(), key_binding: Some("F2".into()), priority: 2 },
-                    MacroMessage { label: "LOW BATT".into(),    payload: "Battery low — swap now".into(), key_binding: Some("F3".into()), priority: 3 },
-                ];
-            }
-            _ => {}
-        }
-        ch
-    }).collect()
 }

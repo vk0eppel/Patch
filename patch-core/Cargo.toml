@@ -66,3 +66,8 @@ libc = "0.2"
 
 [dev-dependencies]
 tokio-test = "0.4"
+
+[lints.rust]
+# `frb_expand` is set by the flutter_rust_bridge macro during its own codegen
+# expansion; declare it so the compiler doesn't flag it as an unknown cfg.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

@@ -38,14 +38,8 @@ impl Discovery {
             props.insert("peer_name".to_string(), client_name.clone());
             props.insert("version".to_string(), "0.1.0".to_string());
 
-            let service = ServiceInfo::new(
-                service_type,
-                instance_name,
-                &host_name,
-                "",
-                osc_port,
-                props,
-            )?;
+            let service =
+                ServiceInfo::new(service_type, instance_name, &host_name, "", osc_port, props)?;
 
             mdns.register(service)?;
             info!("mDNS service registered as '{}'", instance_name);
@@ -57,7 +51,8 @@ impl Discovery {
                 while let Ok(event) = receiver.recv_async().await {
                     match event {
                         ServiceEvent::ServiceResolved(info) => {
-                            let peer_id = info.get_properties()
+                            let peer_id = info
+                                .get_properties()
                                 .get("peer_id")
                                 .and_then(|p| Uuid::parse_str(p.val_str()).ok())
                                 .unwrap_or_else(Uuid::new_v4);
@@ -67,14 +62,18 @@ impl Discovery {
                                 continue;
                             }
 
-                            let addr = info.get_addresses().iter().next()
+                            let addr = info
+                                .get_addresses()
+                                .iter()
+                                .next()
                                 .map(|a| a.to_string())
                                 .unwrap_or_default();
                             let port = info.get_port();
 
                             // Prefer the peer_name TXT record; fall back to stripping
                             // the service-type suffix from the full DNS name.
-                            let peer_name = info.get_properties()
+                            let peer_name = info
+                                .get_properties()
                                 .get("peer_name")
                                 .map(|p| p.val_str().to_string())
                                 .unwrap_or_else(|| {
@@ -85,14 +84,19 @@ impl Discovery {
                                         .to_string()
                                 });
 
-                            debug!("mDNS resolved: {} ({}) @ {}:{}", peer_name, peer_id, addr, port);
+                            debug!(
+                                "mDNS resolved: {} ({}) @ {}:{}",
+                                peer_name, peer_id, addr, port
+                            );
                             let presence = PeerPresence {
                                 peer_id,
                                 peer_name,
                                 channels: Vec::new(),
                                 timestamp: Utc::now(),
                             };
-                            browse_state.upsert_peer_with_mode(presence, DiscoveryMode::Mdns).await;
+                            browse_state
+                                .upsert_peer_with_mode(presence, DiscoveryMode::Mdns)
+                                .await;
                             // Wire the resolved IP+port into the peer record so
                             // unicast sends work immediately after mDNS discovery.
                             if !addr.is_empty() {
@@ -107,7 +111,8 @@ impl Discovery {
                 }
             });
             Ok(())
-        }.await;
+        }
+        .await;
 
         if let Err(e) = mdns_result {
             warn!("mDNS unavailable, falling back to OSC beacon only: {}", e);
@@ -117,9 +122,8 @@ impl Discovery {
         let hb_state = state.clone();
         let hb_transport = transport.clone();
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(
-                std::time::Duration::from_secs(heartbeat_secs),
-            );
+            let mut interval =
+                tokio::time::interval(std::time::Duration::from_secs(heartbeat_secs));
             loop {
                 interval.tick().await;
                 // Broadcast our presence so every peer on the LAN can discover us.

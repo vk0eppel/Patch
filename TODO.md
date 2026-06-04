@@ -129,13 +129,15 @@ and the engine continues with OSC beacon + static peer discovery only.
 
 ## 🟡 Medium — Validation & Silent Failures
 
-### [Med] No CI pipeline
-**Files:** `.github/workflows/` (new)
-**Effort:** small–medium
+### ~~[Med] No CI pipeline~~ ✅ Done
+**File:** `.github/workflows/ci.yml`
 
-No CI exists. Add a GitHub Actions workflow running `cargo test -p patch_core`,
-`cargo clippy -- -D warnings`, `cargo fmt --check`, and `flutter analyze`. The engine has 25 tests
-and analyze is clean — CI locks that in against regressions.
+GitHub Actions workflow (on push-to-main + every PR) with two parallel jobs: **rust** runs
+`cargo fmt -p patch_core --check`, `cargo clippy -p patch_core --all-targets -- -D warnings`, and
+`cargo test -p patch_core`; **flutter** runs `flutter pub get` + `flutter analyze`. Toolchains are
+pinned (Rust 1.95.0, Flutter 3.44.1) so rustfmt/clippy version drift can't turn CI red on unrelated
+changes. `flutter test` is intentionally **excluded** until the broken default `widget_test.dart` is
+replaced (see the item below).
 
 ### [Med] Broken default Dart test + no Dart unit coverage
 **Files:** `patch_app/test/widget_test.dart`, `patch_app/lib/bridge/bridge_client.dart`, `patch_app/lib/models/message.dart`
@@ -175,14 +177,19 @@ Fixed: `result.files.single` → `result.files.isEmpty` guard + `result.files.fi
 
 ## 🟢 Low — Code Quality & Performance
 
-### [Low] No rustfmt/clippy config; clippy never run
-**Files:** `rustfmt.toml` / `clippy.toml` (new), CI
-**Effort:** small
+### ~~[Low] No rustfmt/clippy config; clippy never run~~ ✅ Done
+**Files:** `rustfmt.toml` (new), `patch-core/Cargo.toml`, scattered engine sources, `flash_button.dart`
 
-No formatter/linter config. ~25 non-test `.unwrap()` in the engine (mostly lock guards — audit for
-poison-panic risk, e.g. the `DATA_DIR_OVERRIDE` / `save_lock` paths). Add a clippy pass (wire into
-CI) and a minimal `rustfmt.toml`. Also clears the pre-existing `unnecessary_underscores` info-lint
-in `flash_button.dart`.
+Added `rustfmt.toml` (edition 2021, max_width 100) and ran a full `cargo fmt` over the engine —
+`cargo fmt --check` is now clean. Ran clippy and fixed every finding: `is_some_and` over
+`map_or(false, …)`, `map(session::slugify)`, `ReliabilityManager: Default`, struct-update syntax in
+test helpers, moved the `config.rs` test module to file end, and **switched the test data-dir guard
+to a `tokio::sync::Mutex`** (the std `MutexGuard` was held across `.await` — clippy's
+`await_holding_lock`). The `frb_expand` unknown-cfg warnings are silenced via
+`[lints.rust] unexpected_cfgs` in `Cargo.toml`. `DATA_DIR_OVERRIDE` lock unwraps are now
+poison-tolerant. `cargo clippy` is clean (0 warnings); the `flash_button.dart` `(_, __)` lint is
+fixed, so `flutter analyze lib` is fully clean. (CI enforcement — `clippy -D warnings`,
+`fmt --check`, `flutter analyze` — remains the separate "No CI pipeline" item.)
 
 ### ~~[Low] No "goodbye" on shutdown — peers linger until timeout~~ ✅ Done
 **Files:** `osc/{addresses,codec}.rs`, `transport/mod.rs`, `api.rs`, `bridge_client.dart`, `main.dart`

@@ -46,7 +46,9 @@ impl Peer {
     }
 
     pub fn is_stale(&self, timeout_secs: i64) -> bool {
-        let age = Utc::now().signed_duration_since(self.last_seen).num_seconds();
+        let age = Utc::now()
+            .signed_duration_since(self.last_seen)
+            .num_seconds();
         age > timeout_secs
     }
 }
