@@ -386,13 +386,31 @@ Critical message (and/or flash), gated by a Settings → Behavior toggle and a p
 lightweight `SystemSound`/`audioplayers` call. Pairs naturally with a Do-Not-Disturb toggle (mute flash +
 sound for a set period).
 
-### Surface critical-message delivery confirmation in the UI
-**Files:** `patch-core/src/reliability/mod.rs`, `patch-core/src/api.rs`, `patch_app/lib/screens/home_screen.dart`, `patch_app/lib/widgets/message_list.dart` · **Effort:** medium
-The engine already tracks ACKs per critical message, but the UI never shows them. Render a small
-"delivered N/M" indicator on critical rows — a check when fully acked, a spinner while retransmitting, a
-red mark if it exhausted retries. Needs an event carrying per-message ack progress (extend `MessageAcked`,
-or add `MessageDelivery { message_id, acked, targets }`). High operational value: the sender of a "HOLD"
-sees that it actually landed.
+### Alert the sender when a critical message isn't received by every peer
+**Files:** `patch-core/src/reliability/mod.rs`, `patch-core/src/api.rs`, `patch-core/src/state/mod.rs` (new event), `patch_app/lib/bridge/bridge_client.dart`, `patch_app/lib/screens/home_screen.dart`, `patch_app/lib/widgets/message_list.dart` · **Effort:** medium
+
+**Scope note (confirmed):** only **critical** (priority 3) messages are ACK'd and retransmitted — send side
+`api.rs` `is_critical()` → `reliability.track(...)`; receive side `transport/mod.rs` `is_critical()` →
+`/patch/ack`. Info / Warning / Debug are fire-and-forget, so this UI applies to criticals only (no false
+"undelivered" signals for the rest).
+
+**The gap:** when a critical exhausts `MAX_RETRIES` (5), `reliability::drain_retransmits` drops it with
+**only a `warn!` log** (`reliability/mod.rs:90`) — the operator is never told a "HOLD" didn't reach someone.
+That's the whole point of this item: the sender must *know* it didn't land.
+
+Surface per-message delivery status on critical rows in `message_list.dart`:
+- "delivered N/M" (acked / targets), a spinner while retransmitting, a **check** when fully acked, and —
+  the important one — a prominent **failed** mark (e.g. ⚠ + the unacked peer name(s)) when retries are exhausted.
+
+Engine work:
+- Emit a delivery event when a tracked critical resolves — success (all acked, via `ack()` returning true)
+  or failure (dropped in `drain_retransmits` after `MAX_RETRIES`). Add e.g.
+  `AppEvent::MessageDelivery { message_id, acked, targets, failed }` + its `PatchAppEvent` mirror (**FRB regen**).
+- To name *which* peer didn't receive it, map the unacked `SocketAddr`(s) back to a peer name/id at report
+  time via `get_peers()` (the reliability layer tracks targets as addresses and acks-by-address — see the
+  ack-by-`from` design in `transport`/`reliability`).
+- Edge case: a peer that goes offline mid-retransmit will legitimately fail — the alert should read as
+  "not delivered to <name>", which is exactly the signal the operator wants.
 
 ### ALL channel — broadcast view + all-department send
 **Effort:** small
