@@ -106,21 +106,25 @@ Receivers emit an ACK for every critical message (`handle_event` `Message` arm),
 Note: retransmit currently uses a fixed 400 ms tick (bounded by `MAX_RETRIES`) rather than the
 `retransmit_delay` exponential-backoff helper, which is still unused.
 
-### [Low] macOS multi-interface *initial* discovery (one-way until first contact)
-**Files:** `patch-core/src/transport/mod.rs` (`broadcast_targets` / `Transport`)
-**Effort:** medium
+### ~~[Low] macOS multi-interface *initial* discovery (one-way until first contact)~~ ✅ Implemented (⚠ needs field validation)
+**Files:** `patch-core/src/transport/mod.rs` (`broadcast_per_interface`, `send_per_interface_broadcast`, `set_bound_if`, `usable_iface_indices`, `Outgoing`), `patch-core/src/discovery/mod.rs` (heartbeat)
 
-**Largely mitigated** by the unicast-heartbeat bootstrap (`discovery/mod.rs` now unicasts presence to
-known peers, so any one-way contact becomes two-way within a heartbeat). The remaining gap is the
-*very first* contact: `broadcast_targets` sends `255.255.255.255` + per-interface subnet broadcasts,
-but **macOS doesn't deliver directed broadcasts to apps** — only `255.255.255.255`, which leaves just
-the primary/default-route interface. So if a macOS machine's default route is a VPN/`utun`/Ethernet
-and the *other* machine's broadcast also can't reach it, neither makes first contact and the bootstrap
-never starts. Workarounds (`docs/networking.md`): disconnect the extra interface, or add a static peer
-(which supplies the first contact). A real fix for first-contact: send `255.255.255.255` out **each**
-interface from a socket bound to that interface's IP (port 9000, `SO_REUSEADDR`/`SO_REUSEPORT` so the
-source port stays 9000 for unicast replies), or move the beacon to multicast (below). **Do not** ship
-"subnet-directed only" — it broke macOS discovery completely (zero-way).
+Implemented **Option A — per-interface limited broadcast** (macOS-only, `IP_BOUND_IF`). Each heartbeat,
+in addition to the existing `broadcast` (default-route `255.255.255.255` + subnet copies — kept as the
+baseline, **not** removed), `broadcast_per_interface` pushes `255.255.255.255` out of **every** usable
+NIC (VPN/`utun` skipped via `SKIP_PREFIXES`). It runs inside the single `send_loop` task as
+`Outgoing::PerIfaceBroadcast`, setting `IP_BOUND_IF` on the main socket fd right before each send and
+clearing it right after (microsecond receive-scope window). Source port stays 9000, so receivers learn
+the correct unicast port and the existing unicast-bootstrap takes over. Additive → cannot regress the
+working path. No-op off macOS (Linux/Windows already egress subnet-directed broadcasts out each NIC,
+and those *are* delivered to apps there).
+
+**⚠ Still needs validation on real hardware:** verified locally that interface enumeration is correct
+(`usable_iface_indices_are_nonzero_and_pinnable` test; `print_iface_indices` diagnostic shows `en0`
+egress on a Wi-Fi-only Mac), but the actual two-machine fix (VPN/Ethernet default route + Wi-Fi) can't
+be unit-tested — run both machines with `RUST_LOG=debug` and confirm `per-iface broadcast → … via en0`
+lines and that they now discover each other. Static peers remain the guaranteed fallback. Multicast is
+a separate, larger item (next).
 
 ### Multicast transport option
 **Files:** `patch-core/src/transport/mod.rs`, `patch-core/src/discovery/mod.rs`, `patch-core/src/state/config.rs`

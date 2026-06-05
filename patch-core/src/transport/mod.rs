@@ -16,12 +16,29 @@ use crate::reliability::ReliabilityManager;
 use crate::state::{AppEvent, AppState, Config};
 use chrono::Utc;
 
+/// A queued outgoing packet, processed by the single `send_loop` task. Routing
+/// everything through one task means the per-interface broadcast can set/clear
+/// the socket's `IP_BOUND_IF` option without racing concurrent unicast sends.
+enum Outgoing {
+    /// Send these bytes to a specific address via the default route.
+    To(Vec<u8>, SocketAddr),
+    /// macOS only: send `255.255.255.255:port` out of **every** usable interface
+    /// (optionally pinned to one), binding each send to the interface via
+    /// `IP_BOUND_IF`. Works around macOS only egressing the limited broadcast on
+    /// the default-route NIC — and only *delivering* `255.255.255.255` (never
+    /// subnet-directed) to receiving apps — which otherwise leaves a multi-NIC
+    /// Mac (VPN/Ethernet default route) unable to make first contact. The source
+    /// port stays 9000 (the main socket), so receivers learn the right unicast port.
+    #[cfg(target_os = "macos")]
+    PerIfaceBroadcast(Vec<u8>, u16, Option<String>),
+}
+
 pub struct Transport {
     /// Kept alive so the socket isn't dropped while the send/receive loops run.
     #[allow(dead_code)]
     socket: Arc<UdpSocket>,
     /// Sender half — clone to send packets from any task.
-    send_tx: mpsc::Sender<(Vec<u8>, SocketAddr)>,
+    send_tx: mpsc::Sender<Outgoing>,
 }
 
 impl Transport {
@@ -41,7 +58,7 @@ impl Transport {
         tracing::info!("UDP socket bound on {}", bind_addr);
 
         let socket = Arc::new(socket);
-        let (send_tx, send_rx) = mpsc::channel::<(Vec<u8>, SocketAddr)>(256);
+        let (send_tx, send_rx) = mpsc::channel::<Outgoing>(256);
 
         // Receive loop. It also needs the send half (to emit ACKs for critical
         // messages) and the reliability manager (to clear acked retransmits).
@@ -66,7 +83,7 @@ impl Transport {
     /// Send raw OSC bytes to a specific address.
     pub async fn send_to(&self, bytes: Vec<u8>, addr: SocketAddr) -> Result<()> {
         self.send_tx
-            .send((bytes, addr))
+            .send(Outgoing::To(bytes, addr))
             .await
             .context("Send channel closed")
     }
@@ -99,6 +116,32 @@ impl Transport {
     pub async fn broadcast_now(&self, bytes: &[u8], port: u16, iface: Option<&str>) {
         for addr in broadcast_targets(iface, port) {
             let _ = self.send_now(bytes, addr).await;
+        }
+    }
+
+    /// macOS only: additionally send the limited broadcast (`255.255.255.255`)
+    /// out of **every** usable interface (or just `iface` when pinned), so a
+    /// multi-NIC Mac whose default route is a VPN/Ethernet still reaches the show
+    /// Wi-Fi for first contact. Additive on top of [`broadcast`] (which still
+    /// sends the default-route copy + subnet-directed targets) — never a
+    /// replacement, so it can't regress the working path. A no-op off macOS,
+    /// where the routing table already pushes subnet-directed broadcasts out each
+    /// NIC and those *are* delivered to receiving apps.
+    pub async fn broadcast_per_interface(&self, bytes: Vec<u8>, port: u16, iface: Option<&str>) {
+        #[cfg(target_os = "macos")]
+        {
+            let _ = self
+                .send_tx
+                .send(Outgoing::PerIfaceBroadcast(
+                    bytes,
+                    port,
+                    iface.map(str::to_string),
+                ))
+                .await;
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (bytes, port, iface); // unused off macOS
         }
     }
 
@@ -173,7 +216,7 @@ async fn receive_loop(
     socket: Arc<UdpSocket>,
     state: AppState,
     client_id: Uuid,
-    send_tx: mpsc::Sender<(Vec<u8>, SocketAddr)>,
+    send_tx: mpsc::Sender<Outgoing>,
     reliability: Arc<Mutex<ReliabilityManager>>,
 ) {
     let mut buf = vec![0u8; 65535];
@@ -208,7 +251,7 @@ async fn handle_event(
     from: SocketAddr,
     state: &AppState,
     client_id: Uuid,
-    send_tx: &mpsc::Sender<(Vec<u8>, SocketAddr)>,
+    send_tx: &mpsc::Sender<Outgoing>,
     reliability: &Arc<Mutex<ReliabilityManager>>,
 ) {
     // For every event that carries a sender_id, record the source address so
@@ -249,7 +292,7 @@ async fn handle_event(
             if msg.is_critical() {
                 match encode_ack(msg.message_id, client_id) {
                     Ok(ack_bytes) => {
-                        let _ = send_tx.send((ack_bytes, from)).await;
+                        let _ = send_tx.send(Outgoing::To(ack_bytes, from)).await;
                     }
                     Err(e) => warn!("Failed to encode ACK: {}", e),
                 }
@@ -316,12 +359,99 @@ async fn handle_event(
     }
 }
 
-async fn send_loop(socket: Arc<UdpSocket>, mut rx: mpsc::Receiver<(Vec<u8>, SocketAddr)>) {
-    while let Some((bytes, addr)) = rx.recv().await {
-        if let Err(e) = socket.send_to(&bytes, addr).await {
-            error!("UDP send error to {}: {}", addr, e);
+async fn send_loop(socket: Arc<UdpSocket>, mut rx: mpsc::Receiver<Outgoing>) {
+    while let Some(item) = rx.recv().await {
+        match item {
+            Outgoing::To(bytes, addr) => {
+                if let Err(e) = socket.send_to(&bytes, addr).await {
+                    error!("UDP send error to {}: {}", addr, e);
+                }
+            }
+            #[cfg(target_os = "macos")]
+            Outgoing::PerIfaceBroadcast(bytes, port, iface) => {
+                send_per_interface_broadcast(&socket, &bytes, port, iface.as_deref()).await;
+            }
         }
     }
+}
+
+/// macOS: send `255.255.255.255:port` out of each usable interface by setting
+/// `IP_BOUND_IF` on the (single, shared) send socket immediately before each
+/// send and clearing it right after, so the receive loop's interface scope is
+/// only constrained for the microsecond of the send. Running inside `send_loop`
+/// guarantees no concurrent unicast send observes the bound state.
+#[cfg(target_os = "macos")]
+async fn send_per_interface_broadcast(
+    socket: &UdpSocket,
+    bytes: &[u8],
+    port: u16,
+    iface_pin: Option<&str>,
+) {
+    use std::os::fd::AsRawFd;
+    let fd = socket.as_raw_fd();
+    let dest = SocketAddr::from((std::net::Ipv4Addr::BROADCAST, port));
+    for (name, idx) in usable_iface_indices(iface_pin) {
+        if !set_bound_if(fd, idx) {
+            warn!("IP_BOUND_IF failed for {} (idx {})", name, idx);
+            continue;
+        }
+        let result = socket.send_to(bytes, dest).await;
+        set_bound_if(fd, 0); // restore default routing / receive scope immediately
+        match result {
+            Ok(_) => debug!("per-iface broadcast → {} via {}", dest, name),
+            Err(e) => debug!("per-iface broadcast via {} failed: {}", name, e),
+        }
+    }
+}
+
+/// Set (or clear, with `ifindex == 0`) the `IP_BOUND_IF` egress interface on a
+/// raw socket fd. Returns true on success.
+#[cfg(target_os = "macos")]
+fn set_bound_if(fd: std::os::fd::RawFd, ifindex: u32) -> bool {
+    let idx = ifindex as libc::c_uint;
+    let rc = unsafe {
+        libc::setsockopt(
+            fd,
+            libc::IPPROTO_IP,
+            libc::IP_BOUND_IF,
+            &idx as *const libc::c_uint as *const libc::c_void,
+            std::mem::size_of::<libc::c_uint>() as libc::socklen_t,
+        )
+    };
+    rc == 0
+}
+
+/// (name, ifindex) for each usable IPv4 interface, honouring an optional pin.
+/// Reuses the same `SKIP_PREFIXES` / `is_usable_ip` filters as the UI picker.
+#[cfg(target_os = "macos")]
+fn usable_iface_indices(iface_pin: Option<&str>) -> Vec<(String, u32)> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    let Ok(interfaces) = NetworkInterface::show() else {
+        return out;
+    };
+    for iface in &interfaces {
+        if SKIP_PREFIXES.iter().any(|p| iface.name.starts_with(p)) {
+            continue;
+        }
+        if iface_pin.is_some_and(|pin| iface.name != pin) {
+            continue;
+        }
+        let has_v4 = iface
+            .addr
+            .iter()
+            .any(|a| a.ip().is_ipv4() && is_usable_ip(&a.ip().to_string()));
+        if !has_v4 || !seen.insert(iface.name.clone()) {
+            continue;
+        }
+        if let Ok(cname) = std::ffi::CString::new(iface.name.clone()) {
+            let idx = unsafe { libc::if_nametoindex(cname.as_ptr()) };
+            if idx != 0 {
+                out.push((iface.name.clone(), idx));
+            }
+        }
+    }
+    out
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -467,6 +597,28 @@ mod tests {
     fn print_broadcast_targets() {
         for t in broadcast_targets(None, 9000) {
             eprintln!("broadcast target: {t}");
+        }
+    }
+
+    /// The per-interface egress list must contain only real (non-zero) interface
+    /// indices, and pinning to a non-existent interface yields nothing.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn usable_iface_indices_are_nonzero_and_pinnable() {
+        let all = usable_iface_indices(None);
+        assert!(all.iter().all(|(name, idx)| *idx != 0 && !name.is_empty()));
+        assert!(usable_iface_indices(Some("definitely-not-a-real-iface-xyz")).is_empty());
+    }
+
+    /// Diagnostic: prints the (interface, ifindex) pairs the per-interface macOS
+    /// broadcast would send `255.255.255.255` out of.
+    /// `cargo test -p patch_core print_iface_indices -- --ignored --nocapture`
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore = "diagnostic only"]
+    fn print_iface_indices() {
+        for (name, idx) in usable_iface_indices(None) {
+            eprintln!("per-iface broadcast egress: {name} (ifindex {idx})");
         }
     }
 }

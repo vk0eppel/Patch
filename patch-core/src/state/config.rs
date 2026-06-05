@@ -204,7 +204,7 @@ pub fn default_channels() -> Vec<Channel> {
                         },
                         MacroMessage {
                             label: "CHECK".into(),
-                            payload: "Line check".into(),
+                            payload: "Check".into(),
                             key_binding: Some("F3".into()),
                             priority: 2,
                         },

@@ -180,6 +180,17 @@ impl Discovery {
                         {
                             warn!("Presence broadcast failed: {}", e);
                         }
+                        // macOS only (no-op elsewhere): also push the limited
+                        // broadcast out every NIC so a multi-interface Mac whose
+                        // default route is a VPN/Ethernet can still make first
+                        // contact on the show Wi-Fi.
+                        hb_transport
+                            .broadcast_per_interface(
+                                bytes.clone(),
+                                osc_port,
+                                cfg.network_interface.as_deref(),
+                            )
+                            .await;
                         // Also unicast to peers we already know (dynamic + static):
                         // a peer we can see learns about us even when our broadcast
                         // can't reach them (asymmetric routing / AP isolation).
