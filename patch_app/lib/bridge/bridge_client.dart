@@ -55,6 +55,20 @@ class BridgeClient {
         'message_id': messageId,
         'peer_id': peerId,
       },
+      rust.PatchAppEvent_MessageDelivery(
+        :final messageId,
+        :final delivered,
+        :final total,
+        :final failed,
+        :final failedPeers,
+      ) => {
+        'event': 'message_delivery',
+        'message_id': messageId,
+        'delivered': delivered,
+        'total': total,
+        'failed': failed,
+        'failed_peers': failedPeers,
+      },
       rust.PatchAppEvent_PeerUpdated(:final field0) => {
         'event': 'peer_updated',
         'data': _presenceToPeerMap(field0),
@@ -183,6 +197,7 @@ class BridgeClient {
           'macros_columns': cfg.macrosColumns,
           'hide_keyboard': cfg.hideKeyboard,
           'global_macros': cfg.globalMacros.map(_macroToMap).toList(),
+          'heartbeat_interval_secs': cfg.heartbeatIntervalSecs,
         },
       });
     } catch (e) {

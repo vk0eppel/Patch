@@ -10,9 +10,19 @@ import '../theme/patch_theme.dart';
 /// without waiting for an external event to trigger a Flutter rebuild.
 class PeersPanel extends StatefulWidget {
   final List<PeerInfo> peers;
+
+  /// Presence heartbeat interval (s) — the dot thresholds derive from it
+  /// (healthy ≤ 2×, amber ≤ 5×) so they track the configured interval.
+  final int heartbeatSecs;
   final VoidCallback? onClearStale;
   final VoidCallback? onClose;
-  const PeersPanel({super.key, required this.peers, this.onClearStale, this.onClose});
+  const PeersPanel({
+    super.key,
+    required this.peers,
+    this.heartbeatSecs = 7,
+    this.onClearStale,
+    this.onClose,
+  });
 
   @override
   State<PeersPanel> createState() => _PeersPanelState();
@@ -88,7 +98,10 @@ class _PeersPanelState extends State<PeersPanel> {
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     itemCount: widget.peers.length,
-                    itemBuilder: (ctx, i) => _PeerTile(peer: widget.peers[i]),
+                    itemBuilder: (ctx, i) => _PeerTile(
+                      peer: widget.peers[i],
+                      heartbeatSecs: widget.heartbeatSecs,
+                    ),
                   ),
           ),
         ],
@@ -100,13 +113,16 @@ class _PeersPanelState extends State<PeersPanel> {
 
 class _PeerTile extends StatelessWidget {
   final PeerInfo peer;
-  const _PeerTile({required this.peer});
 
-  // Dynamic-peer dot thresholds (seconds since last packet). 14 s = 2× the 7 s
-  // heartbeat (one dropped beat tolerated); 35 s = 5×. See the [Low] TODO about
-  // deriving these from `heartbeat_interval_secs`.
-  static const int _kHealthySecs = 14;
-  static const int _kStaleSecs = 35;
+  /// Presence heartbeat interval (s). Dot thresholds derive from it: healthy
+  /// ≤ 2× (one dropped beat tolerated), amber ≤ 5×, gray beyond. With the default
+  /// 7 s heartbeat that's the previous 14 s / 35 s, now tracking the interval.
+  final int heartbeatSecs;
+
+  const _PeerTile({required this.peer, required this.heartbeatSecs});
+
+  int get _healthySecs => heartbeatSecs * 2;
+  int get _staleSecs => heartbeatSecs * 5;
 
   bool get _isManual =>
       peer.discoveryMode == 'manual_ip' || peer.discoveryMode == 'ManualIp';
@@ -116,8 +132,8 @@ class _PeerTile extends StatelessWidget {
   Color get _dotColor {
     if (_isManual) return PatchTheme.textMuted;
     final age = DateTime.now().difference(peer.lastSeen).inSeconds;
-    if (age <= _kHealthySecs) return PatchTheme.success;
-    if (age <= _kStaleSecs) return PatchTheme.warning;
+    if (age <= _healthySecs) return PatchTheme.success;
+    if (age <= _staleSecs) return PatchTheme.warning;
     return PatchTheme.textMuted;
   }
 

@@ -77,6 +77,10 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Macros shown on every channel (configured once); fired on the currently-
   /// selected channel(s). Sourced from the engine config via `getConfig`.
   List<MacroMessage> _globalMacros = [];
+  /// Presence heartbeat interval (s) from config — drives the peer dot thresholds.
+  int _heartbeatSecs = 7;
+  /// Delivery status for criticals we've sent, keyed by message id.
+  final Map<String, MessageDeliveryStatus> _delivery = {};
   StreamSubscription<Map<String, dynamic>>? _eventSub;
 
   /// Coalesces `peer_updated` bursts into one `getPeers()` fetch. `last_seen` is
@@ -267,6 +271,26 @@ class _HomeScreenState extends State<HomeScreen> {
       case 'ack_send':
         break;
 
+      case 'message_delivery':
+        final id = event['message_id'] as String;
+        final status = MessageDeliveryStatus.fromEvent(event);
+        setState(() => _delivery[id] = status);
+        // A failed critical can't go unnoticed — also raise a red SnackBar.
+        if (status.failed && mounted) {
+          final who = status.total == 0
+              ? 'no peers were online'
+              : status.failedPeers.isNotEmpty
+                  ? 'not received by ${status.failedPeers.join(', ')}'
+                  : 'not received by all peers';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Critical message $who'),
+              backgroundColor: PatchTheme.critical,
+              duration: const Duration(seconds: 6),
+            ),
+          );
+        }
+
       case 'peers':
         final data = event['data'] as List<dynamic>;
         setState(() {
@@ -300,6 +324,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _messages.remove(clearedId);
           } else {
             _messages.clear();
+            _delivery.clear();
           }
         });
 
@@ -325,6 +350,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ((event['data']['global_macros'] as List<dynamic>?) ?? [])
                   .map((m) => MacroMessage.fromJson(m as Map<String, dynamic>))
                   .toList();
+          _heartbeatSecs =
+              (event['data']['heartbeat_interval_secs'] as int?) ?? 7;
         });
 
       case 'session_saved':
@@ -422,6 +449,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     selectedChannels: _selectedChannels,
                     messages: _combinedMessages,
                     channelColors: _channelColors,
+                    delivery: _delivery,
                     aggregatedMacros: _aggregatedMacros,
                     bridge: widget.bridge,
                     showPeers: _showPeers,
@@ -453,6 +481,7 @@ class _HomeScreenState extends State<HomeScreen> {
               width: _kPeersPanelWidth,
               child: PeersPanel(
                 peers: _peers,
+                heartbeatSecs: _heartbeatSecs,
                 onClearStale: () => widget.bridge.clearStalePeers(),
                 onClose: () => setState(() => _showPeers = false),
               ),
@@ -606,6 +635,7 @@ class _ChannelView extends StatelessWidget {
   final List<PatchChannel> selectedChannels;
   final List<PatchMessage> messages;
   final Map<String, Color> channelColors; // empty when single channel
+  final Map<String, MessageDeliveryStatus> delivery;
   final List<ChannelMacro> aggregatedMacros;
   final BridgeClient bridge;
   final bool showPeers;
@@ -621,6 +651,7 @@ class _ChannelView extends StatelessWidget {
     required this.selectedChannels,
     required this.messages,
     required this.channelColors,
+    required this.delivery,
     required this.aggregatedMacros,
     required this.bridge,
     required this.showPeers,
@@ -761,6 +792,7 @@ class _ChannelView extends StatelessWidget {
               MessageList(
                 messages: messages,
                 channelColors: _isMulti ? channelColors : null,
+                delivery: delivery,
               ),
               Positioned(
                 top: 4,

@@ -9,10 +9,15 @@ class MessageList extends StatefulWidget {
   /// for its channel. Key = channel_id, value = channel colour.
   final Map<String, Color>? channelColors;
 
+  /// Delivery status for criticals we sent, keyed by message id. A row whose id
+  /// is present shows a delivery indicator (only our own sent criticals appear).
+  final Map<String, MessageDeliveryStatus>? delivery;
+
   const MessageList({
     super.key,
     required this.messages,
     this.channelColors,
+    this.delivery,
   });
 
   @override
@@ -81,6 +86,7 @@ class _MessageListState extends State<MessageList> {
       itemBuilder: (ctx, i) => _MessageTile(
         message: widget.messages[i],
         channelColor: widget.channelColors?[widget.messages[i].channelId],
+        delivery: widget.delivery?[widget.messages[i].messageId],
       ),
     );
   }
@@ -92,7 +98,10 @@ class _MessageTile extends StatelessWidget {
   /// When non-null, a coloured dot is shown to the left of the timestamp.
   final Color? channelColor;
 
-  const _MessageTile({required this.message, this.channelColor});
+  /// When non-null, a delivery indicator is shown at the end of the row.
+  final MessageDeliveryStatus? delivery;
+
+  const _MessageTile({required this.message, this.channelColor, this.delivery});
 
   Color get _priorityColor {
     return switch (message.priority) {
@@ -168,9 +177,44 @@ class _MessageTile extends StatelessWidget {
                 ),
               ),
             ),
+            // Delivery indicator (sender-side, criticals only)
+            if (delivery != null) _deliveryBadge(delivery!),
           ],
         ),
       ),
+    );
+  }
+
+  /// A small trailing indicator for the delivery state of a critical we sent:
+  /// a red ⚠ if it wasn't received, a green ✓ once every peer has it, or an
+  /// amber "N/M" while it's still being delivered/retried.
+  Widget _deliveryBadge(MessageDeliveryStatus d) {
+    final Widget child;
+    final String tip;
+    if (d.failed) {
+      tip = d.total == 0
+          ? 'No peers online — not delivered'
+          : d.failedPeers.isNotEmpty
+              ? 'Not delivered to: ${d.failedPeers.join(', ')}'
+              : 'Not delivered to all peers';
+      child = const Icon(Icons.error_outline, size: 14, color: PatchTheme.critical);
+    } else if (d.isComplete) {
+      tip = 'Delivered to all ${d.total}';
+      child = const Icon(Icons.done_all, size: 14, color: PatchTheme.success);
+    } else {
+      tip = 'Delivered to ${d.delivered} of ${d.total}';
+      child = Text(
+        '${d.delivered}/${d.total}',
+        style: const TextStyle(
+          color: PatchTheme.warning,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(left: 6, top: 2),
+      child: Tooltip(message: tip, child: child),
     );
   }
 

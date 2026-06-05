@@ -22,6 +22,17 @@ pub enum AppEvent {
         message_id: Uuid,
         peer_id: Uuid,
     },
+    /// Delivery progress/result for a *critical* message we sent. `delivered` of
+    /// `total` targets have ACKed; `failed` is set when retransmits were exhausted
+    /// (or there were no peers to send to), with `failed_peers` naming the peers
+    /// that never received it.
+    MessageDelivery {
+        message_id: Uuid,
+        delivered: u32,
+        total: u32,
+        failed: bool,
+        failed_peers: Vec<String>,
+    },
     PeerUpdated(PeerPresence),
     PeerExpired(Uuid),
     ChannelFlash(ChannelFlash),

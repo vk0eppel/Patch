@@ -303,10 +303,22 @@ async fn handle_event(
             message_id,
             peer_id,
         } => {
-            // Clear the in-flight retransmit entry (matched by the ACK's source
-            // address — see reliability::ReliabilityManager::ack), then notify the
-            // UI with the peer_id carried in the packet.
-            reliability.lock().await.ack(message_id, from);
+            // Record the ACK (matched by the ACK's source address — see
+            // reliability::ReliabilityManager::ack). On a tracked target this
+            // returns delivery progress, which we surface so the sender's UI can
+            // show "delivered N/M" and a check once every peer has it.
+            let progress = reliability.lock().await.ack(message_id, from);
+            if let Some((delivered, total)) = progress {
+                state
+                    .publish(AppEvent::MessageDelivery {
+                        message_id,
+                        delivered,
+                        total,
+                        failed: false,
+                        failed_peers: Vec::new(),
+                    })
+                    .await;
+            }
             state
                 .publish(AppEvent::MessageAcked {
                     message_id,

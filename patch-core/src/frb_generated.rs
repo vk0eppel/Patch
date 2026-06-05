@@ -1565,6 +1565,7 @@ impl SseDecode for crate::api::ConfigSnapshot {
         let mut var_hideKeyboard = <bool>::sse_decode(deserializer);
         let mut var_globalMacros =
             <Vec<crate::state::channel::MacroMessage>>::sse_decode(deserializer);
+        let mut var_heartbeatIntervalSecs = <u32>::sse_decode(deserializer);
         return crate::api::ConfigSnapshot {
             client_name: var_clientName,
             osc_port: var_oscPort,
@@ -1576,6 +1577,7 @@ impl SseDecode for crate::api::ConfigSnapshot {
             macros_columns: var_macrosColumns,
             hide_keyboard: var_hideKeyboard,
             global_macros: var_globalMacros,
+            heartbeat_interval_secs: var_heartbeatIntervalSecs,
         };
     }
 }
@@ -1798,27 +1800,41 @@ impl SseDecode for crate::api::PatchAppEvent {
                 };
             }
             2 => {
+                let mut var_messageId = <String>::sse_decode(deserializer);
+                let mut var_delivered = <u32>::sse_decode(deserializer);
+                let mut var_total = <u32>::sse_decode(deserializer);
+                let mut var_failed = <bool>::sse_decode(deserializer);
+                let mut var_failedPeers = <Vec<String>>::sse_decode(deserializer);
+                return crate::api::PatchAppEvent::MessageDelivery {
+                    message_id: var_messageId,
+                    delivered: var_delivered,
+                    total: var_total,
+                    failed: var_failed,
+                    failed_peers: var_failedPeers,
+                };
+            }
+            3 => {
                 let mut var_field0 = <crate::osc::types::PeerPresence>::sse_decode(deserializer);
                 return crate::api::PatchAppEvent::PeerUpdated(var_field0);
             }
-            3 => {
+            4 => {
                 let mut var_peerId = <String>::sse_decode(deserializer);
                 return crate::api::PatchAppEvent::PeerExpired {
                     peer_id: var_peerId,
                 };
             }
-            4 => {
+            5 => {
                 let mut var_field0 = <crate::osc::types::ChannelFlash>::sse_decode(deserializer);
                 return crate::api::PatchAppEvent::ChannelFlash(var_field0);
             }
-            5 => {
+            6 => {
                 return crate::api::PatchAppEvent::ChannelListUpdated;
             }
-            6 => {
+            7 => {
                 let mut var_name = <String>::sse_decode(deserializer);
                 return crate::api::PatchAppEvent::ClientNameChanged { name: var_name };
             }
-            7 => {
+            8 => {
                 let mut var_context = <String>::sse_decode(deserializer);
                 return crate::api::PatchAppEvent::PermissionDenied {
                     context: var_context,
@@ -2128,6 +2144,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::ConfigSnapshot {
             self.macros_columns.into_into_dart().into_dart(),
             self.hide_keyboard.into_into_dart().into_dart(),
             self.global_macros.into_into_dart().into_dart(),
+            self.heartbeat_interval_secs.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -2220,21 +2237,36 @@ impl flutter_rust_bridge::IntoDart for crate::api::PatchAppEvent {
                 peer_id.into_into_dart().into_dart(),
             ]
             .into_dart(),
+            crate::api::PatchAppEvent::MessageDelivery {
+                message_id,
+                delivered,
+                total,
+                failed,
+                failed_peers,
+            } => [
+                2.into_dart(),
+                message_id.into_into_dart().into_dart(),
+                delivered.into_into_dart().into_dart(),
+                total.into_into_dart().into_dart(),
+                failed.into_into_dart().into_dart(),
+                failed_peers.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
             crate::api::PatchAppEvent::PeerUpdated(field0) => {
-                [2.into_dart(), field0.into_into_dart().into_dart()].into_dart()
+                [3.into_dart(), field0.into_into_dart().into_dart()].into_dart()
             }
             crate::api::PatchAppEvent::PeerExpired { peer_id } => {
-                [3.into_dart(), peer_id.into_into_dart().into_dart()].into_dart()
+                [4.into_dart(), peer_id.into_into_dart().into_dart()].into_dart()
             }
             crate::api::PatchAppEvent::ChannelFlash(field0) => {
-                [4.into_dart(), field0.into_into_dart().into_dart()].into_dart()
+                [5.into_dart(), field0.into_into_dart().into_dart()].into_dart()
             }
-            crate::api::PatchAppEvent::ChannelListUpdated => [5.into_dart()].into_dart(),
+            crate::api::PatchAppEvent::ChannelListUpdated => [6.into_dart()].into_dart(),
             crate::api::PatchAppEvent::ClientNameChanged { name } => {
-                [6.into_dart(), name.into_into_dart().into_dart()].into_dart()
+                [7.into_dart(), name.into_into_dart().into_dart()].into_dart()
             }
             crate::api::PatchAppEvent::PermissionDenied { context } => {
-                [7.into_dart(), context.into_into_dart().into_dart()].into_dart()
+                [8.into_dart(), context.into_into_dart().into_dart()].into_dart()
             }
             _ => {
                 unimplemented!("");
@@ -2496,6 +2528,7 @@ impl SseEncode for crate::api::ConfigSnapshot {
         <u8>::sse_encode(self.macros_columns, serializer);
         <bool>::sse_encode(self.hide_keyboard, serializer);
         <Vec<crate::state::channel::MacroMessage>>::sse_encode(self.global_macros, serializer);
+        <u32>::sse_encode(self.heartbeat_interval_secs, serializer);
     }
 }
 
@@ -2684,27 +2717,41 @@ impl SseEncode for crate::api::PatchAppEvent {
                 <String>::sse_encode(message_id, serializer);
                 <String>::sse_encode(peer_id, serializer);
             }
-            crate::api::PatchAppEvent::PeerUpdated(field0) => {
+            crate::api::PatchAppEvent::MessageDelivery {
+                message_id,
+                delivered,
+                total,
+                failed,
+                failed_peers,
+            } => {
                 <i32>::sse_encode(2, serializer);
+                <String>::sse_encode(message_id, serializer);
+                <u32>::sse_encode(delivered, serializer);
+                <u32>::sse_encode(total, serializer);
+                <bool>::sse_encode(failed, serializer);
+                <Vec<String>>::sse_encode(failed_peers, serializer);
+            }
+            crate::api::PatchAppEvent::PeerUpdated(field0) => {
+                <i32>::sse_encode(3, serializer);
                 <crate::osc::types::PeerPresence>::sse_encode(field0, serializer);
             }
             crate::api::PatchAppEvent::PeerExpired { peer_id } => {
-                <i32>::sse_encode(3, serializer);
+                <i32>::sse_encode(4, serializer);
                 <String>::sse_encode(peer_id, serializer);
             }
             crate::api::PatchAppEvent::ChannelFlash(field0) => {
-                <i32>::sse_encode(4, serializer);
+                <i32>::sse_encode(5, serializer);
                 <crate::osc::types::ChannelFlash>::sse_encode(field0, serializer);
             }
             crate::api::PatchAppEvent::ChannelListUpdated => {
-                <i32>::sse_encode(5, serializer);
+                <i32>::sse_encode(6, serializer);
             }
             crate::api::PatchAppEvent::ClientNameChanged { name } => {
-                <i32>::sse_encode(6, serializer);
+                <i32>::sse_encode(7, serializer);
                 <String>::sse_encode(name, serializer);
             }
             crate::api::PatchAppEvent::PermissionDenied { context } => {
-                <i32>::sse_encode(7, serializer);
+                <i32>::sse_encode(8, serializer);
                 <String>::sse_encode(context, serializer);
             }
             _ => {

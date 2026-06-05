@@ -15,7 +15,7 @@ import 'state/session.dart';
 import 'transport.dart';
 part 'api.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `csv_escape`, `init_tracing`
+// These functions are ignored because they are not marked as `pub`: `csv_escape`, `init_tracing`, `resolve_peer_names`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `EngineHandle`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `engine`
@@ -240,6 +240,10 @@ class ConfigSnapshot {
   final bool hideKeyboard;
   final List<MacroMessage> globalMacros;
 
+  /// Presence heartbeat interval (seconds). The UI derives its peer
+  /// online/amber/grey dot thresholds from this.
+  final int heartbeatIntervalSecs;
+
   const ConfigSnapshot({
     required this.clientName,
     required this.oscPort,
@@ -251,6 +255,7 @@ class ConfigSnapshot {
     required this.macrosColumns,
     required this.hideKeyboard,
     required this.globalMacros,
+    required this.heartbeatIntervalSecs,
   });
 
   @override
@@ -264,7 +269,8 @@ class ConfigSnapshot {
       flashCount.hashCode ^
       macrosColumns.hashCode ^
       hideKeyboard.hashCode ^
-      globalMacros.hashCode;
+      globalMacros.hashCode ^
+      heartbeatIntervalSecs.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -280,7 +286,8 @@ class ConfigSnapshot {
           flashCount == other.flashCount &&
           macrosColumns == other.macrosColumns &&
           hideKeyboard == other.hideKeyboard &&
-          globalMacros == other.globalMacros;
+          globalMacros == other.globalMacros &&
+          heartbeatIntervalSecs == other.heartbeatIntervalSecs;
 }
 
 @freezed
@@ -293,6 +300,15 @@ sealed class PatchAppEvent with _$PatchAppEvent {
     required String messageId,
     required String peerId,
   }) = PatchAppEvent_MessageAcked;
+
+  /// Delivery progress/result for a critical message we sent.
+  const factory PatchAppEvent.messageDelivery({
+    required String messageId,
+    required int delivered,
+    required int total,
+    required bool failed,
+    required List<String> failedPeers,
+  }) = PatchAppEvent_MessageDelivery;
   const factory PatchAppEvent.peerUpdated(PeerPresence field0) =
       PatchAppEvent_PeerUpdated;
   const factory PatchAppEvent.peerExpired({required String peerId}) =

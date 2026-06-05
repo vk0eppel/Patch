@@ -74,17 +74,33 @@ pub async fn init(config_dir: Option<String>) -> Result<()> {
             // Retransmit poller for unacked critical messages. drain_retransmits
             // increments each entry's retry counter and surfaces it until it is
             // acked or exceeds MAX_RETRIES, so a fixed tick gives bounded retries.
+            // When an entry exhausts its retries it comes back as a `failure`,
+            // which we surface to the UI as a failed `MessageDelivery` naming the
+            // peers that never ACKed.
             let rt_transport = Arc::clone(&transport);
             let rt_reliability = Arc::clone(&reliability);
+            let rt_state = state.clone();
             tokio::spawn(async move {
                 let mut interval = tokio::time::interval(std::time::Duration::from_millis(400));
                 loop {
                     interval.tick().await;
                     let due = rt_reliability.lock().await.drain_retransmits();
-                    for (_id, bytes, targets) in due {
+                    for (_id, bytes, targets) in due.retransmits {
                         for addr in targets {
                             let _ = rt_transport.send_to(bytes.clone(), addr).await;
                         }
+                    }
+                    for failure in due.failures {
+                        let failed_peers = resolve_peer_names(&rt_state, &failure.unacked).await;
+                        rt_state
+                            .publish(AppEvent::MessageDelivery {
+                                message_id: failure.message_id,
+                                delivered: failure.acked,
+                                total: failure.total,
+                                failed: true,
+                                failed_peers,
+                            })
+                            .await;
                     }
                 }
             });
@@ -121,6 +137,32 @@ pub fn engine() -> &'static EngineHandle {
         .expect("patch_core::api::init() must be called before any other API function")
 }
 
+/// Map socket addresses (reliability targets) back to peer display names for the
+/// "not delivered to …" alert, falling back to the raw `ip:port` if unknown.
+#[frb(ignore)]
+async fn resolve_peer_names(state: &AppState, addrs: &[SocketAddr]) -> Vec<String> {
+    if addrs.is_empty() {
+        return Vec::new();
+    }
+    let peers = state.get_peers().await;
+    addrs
+        .iter()
+        .map(|addr| {
+            peers
+                .iter()
+                .find(|p| {
+                    p.address
+                        .parse::<IpAddr>()
+                        .map(|ip| SocketAddr::new(ip, p.osc_port))
+                        .map(|sa| sa == *addr)
+                        .unwrap_or(false)
+                })
+                .map(|p| p.peer_name.clone())
+                .unwrap_or_else(|| addr.to_string())
+        })
+        .collect()
+}
+
 // ── Messaging ────────────────────────────────────────────────────────────────
 
 /// Sends a message on a channel. Returns the message_id.
@@ -141,15 +183,28 @@ pub async fn send_message(channel_id: String, payload: String, priority: i32) ->
         .send_to_peers(bytes.clone(), &h.state, &config)
         .await?;
     let id = msg.message_id.to_string();
+    let message_id = msg.message_id;
+    let is_critical = msg.is_critical();
+    let target_count = targets.len();
     // Critical messages require ACKs — register for retransmit until every
     // contacted peer acknowledges (or MAX_RETRIES is exceeded).
-    if msg.is_critical() && !targets.is_empty() {
-        h.reliability
-            .lock()
-            .await
-            .track(msg.message_id, bytes, targets);
+    if is_critical && target_count > 0 {
+        h.reliability.lock().await.track(message_id, bytes, targets);
     }
     h.state.store_message(msg).await;
+    // A critical with no peers to send to can never be delivered — surface that
+    // immediately (the retransmit poller only knows about *tracked* messages).
+    if is_critical && target_count == 0 {
+        h.state
+            .publish(AppEvent::MessageDelivery {
+                message_id,
+                delivered: 0,
+                total: 0,
+                failed: true,
+                failed_peers: Vec::new(),
+            })
+            .await;
+    }
     Ok(id)
 }
 
@@ -233,6 +288,9 @@ pub struct ConfigSnapshot {
     pub macros_columns: u8,
     pub hide_keyboard: bool,
     pub global_macros: Vec<MacroMessage>,
+    /// Presence heartbeat interval (seconds). The UI derives its peer
+    /// online/amber/grey dot thresholds from this.
+    pub heartbeat_interval_secs: u32,
 }
 
 pub async fn get_config() -> ConfigSnapshot {
@@ -248,6 +306,7 @@ pub async fn get_config() -> ConfigSnapshot {
         macros_columns: cfg.macros_columns,
         hide_keyboard: cfg.hide_keyboard,
         global_macros: cfg.global_macros,
+        heartbeat_interval_secs: cfg.heartbeat_interval_secs as u32,
     }
 }
 
@@ -638,6 +697,14 @@ pub enum PatchAppEvent {
         message_id: String,
         peer_id: String,
     },
+    /// Delivery progress/result for a critical message we sent.
+    MessageDelivery {
+        message_id: String,
+        delivered: u32,
+        total: u32,
+        failed: bool,
+        failed_peers: Vec<String>,
+    },
     PeerUpdated(crate::osc::types::PeerPresence),
     PeerExpired {
         peer_id: String,
@@ -663,6 +730,19 @@ impl From<AppEvent> for PatchAppEvent {
             } => Self::MessageAcked {
                 message_id: message_id.to_string(),
                 peer_id: peer_id.to_string(),
+            },
+            AppEvent::MessageDelivery {
+                message_id,
+                delivered,
+                total,
+                failed,
+                failed_peers,
+            } => Self::MessageDelivery {
+                message_id: message_id.to_string(),
+                delivered,
+                total,
+                failed,
+                failed_peers,
             },
             AppEvent::PeerUpdated(p) => Self::PeerUpdated(p),
             AppEvent::PeerExpired(id) => Self::PeerExpired {

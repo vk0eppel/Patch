@@ -31,6 +31,34 @@ class PatchMessage {
       );
 }
 
+/// Delivery progress/result for a critical message *we* sent (only the sender
+/// tracks ACKs, so only the sender's own critical rows carry one of these).
+class MessageDeliveryStatus {
+  final int delivered;
+  final int total;
+  final bool failed;
+  final List<String> failedPeers;
+
+  const MessageDeliveryStatus({
+    required this.delivered,
+    required this.total,
+    required this.failed,
+    this.failedPeers = const [],
+  });
+
+  bool get isComplete => !failed && total > 0 && delivered >= total;
+  bool get inProgress => !failed && delivered < total;
+
+  factory MessageDeliveryStatus.fromEvent(Map<String, dynamic> e) =>
+      MessageDeliveryStatus(
+        delivered: (e['delivered'] as num).toInt(),
+        total: (e['total'] as num).toInt(),
+        failed: e['failed'] as bool,
+        failedPeers:
+            ((e['failed_peers'] as List<dynamic>?) ?? const []).cast<String>(),
+      );
+}
+
 class SessionMeta {
   final String slug;
   final String name;

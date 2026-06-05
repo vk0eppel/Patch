@@ -1488,8 +1488,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ConfigSnapshot dco_decode_config_snapshot(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 10)
-      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    if (arr.length != 11)
+      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
     return ConfigSnapshot(
       clientName: dco_decode_String(arr[0]),
       oscPort: dco_decode_u_16(arr[1]),
@@ -1501,6 +1501,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       macrosColumns: dco_decode_u_8(arr[7]),
       hideKeyboard: dco_decode_bool(arr[8]),
       globalMacros: dco_decode_list_macro_message(arr[9]),
+      heartbeatIntervalSecs: dco_decode_u_32(arr[10]),
     );
   }
 
@@ -1634,20 +1635,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           peerId: dco_decode_String(raw[2]),
         );
       case 2:
+        return PatchAppEvent_MessageDelivery(
+          messageId: dco_decode_String(raw[1]),
+          delivered: dco_decode_u_32(raw[2]),
+          total: dco_decode_u_32(raw[3]),
+          failed: dco_decode_bool(raw[4]),
+          failedPeers: dco_decode_list_String(raw[5]),
+        );
+      case 3:
         return PatchAppEvent_PeerUpdated(
           dco_decode_box_autoadd_peer_presence(raw[1]),
         );
-      case 3:
-        return PatchAppEvent_PeerExpired(peerId: dco_decode_String(raw[1]));
       case 4:
+        return PatchAppEvent_PeerExpired(peerId: dco_decode_String(raw[1]));
+      case 5:
         return PatchAppEvent_ChannelFlash(
           dco_decode_box_autoadd_channel_flash(raw[1]),
         );
-      case 5:
-        return PatchAppEvent_ChannelListUpdated();
       case 6:
-        return PatchAppEvent_ClientNameChanged(name: dco_decode_String(raw[1]));
+        return PatchAppEvent_ChannelListUpdated();
       case 7:
+        return PatchAppEvent_ClientNameChanged(name: dco_decode_String(raw[1]));
+      case 8:
         return PatchAppEvent_PermissionDenied(
           context: dco_decode_String(raw[1]),
         );
@@ -1923,6 +1932,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_macrosColumns = sse_decode_u_8(deserializer);
     var var_hideKeyboard = sse_decode_bool(deserializer);
     var var_globalMacros = sse_decode_list_macro_message(deserializer);
+    var var_heartbeatIntervalSecs = sse_decode_u_32(deserializer);
     return ConfigSnapshot(
       clientName: var_clientName,
       oscPort: var_oscPort,
@@ -1934,6 +1944,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       macrosColumns: var_macrosColumns,
       hideKeyboard: var_hideKeyboard,
       globalMacros: var_globalMacros,
+      heartbeatIntervalSecs: var_heartbeatIntervalSecs,
     );
   }
 
@@ -2138,20 +2149,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           peerId: var_peerId,
         );
       case 2:
+        var var_messageId = sse_decode_String(deserializer);
+        var var_delivered = sse_decode_u_32(deserializer);
+        var var_total = sse_decode_u_32(deserializer);
+        var var_failed = sse_decode_bool(deserializer);
+        var var_failedPeers = sse_decode_list_String(deserializer);
+        return PatchAppEvent_MessageDelivery(
+          messageId: var_messageId,
+          delivered: var_delivered,
+          total: var_total,
+          failed: var_failed,
+          failedPeers: var_failedPeers,
+        );
+      case 3:
         var var_field0 = sse_decode_box_autoadd_peer_presence(deserializer);
         return PatchAppEvent_PeerUpdated(var_field0);
-      case 3:
+      case 4:
         var var_peerId = sse_decode_String(deserializer);
         return PatchAppEvent_PeerExpired(peerId: var_peerId);
-      case 4:
+      case 5:
         var var_field0 = sse_decode_box_autoadd_channel_flash(deserializer);
         return PatchAppEvent_ChannelFlash(var_field0);
-      case 5:
-        return PatchAppEvent_ChannelListUpdated();
       case 6:
+        return PatchAppEvent_ChannelListUpdated();
+      case 7:
         var var_name = sse_decode_String(deserializer);
         return PatchAppEvent_ClientNameChanged(name: var_name);
-      case 7:
+      case 8:
         var var_context = sse_decode_String(deserializer);
         return PatchAppEvent_PermissionDenied(context: var_context);
       default:
@@ -2431,6 +2455,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_8(self.macrosColumns, serializer);
     sse_encode_bool(self.hideKeyboard, serializer);
     sse_encode_list_macro_message(self.globalMacros, serializer);
+    sse_encode_u_32(self.heartbeatIntervalSecs, serializer);
   }
 
   @protected
@@ -2611,22 +2636,35 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(1, serializer);
         sse_encode_String(messageId, serializer);
         sse_encode_String(peerId, serializer);
-      case PatchAppEvent_PeerUpdated(field0: final field0):
+      case PatchAppEvent_MessageDelivery(
+        messageId: final messageId,
+        delivered: final delivered,
+        total: final total,
+        failed: final failed,
+        failedPeers: final failedPeers,
+      ):
         sse_encode_i_32(2, serializer);
+        sse_encode_String(messageId, serializer);
+        sse_encode_u_32(delivered, serializer);
+        sse_encode_u_32(total, serializer);
+        sse_encode_bool(failed, serializer);
+        sse_encode_list_String(failedPeers, serializer);
+      case PatchAppEvent_PeerUpdated(field0: final field0):
+        sse_encode_i_32(3, serializer);
         sse_encode_box_autoadd_peer_presence(field0, serializer);
       case PatchAppEvent_PeerExpired(peerId: final peerId):
-        sse_encode_i_32(3, serializer);
+        sse_encode_i_32(4, serializer);
         sse_encode_String(peerId, serializer);
       case PatchAppEvent_ChannelFlash(field0: final field0):
-        sse_encode_i_32(4, serializer);
+        sse_encode_i_32(5, serializer);
         sse_encode_box_autoadd_channel_flash(field0, serializer);
       case PatchAppEvent_ChannelListUpdated():
-        sse_encode_i_32(5, serializer);
-      case PatchAppEvent_ClientNameChanged(name: final name):
         sse_encode_i_32(6, serializer);
+      case PatchAppEvent_ClientNameChanged(name: final name):
+        sse_encode_i_32(7, serializer);
         sse_encode_String(name, serializer);
       case PatchAppEvent_PermissionDenied(context: final context):
-        sse_encode_i_32(7, serializer);
+        sse_encode_i_32(8, serializer);
         sse_encode_String(context, serializer);
     }
   }
