@@ -632,6 +632,62 @@ impl AppState {
         Ok(())
     }
 
+    // ── Global macros ─────────────────────────────────────────────────────────
+    //
+    // Stored on the config (not in the channels map) since they aren't tied to a
+    // channel. Persisted like any other config mutation; the UI refreshes via the
+    // bridge's `config_updated` after the call (mirrors static-peer edits).
+
+    /// Add or replace a global macro (matched by label).
+    pub async fn upsert_global_macro(
+        &self,
+        macro_msg: channel::MacroMessage,
+    ) -> anyhow::Result<()> {
+        {
+            let mut cfg = self.0.config.write().await;
+            if let Some(pos) = cfg
+                .global_macros
+                .iter()
+                .position(|m| m.label == macro_msg.label)
+            {
+                cfg.global_macros[pos] = macro_msg;
+            } else {
+                cfg.global_macros.push(macro_msg);
+            }
+        }
+        self.save_config().await
+    }
+
+    /// Remove a global macro by label.
+    pub async fn delete_global_macro(&self, label: &str) -> anyhow::Result<()> {
+        self.0
+            .config
+            .write()
+            .await
+            .global_macros
+            .retain(|m| m.label != label);
+        self.save_config().await
+    }
+
+    /// Reorder global macros to match `ordered_labels` (drag-to-reorder); macros
+    /// not named are kept at the end, unknown labels ignored — same contract as
+    /// [`reorder_macros`].
+    pub async fn reorder_global_macros(&self, ordered_labels: Vec<String>) -> anyhow::Result<()> {
+        {
+            let mut cfg = self.0.config.write().await;
+            let mut remaining = std::mem::take(&mut cfg.global_macros);
+            let mut reordered = Vec::with_capacity(remaining.len());
+            for label in &ordered_labels {
+                if let Some(pos) = remaining.iter().position(|m| &m.label == label) {
+                    reordered.push(remaining.remove(pos));
+                }
+            }
+            reordered.append(&mut remaining);
+            cfg.global_macros = reordered;
+        }
+        self.save_config().await
+    }
+
     /// Remove a macro from a channel by label.
     pub async fn delete_macro(&self, channel_id: &str, label: &str) -> anyhow::Result<()> {
         {
@@ -863,6 +919,74 @@ mod tests {
     async fn reorder_macros_unknown_channel_errors() {
         let st = test_state();
         assert!(st.reorder_macros("nope", vec!["x".into()]).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn global_macros_upsert_delete_reorder_persist() {
+        use channel::MacroMessage;
+        let _guard = config::test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        config::set_data_dir(dir.clone());
+
+        let st = test_state();
+        let mk = |l: &str| MacroMessage {
+            label: l.into(),
+            payload: l.into(),
+            key_binding: None,
+            priority: 1,
+        };
+        let labels = |c: &Config| {
+            c.global_macros
+                .iter()
+                .map(|m| m.label.clone())
+                .collect::<Vec<_>>()
+        };
+
+        st.upsert_global_macro(mk("A")).await.unwrap();
+        st.upsert_global_macro(mk("B")).await.unwrap();
+        st.upsert_global_macro(mk("C")).await.unwrap();
+        // Re-upsert with an existing label replaces in place (no duplicate).
+        st.upsert_global_macro(MacroMessage {
+            label: "B".into(),
+            payload: "B2".into(),
+            key_binding: None,
+            priority: 2,
+        })
+        .await
+        .unwrap();
+        let cfg = st.config().await;
+        assert_eq!(labels(&cfg), vec!["A", "B", "C"]);
+        assert_eq!(
+            cfg.global_macros
+                .iter()
+                .find(|m| m.label == "B")
+                .unwrap()
+                .payload,
+            "B2"
+        );
+
+        // Reorder: C,A first; B (unlisted) appended; unknown label ignored.
+        st.reorder_global_macros(vec!["C".into(), "A".into(), "ghost".into()])
+            .await
+            .unwrap();
+        assert_eq!(labels(&st.config().await), vec!["C", "A", "B"]);
+
+        st.delete_global_macro("A").await.unwrap();
+        assert_eq!(labels(&st.config().await), vec!["C", "B"]);
+
+        // Persisted to disk.
+        let loaded = Config::load_or_default().unwrap();
+        assert_eq!(
+            loaded
+                .global_macros
+                .iter()
+                .map(|m| m.label.clone())
+                .collect::<Vec<_>>(),
+            vec!["C", "B"]
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]

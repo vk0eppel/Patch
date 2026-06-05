@@ -32,6 +32,11 @@ class ChannelMacro {
 /// by channel with a thin colour-coded divider and channel name label.
 class MacrosPanel extends StatelessWidget {
   final List<ChannelMacro> macros;
+
+  /// Macros shown on every channel, in their own "GLOBAL" group below the
+  /// per-channel ones. Each carries an empty [ChannelMacro.channelId] sentinel;
+  /// [onMacro] routes those to the currently-selected channel(s).
+  final List<ChannelMacro> globalMacros;
   final bool isMulti;
   final int columns;
   final ValueChanged<ChannelMacro> onMacro;
@@ -40,6 +45,7 @@ class MacrosPanel extends StatelessWidget {
   const MacrosPanel({
     super.key,
     required this.macros,
+    this.globalMacros = const [],
     required this.isMulti,
     required this.columns,
     required this.onMacro,
@@ -81,7 +87,7 @@ class MacrosPanel extends StatelessWidget {
           ),
           const Divider(color: PatchTheme.border, height: 1),
           // ── Content ─────────────────────────────────────────────────────
-          if (macros.isEmpty)
+          if (macros.isEmpty && globalMacros.isEmpty)
             const Expanded(
               child: Center(
                 child: Text(
@@ -90,10 +96,20 @@ class MacrosPanel extends StatelessWidget {
                 ),
               ),
             )
-          else if (!isMulti)
-            ..._buildFlatRows(macros)
-          else
-            ..._buildGroupedRows(macros),
+          else ...[
+            if (!isMulti)
+              ..._buildFlatRows(macros)
+            else
+              ..._buildGroupedRows(macros),
+            // Global macros — shown on every channel, in their own group.
+            if (globalMacros.isNotEmpty) ...[
+              const _ChannelGroupHeader(
+                color: PatchTheme.accent,
+                channelId: 'GLOBAL',
+              ),
+              ..._rowsFrom(globalMacros, showChannelBar: false),
+            ],
+          ],
         ],
       ),
     );

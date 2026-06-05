@@ -35,6 +35,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _hideKeyboard = true;
   int _macrosColumns = 1;
 
+  // Global macros (shown on every channel)
+  List<MacroMessage> _globalMacros = [];
+
   // Network interfaces
   List<Map<String, String>> _interfaces = [];
   String? _selectedInterface; // null = auto
@@ -72,6 +75,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _flashCount = (data['flash_count'] as int?) ?? 4;
           _hideKeyboard = (data['hide_keyboard'] as bool?) ?? true;
           _macrosColumns = (data['macros_columns'] as int?) ?? 1;
+          _globalMacros = ((data['global_macros'] as List<dynamic>?) ?? [])
+              .map((m) => MacroMessage.fromJson(m as Map<String, dynamic>))
+              .toList();
           _staticPeers = List<Map<String, dynamic>>.from(
             (data['static_peers'] as List<dynamic>? ?? [])
                 .map((p) => Map<String, dynamic>.from(p as Map)),
@@ -499,6 +505,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   existingIds: _channels.map((c) => c.id).toSet(),
                 ),
               )),
+
+          const SizedBox(height: 32),
+
+          // ── Global macros ─────────────────────────────────────────────
+          const _SectionHeader('Global Macros'),
+          const SizedBox(height: 4),
+          const Text(
+            'Macros shown on every channel\'s panel. Firing one sends on the '
+            'channel(s) you currently have selected — for common callouts you '
+            'don\'t want to recreate on each channel.',
+            style: TextStyle(
+              color: PatchTheme.textSecondary,
+              fontSize: PatchTheme.fontSizeSmall,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _GlobalMacrosEditor(macros: _globalMacros, bridge: widget.bridge),
         ],
       ),
     );
@@ -701,7 +724,16 @@ class _ChannelMacroEditor extends StatelessWidget {
                   icon: const Icon(Icons.add, size: 16),
                   label: const Text('Add'),
                   style: TextButton.styleFrom(foregroundColor: PatchTheme.accent),
-                  onPressed: () => _showMacroDialog(context, channel, bridge),
+                  onPressed: () => _showMacroEditDialog(
+                    context,
+                    onSave: (l, p, k, pr) => bridge.upsertMacro(
+                      channelId: channel.id,
+                      label: l,
+                      payload: p,
+                      keyBinding: k,
+                      priority: pr,
+                    ),
+                  ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.edit_outlined, size: 16, color: PatchTheme.textMuted),
@@ -740,10 +772,20 @@ class _ChannelMacroEditor extends StatelessWidget {
                 return _MacroRow(
                   key: ValueKey('${channel.id}:${s.label}'),
                   shortcut: s,
-                  channelId: channel.id,
-                  bridge: bridge,
                   index: i,
-                  onEdit: () => _showMacroDialog(context, channel, bridge, existing: s),
+                  onEdit: () => _showMacroEditDialog(
+                    context,
+                    existing: s,
+                    onSave: (l, p, k, pr) => bridge.upsertMacro(
+                      channelId: channel.id,
+                      label: l,
+                      payload: p,
+                      keyBinding: k,
+                      priority: pr,
+                    ),
+                  ),
+                  onDelete: () =>
+                      bridge.deleteMacro(channelId: channel.id, label: s.label),
                 );
               },
               // onReorderItem is newer than the repo's supported Flutter range;
@@ -837,11 +879,15 @@ class _ChannelMacroEditor extends StatelessWidget {
     );
   }
 
-  static void _showMacroDialog(
-    BuildContext context,
-    PatchChannel channel,
-    BridgeClient bridge, {
+  /// Shared macro create/edit dialog. `onSave(label, payload, keyBinding,
+  /// priority)` receives the trimmed/validated values; the channel and global
+  /// editors pass their own persistence call.
+  static void _showMacroEditDialog(
+    BuildContext context, {
     MacroMessage? existing,
+    required void Function(
+            String label, String payload, String? keyBinding, int priority)
+        onSave,
   }) {
     final labelCtrl = TextEditingController(text: existing?.label ?? '');
     final payloadCtrl = TextEditingController(text: existing?.payload ?? '');
@@ -920,12 +966,11 @@ class _ChannelMacroEditor extends StatelessWidget {
                 final label = labelCtrl.text.trim();
                 final payload = payloadCtrl.text.trim();
                 if (label.isEmpty || payload.isEmpty) return;
-                bridge.upsertMacro(
-                  channelId: channel.id,
-                  label: label,
-                  payload: payload,
-                  keyBinding: keyCtrl.text.trim().isEmpty ? null : keyCtrl.text.trim(),
-                  priority: priority,
+                onSave(
+                  label,
+                  payload,
+                  keyCtrl.text.trim().isEmpty ? null : keyCtrl.text.trim(),
+                  priority,
                 );
                 Navigator.pop(ctx);
               },
@@ -938,21 +983,137 @@ class _ChannelMacroEditor extends StatelessWidget {
   }
 }
 
+/// Editor card for the global macros (shown on every channel). Mirrors the
+/// per-channel card minus the channel header/flash settings; reuses the shared
+/// macro dialog and [_MacroRow].
+class _GlobalMacrosEditor extends StatelessWidget {
+  final List<MacroMessage> macros;
+  final BridgeClient bridge;
+
+  const _GlobalMacrosEditor({required this.macros, required this.bridge});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: PatchTheme.surface,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: PatchTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: PatchTheme.border)),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(6),
+                topRight: Radius.circular(6),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: PatchTheme.accent,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'GLOBAL',
+                  style: TextStyle(
+                    color: PatchTheme.textPrimary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: PatchTheme.fontSizeSmall,
+                    letterSpacing: 1,
+                  ),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('Add'),
+                  style: TextButton.styleFrom(foregroundColor: PatchTheme.accent),
+                  onPressed: () => _ChannelMacroEditor._showMacroEditDialog(
+                    context,
+                    onSave: (l, p, k, pr) => bridge.upsertGlobalMacro(
+                      label: l,
+                      payload: p,
+                      keyBinding: k,
+                      priority: pr,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (macros.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(14),
+              child: Text(
+                'No global macros yet',
+                style: TextStyle(
+                  color: PatchTheme.textMuted,
+                  fontSize: PatchTheme.fontSizeSmall,
+                ),
+              ),
+            )
+          else
+            ReorderableListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              buildDefaultDragHandles: false,
+              itemCount: macros.length,
+              itemBuilder: (ctx, i) {
+                final s = macros[i];
+                return _MacroRow(
+                  key: ValueKey('__global__:${s.label}'),
+                  shortcut: s,
+                  index: i,
+                  onEdit: () => _ChannelMacroEditor._showMacroEditDialog(
+                    context,
+                    existing: s,
+                    onSave: (l, p, k, pr) => bridge.upsertGlobalMacro(
+                      label: l,
+                      payload: p,
+                      keyBinding: k,
+                      priority: pr,
+                    ),
+                  ),
+                  onDelete: () => bridge.deleteGlobalMacro(s.label),
+                );
+              },
+              // ignore: deprecated_member_use
+              onReorder: (oldIndex, newIndex) {
+                if (newIndex > oldIndex) newIndex -= 1;
+                final labels = macros.map((m) => m.label).toList();
+                labels.insert(newIndex, labels.removeAt(oldIndex));
+                bridge.reorderGlobalMacros(labels);
+              },
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _MacroRow extends StatelessWidget {
   final MacroMessage shortcut;
-  final String channelId;
-  final BridgeClient bridge;
   final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
-  /// Position in the channel's macro list — used to anchor the drag handle.
+  /// Position in the list — used to anchor the drag handle.
   final int index;
 
   const _MacroRow({
     super.key,
     required this.shortcut,
-    required this.channelId,
-    required this.bridge,
     required this.onEdit,
+    required this.onDelete,
     required this.index,
   });
 
@@ -1035,7 +1196,7 @@ class _MacroRow extends StatelessWidget {
           // Delete
           IconButton(
             icon: const Icon(Icons.delete_outline, size: 16, color: PatchTheme.textMuted),
-            onPressed: () => bridge.deleteMacro(channelId: channelId, label: shortcut.label),
+            onPressed: onDelete,
             tooltip: 'Delete',
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),

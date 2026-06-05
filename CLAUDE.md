@@ -138,6 +138,8 @@ upsert_channel(id, display_name, color) / delete_channel(id)
 reset_channels()                                                  // delete all channels, re-seed factory defaults
 upsert_macro(channel_id, label, payload, priority, key_binding) / delete_macro(channel_id, label)
 reorder_macros(channel_id, ordered_labels)                       // drag-to-reorder; unlisted labels kept, unknown ignored
+upsert_global_macro(label, payload, priority, key_binding) / delete_global_macro(label)  // shown on every channel
+reorder_global_macros(ordered_labels)                            // drag-to-reorder global macros
 save_session(name) -> SessionSaved
 load_session(slug) -> SessionLoaded
 list_sessions() -> Vec<SessionMeta>
@@ -251,7 +253,9 @@ Channels can be created and deleted at runtime. Changes are persisted to `patch.
 ### Macros (MacroMessage)
 Per-channel macro buttons appear in a **vertical side panel** on the right side of the message area (toggled with the keyboard icon in the `_ChannelView` header). The panel shows all macros simultaneously with no scroll — buttons share the panel height equally. Users configure 1, 2, or 3 columns (`macros_columns` in `patch.toml`, set in **Settings → Behavior → Macros panel columns**); each column is 160 px wide so the panel grows from 160 px (1 column) to 480 px (3 columns). The panel is implemented in `macros_panel.dart`, which also exports the `ChannelMacro` type used by `home_screen.dart`.
 Each macro has a `label`, `payload`, optional `key_binding` (e.g. `"F1"`), and `priority`.
-Macros can be created, edited, deleted, and **drag-reordered** in the Settings screen (Channels & Macros section). Reordering goes through `reorder_macros` (a `ReorderableListView` in `_ChannelMacroEditor`, each `_MacroRow` carrying its own `ReorderableDragStartListener` handle); the panel and sidebar render in `Vec` order, so the new order flows through automatically and persists to `patch.toml`.
+Macros can be created, edited, deleted, and **drag-reordered** in the Settings screen (Channels & Macros section).
+
+**Global macros** (`Config.global_macros`, surfaced via `ConfigSnapshot.global_macros`) are a top-level list shown in their own **GLOBAL** group at the bottom of the macros panel on *every* channel. Firing one (tap or F-key) sends on the **currently-selected channel(s)** — identical dispatch to a per-channel macro, just configured once instead of duplicated per channel (it is **not** a crew-wide broadcast — that's the separate "ALL channel" item). Per-channel macros take F-key precedence over a global on the same key. Edited in **Settings → Global Macros** via `upsert_global_macro`/`delete_global_macro`/`reorder_global_macros`. In `home_screen.dart`, global macros are wrapped as `ChannelMacro` with an **empty `channelId` sentinel**; `_fireMacro` routes empty-id macros to every selected channel. The shared macro create/edit dialog (`_ChannelMacroEditor._showMacroEditDialog`, callback-driven) and `_MacroRow` (now `onDelete`-callback driven) are reused by both the per-channel and global editors. Reordering goes through `reorder_macros` (a `ReorderableListView` in `_ChannelMacroEditor`, each `_MacroRow` carrying its own `ReorderableDragStartListener` handle); the panel and sidebar render in `Vec` order, so the new order flows through automatically and persists to `patch.toml`.
 
 ---
 

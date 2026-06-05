@@ -86,6 +86,12 @@ pub struct Config {
     /// Hide the software keyboard on channel switch (iOS/Android). Default on.
     #[serde(default = "default_true")]
     pub hide_keyboard: bool,
+    /// Macros shown on every channel's panel (configured once, not tied to a
+    /// channel). Fired on the currently-selected channel(s), like a per-channel
+    /// macro — so common callouts (YES / NO / COPY …) live in one place instead
+    /// of being duplicated onto each channel.
+    #[serde(default)]
+    pub global_macros: Vec<MacroMessage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,6 +116,7 @@ impl Default for Config {
             flash_count: 4,
             macros_columns: 1,
             hide_keyboard: true,
+            global_macros: Vec::new(),
         }
     }
 }

@@ -232,6 +232,7 @@ pub struct ConfigSnapshot {
     pub flash_count: u8,
     pub macros_columns: u8,
     pub hide_keyboard: bool,
+    pub global_macros: Vec<MacroMessage>,
 }
 
 pub async fn get_config() -> ConfigSnapshot {
@@ -246,6 +247,7 @@ pub async fn get_config() -> ConfigSnapshot {
         flash_count: cfg.flash_count,
         macros_columns: cfg.macros_columns,
         hide_keyboard: cfg.hide_keyboard,
+        global_macros: cfg.global_macros,
     }
 }
 
@@ -467,6 +469,41 @@ pub async fn reorder_macros(channel_id: String, ordered_labels: Vec<String>) -> 
         .state
         .reorder_macros(&channel_id, ordered_labels)
         .await
+}
+
+// ── Global macros ────────────────────────────────────────────────────────────
+//
+// Shown on every channel's macro panel; fired on the currently-selected
+// channel(s) by the UI. Stored on the config, surfaced via `ConfigSnapshot`.
+
+pub async fn upsert_global_macro(
+    label: String,
+    payload: String,
+    priority: i32,
+    key_binding: Option<String>,
+) -> Result<()> {
+    let label = label.trim().to_string();
+    if label.is_empty() {
+        anyhow::bail!("label must be non-empty");
+    }
+    engine()
+        .state
+        .upsert_global_macro(MacroMessage {
+            label,
+            payload,
+            key_binding,
+            priority,
+        })
+        .await
+}
+
+pub async fn delete_global_macro(label: String) -> Result<()> {
+    engine().state.delete_global_macro(&label).await
+}
+
+/// Reorder global macros to match `ordered_labels` (drag-to-reorder).
+pub async fn reorder_global_macros(ordered_labels: Vec<String>) -> Result<()> {
+    engine().state.reorder_global_macros(ordered_labels).await
 }
 
 // ── Sessions ─────────────────────────────────────────────────────────────────

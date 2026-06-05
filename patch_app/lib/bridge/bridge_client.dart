@@ -182,6 +182,7 @@ class BridgeClient {
           'flash_count': cfg.flashCount,
           'macros_columns': cfg.macrosColumns,
           'hide_keyboard': cfg.hideKeyboard,
+          'global_macros': cfg.globalMacros.map(_macroToMap).toList(),
         },
       });
     } catch (e) {
@@ -292,6 +293,46 @@ class BridgeClient {
   Future<void> reorderMacros(String channelId, List<String> labels) async {
     try {
       await rust.reorderMacros(channelId: channelId, orderedLabels: labels);
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
+  // ── Global macros (shown on every channel; fired on the current channel) ────
+
+  Future<void> upsertGlobalMacro({
+    required String label,
+    required String payload,
+    String? keyBinding,
+    int priority = 1,
+  }) async {
+    try {
+      await rust.upsertGlobalMacro(
+        label: label,
+        payload: payload,
+        priority: priority,
+        keyBinding: keyBinding,
+      );
+      _emit({'event': 'config_updated'});
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
+  Future<void> deleteGlobalMacro(String label) async {
+    try {
+      await rust.deleteGlobalMacro(label: label);
+      _emit({'event': 'config_updated'});
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
+  /// Reorder global macros to match [labels] (drag-to-reorder).
+  Future<void> reorderGlobalMacros(List<String> labels) async {
+    try {
+      await rust.reorderGlobalMacros(orderedLabels: labels);
+      _emit({'event': 'config_updated'});
     } catch (e) {
       _emitError(e);
     }

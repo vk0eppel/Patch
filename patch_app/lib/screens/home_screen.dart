@@ -74,6 +74,9 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _showMacros = false;
   int _macrosColumns = 1;
   bool _hideKeyboard = true;
+  /// Macros shown on every channel (configured once); fired on the currently-
+  /// selected channel(s). Sourced from the engine config via `getConfig`.
+  List<MacroMessage> _globalMacros = [];
   StreamSubscription<Map<String, dynamic>>? _eventSub;
 
   /// Coalesces `peer_updated` bursts into one `getPeers()` fetch. `last_seen` is
@@ -113,6 +116,34 @@ class _HomeScreenState extends State<HomeScreen> {
     ];
   }
 
+  /// Global macros wrapped for the panel. The empty `channelId` sentinel marks
+  /// them as global so `_fireMacro` routes them to the selected channel(s).
+  List<ChannelMacro> get _aggregatedGlobalMacros => [
+        for (final gm in _globalMacros)
+          ChannelMacro(channelId: '', channelColor: PatchTheme.accent, macro: gm),
+      ];
+
+  /// Send a macro. A per-channel macro goes to its own channel; a global macro
+  /// (empty `channelId`) fires on every currently-selected channel — as if it
+  /// existed on each of them.
+  void _fireMacro(ChannelMacro cm) {
+    if (cm.channelId.isEmpty) {
+      for (final ch in _selectedChannels) {
+        widget.bridge.sendMessage(
+          channelId: ch.id,
+          payload: cm.macro.payload,
+          priority: cm.macro.priority,
+        );
+      }
+    } else {
+      widget.bridge.sendMessage(
+        channelId: cm.channelId,
+        payload: cm.macro.payload,
+        priority: cm.macro.priority,
+      );
+    }
+  }
+
   // ── Lifecycle ───────────────────────────────────────────────────────────────
 
   @override
@@ -147,13 +178,20 @@ class _HomeScreenState extends State<HomeScreen> {
     if (event is! KeyDownEvent) return false;
     final label = _fKeyLabels[event.logicalKey];
     if (label == null) return false;
+    // Per-channel macros take precedence over a global macro on the same key.
     for (final cs in _aggregatedMacros) {
       if (cs.macro.keyBinding == label) {
-        widget.bridge.sendMessage(
-          channelId: cs.channelId,
-          payload: cs.macro.payload,
-          priority: cs.macro.priority,
-        );
+        _fireMacro(cs);
+        return true; // consumed
+      }
+    }
+    for (final gm in _globalMacros) {
+      if (gm.keyBinding == label) {
+        _fireMacro(ChannelMacro(
+          channelId: '',
+          channelColor: PatchTheme.accent,
+          macro: gm,
+        ));
         return true; // consumed
       }
     }
@@ -283,6 +321,10 @@ class _HomeScreenState extends State<HomeScreen> {
               (event['data']['macros_columns'] as int?) ?? 1;
           _hideKeyboard =
               (event['data']['hide_keyboard'] as bool?) ?? true;
+          _globalMacros =
+              ((event['data']['global_macros'] as List<dynamic>?) ?? [])
+                  .map((m) => MacroMessage.fromJson(m as Map<String, dynamic>))
+                  .toList();
         });
 
       case 'session_saved':
@@ -399,13 +441,10 @@ class _HomeScreenState extends State<HomeScreen> {
               width: _kMacroColumnWidth * _macrosColumns,
               child: MacrosPanel(
                 macros: _aggregatedMacros,
+                globalMacros: _aggregatedGlobalMacros,
                 isMulti: _selectedIds.length > 1,
                 columns: _macrosColumns,
-                onMacro: (cm) => widget.bridge.sendMessage(
-                  channelId: cm.channelId,
-                  payload: cm.macro.payload,
-                  priority: cm.macro.priority,
-                ),
+                onMacro: _fireMacro,
                 onClose: () => setState(() => _showMacros = false),
               ),
             ),

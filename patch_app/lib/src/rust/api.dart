@@ -176,6 +176,27 @@ Future<void> reorderMacros({
   orderedLabels: orderedLabels,
 );
 
+Future<void> upsertGlobalMacro({
+  required String label,
+  required String payload,
+  required int priority,
+  String? keyBinding,
+}) => RustLib.instance.api.crateApiUpsertGlobalMacro(
+  label: label,
+  payload: payload,
+  priority: priority,
+  keyBinding: keyBinding,
+);
+
+Future<void> deleteGlobalMacro({required String label}) =>
+    RustLib.instance.api.crateApiDeleteGlobalMacro(label: label);
+
+/// Reorder global macros to match `ordered_labels` (drag-to-reorder).
+Future<void> reorderGlobalMacros({required List<String> orderedLabels}) =>
+    RustLib.instance.api.crateApiReorderGlobalMacros(
+      orderedLabels: orderedLabels,
+    );
+
 Future<SessionSaved> saveSession({required String name}) =>
     RustLib.instance.api.crateApiSaveSession(name: name);
 
@@ -217,6 +238,7 @@ class ConfigSnapshot {
   final int flashCount;
   final int macrosColumns;
   final bool hideKeyboard;
+  final List<MacroMessage> globalMacros;
 
   const ConfigSnapshot({
     required this.clientName,
@@ -228,6 +250,7 @@ class ConfigSnapshot {
     required this.flashCount,
     required this.macrosColumns,
     required this.hideKeyboard,
+    required this.globalMacros,
   });
 
   @override
@@ -240,7 +263,8 @@ class ConfigSnapshot {
       flashOnMessage.hashCode ^
       flashCount.hashCode ^
       macrosColumns.hashCode ^
-      hideKeyboard.hashCode;
+      hideKeyboard.hashCode ^
+      globalMacros.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -255,7 +279,8 @@ class ConfigSnapshot {
           flashOnMessage == other.flashOnMessage &&
           flashCount == other.flashCount &&
           macrosColumns == other.macrosColumns &&
-          hideKeyboard == other.hideKeyboard;
+          hideKeyboard == other.hideKeyboard &&
+          globalMacros == other.globalMacros;
 }
 
 @freezed

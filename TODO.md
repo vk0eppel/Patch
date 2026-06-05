@@ -508,17 +508,16 @@ Bitfocus Companion — see `docs/integrations.md`.
 ### ~~Clear inactive dynamic peers~~ ✅ Done
 `clear_stale_peers(max_age_secs: u64)` in `state/mod.rs` + `api.rs`; emits `PeerExpired` for each removed peer. `clearStalePeers({maxAgeSecs = 60})` in `bridge_client.dart`. `person_remove_outlined` icon button in the `PeersPanel` header (via `onClearStale` callback); ManualIp / static peers are never removed.
 
-### Global shortcuts (shown on all channels)
-**Effort:** medium
-
-A separate list of shortcuts configured once in Settings that appears at the bottom of
-every channel's shortcuts panel regardless of which channel is selected. Useful for
-crew-wide callouts ("LUNCH BREAK", "HOLD ALL", "GO") that don't belong to any one
-department.
-
-Implementation approaches (TBD):
-- A synthetic `__global__` channel whose shortcuts are appended to every panel; messages sent on `__global__` reach all peers regardless of their channel subscriptions
-- Or: a top-level `global_shortcuts` field in `Config` (not attached to any channel), with a dedicated send path
+### ~~Global shortcuts (shown on all channels)~~ ✅ Done
+**Files:** `state/config.rs` (`global_macros` field), `state/mod.rs` (upsert/delete/reorder), `api.rs` (+ `ConfigSnapshot.global_macros`), `bridge_client.dart`, `home_screen.dart`, `macros_panel.dart`, `settings_screen.dart`
+Implemented as a top-level `global_macros: Vec<MacroMessage>` on `Config` (chose this over a synthetic
+`__global__` channel). They render in their own **GLOBAL** group at the bottom of the macros panel on
+every channel, and firing one (tap or F-key) sends on the **currently-selected channel(s)** — i.e. it
+behaves exactly like a per-channel macro, just configured once instead of duplicated per channel (a true
+crew-wide broadcast is the separate "ALL channel" item). Per-channel macros take F-key precedence over a
+global on the same key. Edited in **Settings → Global Macros** (reuses the generalized macro dialog +
+`_MacroRow`, with drag-reorder). Covered by `state::tests::global_macros_upsert_delete_reorder_persist`.
+No new OSC wire format. **Note:** required an FRB regen (new `ConfigSnapshot` field + 3 API fns).
 
 ### ~~Hide keyboard on iOS / iPad~~ ✅ Done
 `hide_keyboard: bool` (serde default: `true`) added to `Config` and `ConfigSnapshot`. Toggle in Settings → Behavior (iOS/Android only). `MessageInput` respects `hideKeyboard` param — no autofocus, hint changes to "Tap to type…". `FocusScope.unfocus()` called on channel tap when enabled.
