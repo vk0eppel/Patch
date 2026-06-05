@@ -226,8 +226,18 @@ Channels are dynamic and identified by a stable slug (e.g. `"rf"`, `"foh"`).
 Default channels seeded on first run:
 `AUDIO` · `RF` · `LIGHTING` · `VIDEO` · `STAGE`
 
-`AUDIO` is seeded with shortcuts: **Yes** (info), **No** (info), **Problem with:** (critical).
-`RF` is seeded with shortcuts: **CLEAR** (info, F1), **HOLD** (warning, F2), **BATTERY LOW** (critical, F3).
+Each default channel is seeded with macros (in `state/config.rs::default_channels`) — channel-specific
+status/problem callouts (info → warning → critical), **not** show-calling cues. Generic cross-channel acks
+(YES/NO/COPY) are intentionally **not** duplicated per channel — they're reserved for the future "global
+shortcuts" feature. Seeded sets (all on F1–F…):
+
+- `AUDIO`: **ONE** (info, F1), **TWO** (info, F2), **CHECK** (warning, F3), **PROBLEM W/** (critical, F4)
+- `RF`: **CLEAR** (info, F1), **HOLD** (warning, F2), **LOW BATT** (critical, F3)
+- `LIGHTING`: **READY** (info, F1), **FIXTURE DOWN** (warning, F2), **DMX FAULT** (critical, F3)
+- `VIDEO`: **READY** (info, F1), **GLITCH** (warning, F2), **NO SIGNAL** (critical, F3)
+- `STAGE`: **CLEAR** (info, F1), **HAZARD** (warning, F2), **MEDICAL** (critical, F3)
+
+The seed is locked by `state::config::tests::default_channels_seed_macros`.
 
 Each channel has:
 - stable `id` (slug used in OSC addresses)

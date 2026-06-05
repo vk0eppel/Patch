@@ -184,21 +184,27 @@ pub fn default_channels() -> Vec<Channel> {
                 "audio" => {
                     ch.macros = vec![
                         MacroMessage {
-                            label: "YES".into(),
-                            payload: "Yes".into(),
+                            label: "ONE".into(),
+                            payload: "One".into(),
                             key_binding: Some("F1".into()),
                             priority: 1,
                         },
                         MacroMessage {
-                            label: "NO".into(),
-                            payload: "No".into(),
+                            label: "TWO".into(),
+                            payload: "Two".into(),
                             key_binding: Some("F2".into()),
                             priority: 1,
                         },
                         MacroMessage {
+                            label: "CHECK".into(),
+                            payload: "Line check".into(),
+                            key_binding: Some("F3".into()),
+                            priority: 2,
+                        },
+                        MacroMessage {
                             label: "PROBLEM W/".into(),
                             payload: "Problem with:".into(),
-                            key_binding: Some("F3".into()),
+                            key_binding: Some("F4".into()),
                             priority: 3,
                         },
                     ];
@@ -225,6 +231,72 @@ pub fn default_channels() -> Vec<Channel> {
                         },
                     ];
                 }
+                "lighting" => {
+                    ch.macros = vec![
+                        MacroMessage {
+                            label: "READY".into(),
+                            payload: "Lighting ready".into(),
+                            key_binding: Some("F1".into()),
+                            priority: 1,
+                        },
+                        MacroMessage {
+                            label: "FIXTURE DOWN".into(),
+                            payload: "Fixture down".into(),
+                            key_binding: Some("F2".into()),
+                            priority: 2,
+                        },
+                        MacroMessage {
+                            label: "DMX FAULT".into(),
+                            payload: "DMX fault — no output".into(),
+                            key_binding: Some("F3".into()),
+                            priority: 3,
+                        },
+                    ];
+                }
+                "video" => {
+                    ch.macros = vec![
+                        MacroMessage {
+                            label: "READY".into(),
+                            payload: "Video ready".into(),
+                            key_binding: Some("F1".into()),
+                            priority: 1,
+                        },
+                        MacroMessage {
+                            label: "GLITCH".into(),
+                            payload: "Video glitch".into(),
+                            key_binding: Some("F2".into()),
+                            priority: 2,
+                        },
+                        MacroMessage {
+                            label: "NO SIGNAL".into(),
+                            payload: "No signal — feed lost".into(),
+                            key_binding: Some("F3".into()),
+                            priority: 3,
+                        },
+                    ];
+                }
+                "stage" => {
+                    ch.macros = vec![
+                        MacroMessage {
+                            label: "CLEAR".into(),
+                            payload: "Stage clear".into(),
+                            key_binding: Some("F1".into()),
+                            priority: 1,
+                        },
+                        MacroMessage {
+                            label: "HAZARD".into(),
+                            payload: "Hazard on deck".into(),
+                            key_binding: Some("F2".into()),
+                            priority: 2,
+                        },
+                        MacroMessage {
+                            label: "MEDICAL".into(),
+                            payload: "Medical — need help on stage".into(),
+                            key_binding: Some("F3".into()),
+                            priority: 3,
+                        },
+                    ];
+                }
                 _ => {}
             }
             ch
@@ -235,6 +307,43 @@ pub fn default_channels() -> Vec<Channel> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Locks the seeded default macros so an accidental edit to `default_channels`
+    /// doesn't silently change what new installs ship with.
+    #[test]
+    fn default_channels_seed_macros() {
+        let channels = default_channels();
+        assert_eq!(channels.len(), 5);
+        let by_id = |id: &str| channels.iter().find(|c| c.id == id).unwrap();
+
+        // AUDIO: mic-check vocabulary (ONE/TWO/CHECK/PROBLEM W/).
+        let audio: Vec<(&str, i32)> = by_id("audio")
+            .macros
+            .iter()
+            .map(|m| (m.label.as_str(), m.priority))
+            .collect();
+        assert_eq!(
+            audio,
+            vec![("ONE", 1), ("TWO", 1), ("CHECK", 2), ("PROBLEM W/", 3)]
+        );
+
+        // The three previously-empty channels now each ship 3 info/warning/critical macros.
+        for (id, expected) in [
+            (
+                "lighting",
+                [("READY", 1), ("FIXTURE DOWN", 2), ("DMX FAULT", 3)],
+            ),
+            ("video", [("READY", 1), ("GLITCH", 2), ("NO SIGNAL", 3)]),
+            ("stage", [("CLEAR", 1), ("HAZARD", 2), ("MEDICAL", 3)]),
+        ] {
+            let got: Vec<(&str, i32)> = by_id(id)
+                .macros
+                .iter()
+                .map(|m| (m.label.as_str(), m.priority))
+                .collect();
+            assert_eq!(got, expected.to_vec(), "macros for channel {id}");
+        }
+    }
 
     /// A config in the documented `patch.toml` format must stay deserialisable
     /// into the current `Config` schema — guards against field drift (e.g. the

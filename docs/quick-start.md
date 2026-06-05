@@ -71,7 +71,7 @@ Flash is also triggered automatically on incoming Critical messages by default (
 
 ## 6. Macros
 
-Each channel has a panel of one-tap macro buttons for common callouts — for example, **CLEAR**, **HOLD**, **BATTERY LOW** on the RF channel. Toggle the panel with the keyboard icon in the channel header.
+Each channel has a panel of one-tap macro buttons for common status/problem callouts — for example, **CLEAR**, **HOLD**, **LOW BATT** on RF, or **READY**, **GLITCH**, **NO SIGNAL** on VIDEO. Every default channel ships with a few. Toggle the panel with the keyboard icon in the channel header.
 
 On desktop, macros can be bound to **F1–F12** and fire from any focus state (no need to click the button first).
 

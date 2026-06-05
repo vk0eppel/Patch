@@ -18,8 +18,17 @@ On first run Patch seeds five channels:
 | `video` | VIDEO |
 | `stage` | STAGE |
 
-`AUDIO` comes with macros: **Yes** (info), **No** (info), **Problem with:** (critical).  
-`RF` comes with macros: **CLEAR** (info, F1), **HOLD** (warning, F2), **BATTERY LOW** (critical, F3).
+Every default channel ships with a few macros — quick status/problem callouts bound to F-keys:
+
+| Channel | F1 | F2 | F3 | F4 |
+|---|---|---|---|---|
+| `AUDIO` | ONE (info) | TWO (info) | CHECK (warning) | PROBLEM W/ (critical) |
+| `RF` | CLEAR (info) | HOLD (warning) | LOW BATT (critical) | — |
+| `LIGHTING` | READY (info) | FIXTURE DOWN (warning) | DMX FAULT (critical) | — |
+| `VIDEO` | READY (info) | GLITCH (warning) | NO SIGNAL (critical) | — |
+| `STAGE` | CLEAR (info) | HAZARD (warning) | MEDICAL (critical) | — |
+
+These are starting points — edit, reorder, add, or delete them per channel in **Settings → Channels & Macros**.
 
 ### Creating a channel
 
