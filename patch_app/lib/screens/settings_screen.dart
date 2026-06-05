@@ -666,6 +666,17 @@ class _InterfacePicker extends StatelessWidget {
   }
 }
 
+// ── Macro helpers ─────────────────────────────────────────────────────────────
+
+/// Lower-cases a string and capitalizes its first character. Used to turn an
+/// uppercase button label (e.g. "LOW BATT") into a readable message ("Low batt")
+/// when autofilling the macro message text.
+String _capitalizeFirst(String s) {
+  if (s.isEmpty) return s;
+  final lower = s.toLowerCase();
+  return lower[0].toUpperCase() + lower.substring(1);
+}
+
 // ── Per-channel shortcut editor ───────────────────────────────────────────────
 
 class _ChannelMacroEditor extends StatelessWidget {
@@ -893,6 +904,10 @@ class _ChannelMacroEditor extends StatelessWidget {
     final payloadCtrl = TextEditingController(text: existing?.payload ?? '');
     final keyCtrl = TextEditingController(text: existing?.keyBinding ?? '');
     int priority = existing?.priority ?? 1;
+    // For a new macro, mirror the label into the message text (capitalized-first)
+    // until the user edits the message themselves. Off when editing an existing
+    // macro so its saved message is never overwritten.
+    bool autofillPayload = existing == null;
 
     showDialog(
       context: context,
@@ -909,6 +924,14 @@ class _ChannelMacroEditor extends StatelessWidget {
                   controller: labelCtrl,
                   decoration: const InputDecoration(labelText: 'Button label', hintText: 'e.g. HOLD'),
                   textCapitalization: TextCapitalization.characters,
+                  onChanged: (value) {
+                    // Mirror label → message until the user edits the message.
+                    // Setting .text programmatically does not fire the payload
+                    // field's onChanged, so it won't flip `autofillPayload`.
+                    if (autofillPayload) {
+                      payloadCtrl.text = _capitalizeFirst(value);
+                    }
+                  },
                 ),
                 const SizedBox(height: 10),
                 TextField(
@@ -917,6 +940,8 @@ class _ChannelMacroEditor extends StatelessWidget {
                     labelText: 'Message text',
                     hintText: 'e.g. HOLD — do not transmit',
                   ),
+                  // Once the user types here, stop mirroring the label.
+                  onChanged: (_) => autofillPayload = false,
                 ),
                 const SizedBox(height: 10),
                 TextField(
