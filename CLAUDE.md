@@ -183,12 +183,16 @@ After regeneration, run `dart run build_runner build` from `patch_app/` if `Patc
 ```
 /patch/channel/{id}/message     # Core message — primary address (channel-scoped)
 /patch/ack                      # ACK for a message_id
-/patch/presence                 # Heartbeat / presence announcement
+/patch/presence                 # Heartbeat / presence / discovery — the single announce address
 /patch/bye                      # Departure announcement (graceful shutdown) — arg: peer_id
-/patch/system/heartbeat         # Standalone heartbeat ping
-/patch/discovery                # Peer discovery beacon
 /patch/channel/{id}/flash       # Flash/page a specific channel
 ```
+
+`/patch/presence` is the **only** discovery+heartbeat address: it is broadcast and unicast every
+heartbeat, and an external OSC tool can announce itself simply by sending one (the receiver registers
+the sender as a peer). Earlier vestigial `/patch/discovery` and `/patch/system/heartbeat` addresses (plus
+unused `/patch/typing`, `/patch/system/alert`, `/patch/system/status` constants) were removed — they were
+decoded-but-inert and never sent, and presence subsumes them.
 
 ### Send strategy
 
@@ -197,7 +201,6 @@ After regeneration, run `dart run build_runner build` from `patch_app/` if `Patc
 | `/patch/channel/{id}/message` | Unicast to each known peer |
 | `/patch/channel/{id}/flash` | Unicast to each known peer + local publish |
 | `/patch/presence` heartbeat | Broadcast (`255.255.255.255` + per-interface subnet, for undiscovered peers) **and** unicast to every known peer (bootstraps two-way discovery + sustains liveness) |
-| `/patch/discovery` beacon | Broadcast (same) |
 | `/patch/bye` departure | Direct unicast to known/static peers + broadcast, on shutdown |
 
 Messages and flash are **not** broadcast. If no peers are known yet, packets are silently dropped. Peer addresses are learned from UDP `from` fields on receive and from mDNS resolution.
@@ -247,7 +250,7 @@ Macros can be created, edited, deleted, and **drag-reordered** in the Settings s
 A session is a named snapshot of the current channel layout (channels + shortcuts + static peers). Sessions are saved as TOML files under `<data_dir>/sessions/{slug}.toml`.
 
 - **Save** — captures current channels and static peers under a user-chosen name
-- **Load** — replaces all current channels with those from the session (persisted immediately)
+- **Load** — replaces all current channels **and static peers** with those from the session (persisted immediately). Load/import go through `AppState::apply_session_full` (not `apply_session`, which is channels-only and is what `reset_channels` uses so a factory reset never wipes configured peers). Channel ids are validated up front (whole session rejected atomically on a bad id); session static peers with an invalid address or port 0 are skipped with a warning and de-duped by `address:port`. The Flutter `session_loaded` handler refreshes both channels **and** peers.
 - **Delete** — removes the session file
 - **Export to file** — writes the current layout as a `SessionConfig` TOML to a user-chosen path (`export_layout` in `api.rs`)
 - **Import from file** — parses a `SessionConfig` TOML from a user-chosen path and applies it (`import_layout` in `api.rs`)
@@ -266,7 +269,7 @@ Patch uses three discovery modes, shown in the peers panel:
 | OSC beacon | `/patch/presence` broadcast every 7s | 📡 |
 | Manual IP | Static entries in `patch.toml` | 📌 |
 
-Peers expire after 30s of missed heartbeats (configurable in `patch.toml`).
+Peers never auto-expire — they stay in the list for the whole session. The Flutter peers panel derives a 3-state dot from `last_seen` (green ≤ 14 s, amber ≤ 35 s, grey beyond — ~2×/5× the 7 s heartbeat); a graceful `/patch/bye` or mDNS departure greys a peer immediately but keeps it. Removal is manual only (the "clear inactive peers" button → `clear_stale_peers`).
 
 Peer addresses (IP + OSC port) are populated from two sources:
 1. The UDP `from` address on any received packet
@@ -304,7 +307,6 @@ client_name = "FOH Engineer"
 osc_port = 9000             # UDP port for OSC
 network_interface = "en0"   # Optional — scopes the discovery beacon to one NIC (socket always binds 0.0.0.0)
 heartbeat_interval_secs = 7
-peer_timeout_secs = 30
 flash_on_critical = true    # Auto-flash channel when priority-3 message arrives
 flash_on_message = false    # Auto-flash on every incoming message
 flash_count = 4             # Flash pulse count per event (3–7, default 4)
@@ -379,11 +381,11 @@ A single `flutter run` builds and links the Rust engine into the host binary via
 - `PatchTheme.headerHeight = 80.0`: single constant under `// ── Layout` in `patch_theme.dart`; applied as a fixed `Container(height: ...)` to all four top areas so their bottom dividers land on the same line.
 - `bridge_client.dart::getConfig()` builds the config map manually from `ConfigSnapshot` fields. **Every new field added to `ConfigSnapshot` in Rust must also be added to this map.** Missing a field silently resets the Dart state variable to its `?? default` every time `getConfig()` fires.
 - `macros_panel.dart` exports both `MacrosPanel` and `ChannelMacro`; `home_screen.dart` imports it with `show MacrosPanel, ChannelMacro`.
-- Reliability is wired: `api::init` holds a shared `Arc<Mutex<ReliabilityManager>>`. `send_message` calls `reliability.track(...)` for `Priority::Critical` (targets come from `send_to_peers`, which now returns the contacted `SocketAddr`s). Receivers ACK criticals in `transport::handle_event` (the `Message` arm encodes `/patch/ack` back to `from`), the `Ack` arm calls `reliability.ack(...)`, and a poller in `init` retransmits unacked entries every ~400ms (bounded by `MAX_RETRIES`). The `retransmit_delay` backoff helper is still unused.
+- Reliability is wired: `api::init` holds a shared `Arc<Mutex<ReliabilityManager>>`. `send_message` calls `reliability.track(...)` for `Priority::Critical` (targets come from `send_to_peers`, which returns the contacted `SocketAddr`s). Receivers ACK criticals in `transport::handle_event` (the `Message` arm encodes `/patch/ack` back to `from`), the `Ack` arm calls `reliability.ack(message_id, from)` — **acks are matched by the ACK packet's source `SocketAddr`, not the `peer_id` it carries**, because targets are addresses and a synthetic static-peer entry's `peer_id` is a derived UUID that wouldn't match the real sender (everyone binds/sends on the same OSC port, so the ACK's source addr == the target addr). A poller in `init` retransmits every ~400ms (bounded by `MAX_RETRIES`), and `drain_retransmits` re-sends **only to targets that haven't ACKed yet** (a critical to 5 peers where 4 acked re-sends just to the 5th); a stray ACK from a non-target address is ignored so it can't trip early completion. `reliability/mod.rs` has unit tests covering the ack/retransmit logic; the `retransmit_delay` exponential-backoff helper is still unused.
 - `send_to_peers` iterates `get_peers()` once (which already merges static peers as synthetic `ManualIp` entries) and dedups by `SocketAddr` — do **not** re-add a separate `config.static_peers` loop or static peers get every packet twice (flashes have no dedup, so they'd double-fire). Peer/static addresses are parsed as `IpAddr` then `SocketAddr::new(ip, port)` so IPv6 gets correct `[..]:port` form.
 - Blocking file I/O is offloaded off the tokio runtime: `AppState::save_config(&self)` wraps `Config::save` in `spawn_blocking`. Config mutators just mutate under the write lock, drop the guard, then call `self.save_config().await`. `save_config` acquires a dedicated `Inner::save_lock` (`Mutex<()>`), **then** clones the *current* config and writes it — so concurrent fire-and-forget mutators (UI handlers don't await) can't reorder their whole-file writes and clobber each other; whichever write runs last persists the latest committed state. The `save_lock` is separate from the config `RwLock`, so it never blocks `config()` readers on the send path. **Do not** revert to passing a snapshot into `save_config` or saving directly under the config write lock — the former reintroduces the reorder race, the latter stalls OSC traffic during disk I/O. `api::init`'s `Config::load_or_default`, `export_messages`, `export_layout`, `import_layout`, `save_session`, and `load_session` are likewise `spawn_blocking`-wrapped. Plain (non-`async`) FRB fns like `list_sessions`/`delete_session` run on FRB's own pool, so they're left as direct `std::fs`.
 - mDNS peers are classified correctly via `AppState::upsert_peer_with_mode(presence, DiscoveryMode::Mdns)` (the `ServiceResolved` handler); `upsert_peer` keeps the `OscBeacon` default, and an already-`Mdns` peer is never downgraded by a later OSC heartbeat, so the 🔍 icon stays.
-- Inbound OSC is validated defensively in `osc/codec.rs`: `valid_channel_id` (same `[a-z0-9_-]`, ≤64 slug rule as `upsert_channel`) gates both `decode_patch_message` and `decode_flash`, and payloads over `MAX_PAYLOAD_LEN` (4096) are rejected — malformed packets `bail!` and the receive loop drops them.
+- Inbound OSC is validated defensively in `osc/codec.rs`: `valid_channel_id` (the `[a-z0-9_-]`, ≤64 slug rule) gates both `decode_patch_message` and `decode_flash`, and payloads over `MAX_PAYLOAD_LEN` (4096) are rejected — malformed packets `bail!` and the receive loop drops them. `valid_channel_id` is `pub(crate)` and is the single source of truth for the slug rule: `api::upsert_channel` and `AppState::apply_session` (loaded/imported sessions) both call it, so a hand-edited/shared session file can't inject an OSC-unsafe channel id either — `apply_session` validates every id up front and rejects the whole session atomically (before clearing/persisting) if any is bad.
 - `api::csv_escape` neutralises spreadsheet formula injection in `export_messages` (cells starting with `= + - @` tab/CR are prefixed with `'`) on top of RFC 4180 quote-doubling, because payload/sender/channel are network-sourced.
 - `gethostname` (mDNS host record) is looked up in-process — `libc::gethostname` on Unix (declared under `[target.'cfg(unix)'.dependencies]`), `COMPUTERNAME` env on Windows — instead of forking the `hostname` binary.
 - `main.dart` `_connect()` catches engine-boot failures and shows an error panel with **Retry**; `BridgeClient.connect` guards `RustLib.init()` with a static flag so a retry doesn't trip FRB's init-once throw. The `error` bridge event surfaces a red SnackBar in `home_screen.dart`, and the Add Channel dialog validates the slug client-side before closing.

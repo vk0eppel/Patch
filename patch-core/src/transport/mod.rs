@@ -218,8 +218,6 @@ async fn handle_event(
         PatchEvent::Message(m) => Some(m.sender_id),
         PatchEvent::Presence(p) => Some(p.peer_id),
         PatchEvent::Flash(f) => Some(f.sender_id),
-        PatchEvent::Heartbeat { peer_id } => Some(*peer_id),
-        PatchEvent::Discovery { peer_id, .. } => Some(*peer_id),
         _ => None,
     };
     if let Some(id) = sender_id {
@@ -262,8 +260,10 @@ async fn handle_event(
             message_id,
             peer_id,
         } => {
-            // Clear the in-flight retransmit entry, then notify the UI.
-            reliability.lock().await.ack(message_id, peer_id);
+            // Clear the in-flight retransmit entry (matched by the ACK's source
+            // address — see reliability::ReliabilityManager::ack), then notify the
+            // UI with the peer_id carried in the packet.
+            reliability.lock().await.ack(message_id, from);
             state
                 .publish(AppEvent::MessageAcked {
                     message_id,
@@ -309,19 +309,6 @@ async fn handle_event(
                     .await;
             }
             state.publish(AppEvent::ChannelFlash(f)).await;
-        }
-        PatchEvent::Heartbeat { peer_id } => {
-            debug!("Heartbeat from {}", peer_id);
-        }
-        PatchEvent::Discovery {
-            peer_id,
-            peer_name,
-            osc_port,
-        } => {
-            debug!(
-                "Discovery: {} ({}) on port {}",
-                peer_name, peer_id, osc_port
-            );
         }
         PatchEvent::Unknown(msg) => {
             debug!("Unknown OSC: {}", msg.addr);

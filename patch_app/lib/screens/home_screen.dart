@@ -267,6 +267,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
       case 'session_loaded':
         widget.bridge.getChannels();
+        // A session also restores static peers — refresh the peers panel.
+        widget.bridge.getPeers();
         setState(() => _selectedIds = {});
 
       case 'config':

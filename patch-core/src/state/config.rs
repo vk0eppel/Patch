@@ -71,8 +71,6 @@ pub struct Config {
     pub default_channels: Vec<Channel>,
     /// Heartbeat interval in seconds.
     pub heartbeat_interval_secs: u64,
-    /// Peer expiry timeout in seconds (missed heartbeats).
-    pub peer_timeout_secs: i64,
     /// Automatically flash the channel when a critical (priority 3) message is received.
     #[serde(default = "default_true")]
     pub flash_on_critical: bool,
@@ -107,7 +105,6 @@ impl Default for Config {
             static_peers: Vec::new(),
             default_channels: default_channels(),
             heartbeat_interval_secs: 7,
-            peer_timeout_secs: 30,
             flash_on_critical: true,
             flash_on_message: false,
             flash_count: 4,
@@ -252,6 +249,7 @@ client_name = "FOH Engineer"
 osc_port = 9000
 network_interface = "en0"
 heartbeat_interval_secs = 7
+# Removed field — an existing patch.toml may still carry it; serde must ignore it.
 peer_timeout_secs = 30
 flash_on_critical = true
 flash_on_message = false

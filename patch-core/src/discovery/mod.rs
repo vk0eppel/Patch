@@ -15,7 +15,13 @@ use crate::osc::{codec::encode_presence, types::PeerPresence};
 use crate::state::{AppState, Config};
 use crate::transport::Transport;
 
-pub struct Discovery;
+pub struct Discovery {
+    /// The mDNS daemon handle, held for the engine's lifetime. Dropping the last
+    /// `ServiceDaemon` handle shuts the daemon thread down, so this must outlive
+    /// `Discovery::new` — it's stored here and kept alive via `EngineHandle`.
+    /// `None` when mDNS init failed and we fell back to OSC beacon only.
+    _mdns: Option<ServiceDaemon>,
+}
 
 impl Discovery {
     pub async fn new(config: &Config, state: AppState, transport: Arc<Transport>) -> Result<Self> {
@@ -26,7 +32,9 @@ impl Discovery {
 
         // ── mDNS (best-effort — gracefully skipped if unavailable) ───────────
         let service_type = "_patch._udp.local.";
-        let mdns_result: anyhow::Result<()> = async {
+        // Returns the daemon handle on success so it can be held for the engine's
+        // lifetime (dropping it would stop the daemon thread).
+        let mdns_setup: anyhow::Result<ServiceDaemon> = async {
             let mdns = ServiceDaemon::new()?;
 
             // Register ourselves
@@ -120,13 +128,20 @@ impl Discovery {
                     }
                 }
             });
-            Ok(())
+            Ok(mdns)
         }
         .await;
 
-        if let Err(e) = mdns_result {
-            warn!("mDNS unavailable, falling back to OSC beacon only: {}", e);
-        }
+        // Keep the daemon handle alive (in `Discovery`) so the browse task and
+        // service registration survive past `new()`; `None` means mDNS is
+        // unavailable and we run on the OSC beacon alone.
+        let mdns = match mdns_setup {
+            Ok(daemon) => Some(daemon),
+            Err(e) => {
+                warn!("mDNS unavailable, falling back to OSC beacon only: {}", e);
+                None
+            }
+        };
 
         // ── Heartbeat + beacon task ───────────────────────────────────────────
         let hb_state = state.clone();
@@ -179,7 +194,7 @@ impl Discovery {
             }
         });
 
-        Ok(Self)
+        Ok(Self { _mdns: mdns })
     }
 }
 

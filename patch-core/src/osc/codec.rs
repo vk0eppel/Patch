@@ -86,23 +86,10 @@ pub fn encode_ack(message_id: Uuid, peer_id: Uuid) -> Result<Vec<u8>> {
 #[derive(Debug)]
 pub enum PatchEvent {
     Message(PatchMessage),
-    Ack {
-        message_id: Uuid,
-        peer_id: Uuid,
-    },
+    Ack { message_id: Uuid, peer_id: Uuid },
     Presence(PeerPresence),
-    Bye {
-        peer_id: Uuid,
-    },
+    Bye { peer_id: Uuid },
     Flash(ChannelFlash),
-    Heartbeat {
-        peer_id: Uuid,
-    },
-    Discovery {
-        peer_id: Uuid,
-        peer_name: String,
-        osc_port: u16,
-    },
     Unknown(OscMessage),
 }
 
@@ -124,8 +111,6 @@ fn decode_message(msg: OscMessage) -> Result<PatchEvent> {
         addresses::ACK => decode_ack(msg),
         addresses::PRESENCE => decode_presence(msg),
         addresses::BYE => decode_bye(msg),
-        addresses::SYSTEM_HEARTBEAT => decode_heartbeat(msg),
-        addresses::DISCOVERY => decode_discovery(msg),
         addr if addr.ends_with("/flash") => decode_flash(msg),
         _ => Ok(PatchEvent::Unknown(msg)),
     }
@@ -135,10 +120,12 @@ fn decode_message(msg: OscMessage) -> Result<PatchEvent> {
 /// operational messages are short, while a UDP datagram can carry ~64 KB.
 const MAX_PAYLOAD_LEN: usize = 4096;
 
-/// Inbound channel ids must match the same slug rule the UI enforces
-/// (`api::upsert_channel`) so a remote sender can't inject arbitrary buffer
-/// keys or oversized address segments.
-fn valid_channel_id(id: &str) -> bool {
+/// Channel ids must match this slug rule everywhere they can reach an OSC
+/// address: inbound packets (`decode_*`), the UI (`api::upsert_channel`), and
+/// loaded/imported sessions (`AppState::apply_session`). Keeps a remote sender
+/// or a hand-edited session file from injecting arbitrary buffer keys or
+/// oversized/unsafe address segments.
+pub(crate) fn valid_channel_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 64
         && id
@@ -225,27 +212,6 @@ fn decode_bye(msg: OscMessage) -> Result<PatchEvent> {
     }
     Ok(PatchEvent::Bye {
         peer_id: parse_uuid(&msg.args[0])?,
-    })
-}
-
-fn decode_heartbeat(msg: OscMessage) -> Result<PatchEvent> {
-    if msg.args.is_empty() {
-        bail!("Expected 1 arg for /patch/system/heartbeat, got 0");
-    }
-    Ok(PatchEvent::Heartbeat {
-        peer_id: parse_uuid(&msg.args[0])?,
-    })
-}
-
-fn decode_discovery(msg: OscMessage) -> Result<PatchEvent> {
-    let args = msg.args;
-    if args.len() < 3 {
-        bail!("Expected 3 args for /patch/discovery, got {}", args.len());
-    }
-    Ok(PatchEvent::Discovery {
-        peer_id: parse_uuid(&args[0])?,
-        peer_name: parse_string(&args[1])?,
-        osc_port: parse_int(&args[2])? as u16,
     })
 }
 

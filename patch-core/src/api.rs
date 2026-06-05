@@ -36,7 +36,9 @@ pub struct EngineHandle {
     pub transport: Arc<Transport>,
     /// ACK tracking + retransmit state for critical messages.
     pub reliability: Arc<Mutex<ReliabilityManager>>,
-    // Keep discovery alive for the lifetime of the engine.
+    // Holds the mDNS `ServiceDaemon` handle for the engine's lifetime — dropping
+    // `Discovery` would shut the daemon thread down. The heartbeat/browse tasks
+    // are detached, so this is the one thing that genuinely needs keeping alive.
     _discovery: Arc<Discovery>,
 }
 
@@ -326,14 +328,11 @@ pub async fn upsert_channel(
     display_name: Option<String>,
     color: Option<String>,
 ) -> Result<()> {
-    // Validate that the id is safe to embed in an OSC address path.
-    if id.is_empty()
-        || id
-            .chars()
-            .any(|c| !matches!(c, 'a'..='z' | '0'..='9' | '_' | '-'))
-    {
+    // Validate that the id is safe to embed in an OSC address path. Same rule
+    // the codec enforces on inbound packets and sessions (see `valid_channel_id`).
+    if !crate::osc::codec::valid_channel_id(&id) {
         anyhow::bail!(
-            "channel id '{}' is invalid — use only lowercase letters, digits, _ or -",
+            "channel id '{}' is invalid — use only lowercase letters, digits, _ or - (≤64 chars)",
             id
         );
     }
@@ -528,7 +527,10 @@ pub async fn import_layout(path: String) -> Result<SessionLoaded> {
         .and_then(|s| s.to_str())
         .map(session::slugify)
         .unwrap_or_else(|| session::slugify(&name));
-    engine().state.apply_session(sess.channels).await?;
+    engine()
+        .state
+        .apply_session_full(sess.channels, sess.static_peers)
+        .await?;
     Ok(SessionLoaded {
         slug,
         name,
@@ -541,7 +543,10 @@ pub async fn load_session(slug: String) -> Result<SessionLoaded> {
     let sess = tokio::task::spawn_blocking(move || session::load_session(&load_slug)).await??;
     let name = sess.name.clone();
     let channel_count = sess.channels.len() as u32;
-    engine().state.apply_session(sess.channels).await?;
+    engine()
+        .state
+        .apply_session_full(sess.channels, sess.static_peers)
+        .await?;
     Ok(SessionLoaded {
         slug,
         name,

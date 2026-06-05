@@ -10,9 +10,8 @@ Patch speaks OSC natively over UDP. Any show-control system that can send or rec
 |---|---|---|
 | `/patch/channel/{id}/message` | Send / Receive | Channel message |
 | `/patch/channel/{id}/flash` | Send / Receive | Flash / page a channel |
-| `/patch/presence` | Receive only | Peer heartbeat / presence |
-| `/patch/system/heartbeat` | Receive only | Standalone heartbeat ping |
-| `/patch/discovery` | Receive only | Peer discovery beacon |
+| `/patch/presence` | Send / Receive | Peer heartbeat / presence / discovery — the single announce address. Send one to make an external tool appear as a peer; Patch emits it every heartbeat. |
+| `/patch/bye` | Send / Receive | Departure announcement — marks the sender offline promptly. |
 | `/patch/ack` | Receive only | ACK for a critical message |
 
 `{id}` is the channel slug — lowercase, e.g. `rf`, `audio`, `lighting`.

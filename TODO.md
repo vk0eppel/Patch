@@ -154,6 +154,34 @@ and the engine continues with OSC beacon + static peer discovery only.
 
 ## 🟡 Medium — Validation & Silent Failures
 
+### ~~[Med] `import_layout` / `apply_session` don't validate channel IDs (OSC-path injection)~~ ✅ Done
+**Files:** `patch-core/src/osc/codec.rs`, `patch-core/src/state/mod.rs` (`apply_session`), `patch-core/src/api.rs` (`upsert_channel`)
+`valid_channel_id` is now `pub(crate)` — the single source of truth for the `[a-z0-9_-]`, ≤64 slug rule.
+`apply_session` (used by `load_session` and `import_layout`) validates every channel id up front and
+`bail!`s the **whole** session atomically — before clearing/persisting — if any id is OSC-unsafe, so a
+hand-edited or shared `.toml` can't inject an invalid `/patch/channel/{id}/…` segment. `upsert_channel`
+now calls the same helper (which also adds the ≤64 cap it was missing). Covered by
+`state::tests::apply_session_rejects_invalid_channel_id`.
+
+### ~~[Med] Session static peers are saved but never restored~~ ✅ Done
+**Files:** `patch-core/src/state/mod.rs` (`apply_session_full`), `patch-core/src/api.rs` (`load_session`, `import_layout`), `patch_app/lib/screens/home_screen.dart`
+Load/import now go through the new `AppState::apply_session_full`, which **replaces** both channels and
+static peers (mirrors the wholesale channel replace — distributing a layout brings its device IPs along).
+`reset_channels` still uses `apply_session` (channels only) so a factory reset never wipes configured
+peers. Both lists are validated as untrusted file input: channel ids rejected atomically on a bad id (as
+before), session static peers with an invalid address or port 0 skipped with a warning and de-duped by
+`address:port`. The Flutter `session_loaded` handler now refreshes peers as well as channels. Covered by
+`state::tests::apply_session_full_restores_static_peers`.
+
+### ~~[Med] Critical-message retransmit re-sends to peers that already ACKed~~ ✅ Done
+**Files:** `patch-core/src/reliability/mod.rs`, `patch-core/src/transport/mod.rs` (`Ack` arm)
+`drain_retransmits` now re-sends **only to targets that haven't ACKed yet** (a critical to 5 peers where
+4 acked re-sends just to the 5th). The fix hinged on a subtlety: ACK packets carry a `peer_id`, but
+targets are `SocketAddr`s and a synthetic static-peer entry's `peer_id` is a derived UUID that never
+matches the real sender — so acks are now matched by the ACK packet's **source address** (`ack(message_id,
+from)` in the transport `Ack` arm), which lines up with the target address (everyone binds/sends on the
+same OSC port). A stray ACK from a non-target address is ignored so it can't trip early completion.
+
 ### ~~[Med] No CI pipeline~~ ✅ Done
 **File:** `.github/workflows/ci.yml`
 
@@ -204,6 +232,40 @@ Fixed: `result.files.single` → `result.files.isEmpty` guard + `result.files.fi
 ---
 
 ## 🟢 Low — Code Quality & Performance
+
+### ~~[Low] Vestigial OSC addresses: `/patch/discovery` + `/patch/system/heartbeat` decoded but never sent~~ ✅ Done
+**Files:** `patch-core/src/osc/addresses.rs`, `patch-core/src/osc/codec.rs`, `patch-core/src/transport/mod.rs`, `CLAUDE.md`, `docs/osc-integration.md`
+Removed (Option A). Deleted the two decoded-but-inert addresses (`/patch/discovery`, `/patch/system/heartbeat`)
+— their `PatchEvent::Discovery`/`Heartbeat` variants, `decode_discovery`/`decode_heartbeat`, the `decode_message`
+arms, and the two `handle_event` arms (which only `debug!`-logged and didn't even register the sender) — plus
+the three fully-dead constants (`/patch/typing`, `/patch/system/alert`, `/patch/system/status`). `/patch/presence`
+is now documented as the single discovery+heartbeat address, and as the external-tool announce path (sending one
+registers the sender as a peer — already worked). No FFI/codegen impact (`PatchEvent` is the codec's internal
+enum). 40 tests still pass; namespace now matches the implementation.
+
+### ~~[Low] `peer_timeout_secs` config field is dead~~ ✅ Done
+**Files:** `patch-core/src/state/config.rs`, `CLAUDE.md`, `README.md`
+Removed — peers no longer auto-expire, so the field was written to `patch.toml` and read by nobody.
+Dropped from `Config` (struct + `Default`) and the sample configs in the docs. Backward-compatible: serde
+ignores unknown fields, so an existing `patch.toml` that still carries `peer_timeout_secs` loads fine (the
+`representative_config_deserializes` test keeps the line to prove it). Also fixed the stale CLAUDE.md
+"peers expire after 30 s" line — it now describes the real 3-state dot / never-auto-expire behaviour. The
+Flutter dot thresholds (14 s / 35 s, ~2×/5× the heartbeat) stay hardcoded with a comment; deriving them
+from `heartbeat_interval_secs` remains the separate Low item below.
+
+### ~~[Low] No tests for the reliability layer~~ ✅ Done
+**File:** `patch-core/src/reliability/mod.rs`
+Added a `#[cfg(test)]` module (6 sync tests): full-ack completion + clear, stray ACK from a non-target
+ignored, retransmit excludes already-acked addresses, duplicate-ACK idempotency, drop after
+`MAX_RETRIES`, and ACK for an unknown message id. Brought the engine suite from 32 → 39 tests.
+
+### ~~[Low] `EngineHandle._discovery` keepalive is a no-op~~ ✅ Done
+**Files:** `patch-core/src/discovery/mod.rs`, `patch-core/src/api.rs`
+`Discovery` now **owns** the mDNS `ServiceDaemon` (`_mdns: Option<ServiceDaemon>`, `None` when mDNS init
+failed). `Discovery::new` returns the daemon handle from the setup block instead of letting it drop at the
+end of the function — so `EngineHandle._discovery` genuinely keeps the daemon thread alive for the engine's
+lifetime (dropping the last `ServiceDaemon` handle shuts it down). This makes the keepalive real and closes
+a latent risk of the daemon stopping once `new()` returned. Comments on both sides updated.
 
 ### ~~[Low] No rustfmt/clippy config; clippy never run~~ ✅ Done
 **Files:** `rustfmt.toml` (new), `patch-core/Cargo.toml`, scattered engine sources, `flash_button.dart`
@@ -303,6 +365,34 @@ fine. If overflow persists:
 ---
 
 ## 🔵 Future Features (from Roadmap)
+
+### Editable network settings in the UI (OSC port, heartbeat interval)
+**Files:** `patch-core/src/api.rs`, `patch-core/src/state/config.rs`, `patch_app/lib/screens/settings_screen.dart` · **Effort:** small
+`osc_port`, `heartbeat_interval_secs`, and `peer_timeout_secs` are config-file-only today. Surface them in
+a Settings → Advanced/Network section. The heartbeat interval applies live (the discovery loop re-reads
+config each tick — same mechanism as the NIC change). `osc_port` needs a socket rebind, so it's the one
+setting that genuinely requires a restart — show a restart banner for that field only.
+
+### Message search / filter within a channel
+**Files:** `patch_app/lib/screens/home_screen.dart`, `patch_app/lib/widgets/message_list.dart` · **Effort:** small
+A search field that filters the visible feed by substring (sender or payload) and/or priority. Pure
+Dart-side filter over the already-loaded `_messages` buffer — no engine change. Useful for finding a
+specific call in a busy show log before exporting.
+
+### Audible alert on critical / flash (headset-friendly)
+**Files:** `patch_app/lib/screens/home_screen.dart` (+ a sound asset), `patch_app/pubspec.yaml` · **Effort:** small
+Live operators have eyes on the stage, not the screen. Optionally play a short system sound on an incoming
+Critical message (and/or flash), gated by a Settings → Behavior toggle and a per-channel mute. Use a
+lightweight `SystemSound`/`audioplayers` call. Pairs naturally with a Do-Not-Disturb toggle (mute flash +
+sound for a set period).
+
+### Surface critical-message delivery confirmation in the UI
+**Files:** `patch-core/src/reliability/mod.rs`, `patch-core/src/api.rs`, `patch_app/lib/screens/home_screen.dart`, `patch_app/lib/widgets/message_list.dart` · **Effort:** medium
+The engine already tracks ACKs per critical message, but the UI never shows them. Render a small
+"delivered N/M" indicator on critical rows — a check when fully acked, a spinner while retransmitting, a
+red mark if it exhausted retries. Needs an event carrying per-message ack progress (extend `MessageAcked`,
+or add `MessageDelivery { message_id, acked, targets }`). High operational value: the sender of a "HOLD"
+sees that it actually landed.
 
 ### ALL channel — broadcast view + all-department send
 **Effort:** small

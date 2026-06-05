@@ -170,7 +170,6 @@ flash_count = 4                # Flash pulse count per event, 3–7 (Settings �
 macros_columns = 1             # Macros panel column count, 1–3 (Settings → Behavior)
 
 heartbeat_interval_secs = 7
-peer_timeout_secs = 30
 
 [[static_peers]]
 address = "192.168.1.50"

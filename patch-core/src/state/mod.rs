@@ -486,8 +486,86 @@ impl AppState {
         self.apply_session(config::default_channels()).await
     }
 
+    /// Apply a loaded/imported session: replace channels **and** static peers.
+    ///
+    /// Like [`apply_session`] but also restores the static peers the session
+    /// captured (a session is a full show layout — distributing one should bring
+    /// the known device IPs with it). `reset_channels` deliberately uses
+    /// `apply_session` (channels only) instead, so resetting channels to factory
+    /// defaults never wipes the operator's configured peers.
+    ///
+    /// Both lists are untrusted file input: channel ids are validated up front
+    /// (whole session rejected atomically on a bad id, before any mutation);
+    /// static peers with an unparseable address or port 0 are skipped with a
+    /// warning (and de-duplicated by `address:port`) rather than failing the load.
+    pub async fn apply_session_full(
+        &self,
+        channels: Vec<channel::Channel>,
+        static_peers: Vec<config::StaticPeer>,
+    ) -> anyhow::Result<()> {
+        for ch in &channels {
+            if !crate::osc::codec::valid_channel_id(&ch.id) {
+                anyhow::bail!(
+                    "session contains invalid channel id {:?} — use only lowercase letters, digits, _ or - (≤64 chars)",
+                    ch.id
+                );
+            }
+        }
+        let mut validated_peers: Vec<config::StaticPeer> = Vec::with_capacity(static_peers.len());
+        let mut seen: HashSet<(String, u16)> = HashSet::new();
+        for sp in static_peers {
+            if sp.address.parse::<std::net::IpAddr>().is_err() {
+                tracing::warn!(
+                    "session: skipping static peer with invalid address {:?}",
+                    sp.address
+                );
+                continue;
+            }
+            if sp.port == 0 {
+                tracing::warn!("session: skipping static peer {} with port 0", sp.address);
+                continue;
+            }
+            if seen.insert((sp.address.clone(), sp.port)) {
+                validated_peers.push(sp);
+            }
+        }
+
+        {
+            let mut ch_map = self.0.channels.write().await;
+            ch_map.clear();
+            for ch in channels {
+                ch_map.insert(ch.id.clone(), ch);
+            }
+        }
+        // Replace static peers and sync default_channels into the config, then
+        // persist once (rather than a write for channels + a write for peers).
+        {
+            let channels_snapshot: Vec<_> =
+                self.0.channels.read().await.values().cloned().collect();
+            let mut cfg = self.0.config.write().await;
+            cfg.default_channels = channels_snapshot;
+            cfg.static_peers = validated_peers;
+        }
+        self.save_config().await?;
+        self.publish(AppEvent::ChannelListUpdated).await;
+        Ok(())
+    }
+
     /// Replace all channels with those from a loaded session.
     pub async fn apply_session(&self, channels: Vec<channel::Channel>) -> anyhow::Result<()> {
+        // A session file is untrusted input (shared between machines, possibly
+        // hand-edited). Validate every channel id against the OSC-path slug rule
+        // *before* mutating anything — an invalid id would otherwise be embedded
+        // verbatim in `/patch/channel/{id}/...` on the next send. Reject the whole
+        // session atomically so a single bad entry can't half-apply.
+        for ch in &channels {
+            if !crate::osc::codec::valid_channel_id(&ch.id) {
+                anyhow::bail!(
+                    "session contains invalid channel id {:?} — use only lowercase letters, digits, _ or - (≤64 chars)",
+                    ch.id
+                );
+            }
+        }
         {
             let mut ch_map = self.0.channels.write().await;
             ch_map.clear();
@@ -785,6 +863,83 @@ mod tests {
     async fn reorder_macros_unknown_channel_errors() {
         let st = test_state();
         assert!(st.reorder_macros("nope", vec!["x".into()]).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn apply_session_full_restores_static_peers() {
+        // Touches disk (persists config) — pin a temp data dir.
+        let _guard = config::test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        config::set_data_dir(dir.clone());
+
+        // Start with a pre-existing static peer that the session should replace.
+        let st = AppState::new(Config {
+            default_channels: Vec::new(),
+            static_peers: vec![config::StaticPeer {
+                address: "192.168.1.99".into(),
+                port: 9000,
+                label: Some("OLD".into()),
+            }],
+            ..Config::default()
+        });
+
+        let channels = vec![channel::Channel::new("rf", "RF", "#1E88E5")];
+        let session_peers = vec![
+            config::StaticPeer {
+                address: "10.0.0.10".into(),
+                port: 9000,
+                label: Some("Booth".into()),
+            },
+            // Duplicate of the first — must be de-duplicated.
+            config::StaticPeer {
+                address: "10.0.0.10".into(),
+                port: 9000,
+                label: Some("Booth dup".into()),
+            },
+            // Invalid address — must be skipped, not stored.
+            config::StaticPeer {
+                address: "not-an-ip".into(),
+                port: 9000,
+                label: None,
+            },
+            // Port 0 — must be skipped.
+            config::StaticPeer {
+                address: "10.0.0.11".into(),
+                port: 0,
+                label: None,
+            },
+        ];
+        st.apply_session_full(channels, session_peers)
+            .await
+            .unwrap();
+
+        let cfg = st.config().await;
+        // Old peer replaced; only the one valid, de-duped peer remains.
+        assert_eq!(cfg.static_peers.len(), 1);
+        assert_eq!(cfg.static_peers[0].address, "10.0.0.10");
+        assert!(cfg.static_peers.iter().all(|p| p.address != "192.168.1.99"));
+        // Channels replaced too, and the change persisted to disk.
+        let loaded = Config::load_or_default().unwrap();
+        assert_eq!(loaded.static_peers.len(), 1);
+        assert_eq!(loaded.default_channels.len(), 1);
+        assert_eq!(loaded.default_channels[0].id, "rf");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn apply_session_rejects_invalid_channel_id() {
+        let st = test_state();
+        // A crafted/hand-edited session with an OSC-unsafe id must be rejected
+        // wholesale — and must not partially apply (the valid channel alongside
+        // it should not be inserted either).
+        let bad = channel::Channel::new("RF/../x", "RF", "#1E88E5");
+        let good = channel::Channel::new("audio", "AUDIO", "#E53935");
+        // Validation runs before any mutation, so the call errors and never
+        // clears/persists — the good channel beside the bad one isn't applied.
+        assert!(st.apply_session(vec![good, bad]).await.is_err());
+        assert!(st.get_channels().await.is_empty());
     }
 
     #[tokio::test]

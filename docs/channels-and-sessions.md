@@ -116,7 +116,7 @@ Tap the **folder icon** in the left sidebar (below the channel list).
 
 ### Loading a session
 
-Open the sessions panel → tap **Load** next to a saved session. The current channel layout is replaced immediately.
+Open the sessions panel → tap **Load** next to a saved session. The current channel layout **and static peers** are replaced immediately with the ones the session captured — so a layout distributed by your PM brings its known device IPs with it.
 
 ### Importing from a file
 

@@ -2,18 +2,11 @@
 
 // Core messaging
 pub const ACK: &str = "/patch/ack";
-pub const TYPING: &str = "/patch/typing";
+/// Presence/heartbeat beacon — the single address used for discovery, liveness,
+/// and external-tool announce (broadcast each heartbeat + unicast to known peers).
 pub const PRESENCE: &str = "/patch/presence";
 /// Departure announcement broadcast on graceful shutdown so peers drop us promptly.
 pub const BYE: &str = "/patch/bye";
-
-// System events
-pub const SYSTEM_ALERT: &str = "/patch/system/alert";
-pub const SYSTEM_STATUS: &str = "/patch/system/status";
-pub const SYSTEM_HEARTBEAT: &str = "/patch/system/heartbeat";
-
-// Discovery
-pub const DISCOVERY: &str = "/patch/discovery";
 
 // Flash / page (per-channel suffix appended at runtime)
 pub const CHANNEL_FLASH_PREFIX: &str = "/patch/channel";
