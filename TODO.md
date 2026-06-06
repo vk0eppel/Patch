@@ -102,12 +102,10 @@ and installs a stderr `fmt` subscriber via `try_init()` (no-op if already set �
 `ReliabilityManager` is now instantiated in `api::init` (shared `Arc<Mutex<…>>`).
 `send_message` calls `reliability.track(message_id, bytes, targets)` for `Priority::Critical`
 messages (targets come from `send_to_peers`, which now returns the contacted `SocketAddr`s).
-A retransmit poller spawned in `init` drains `drain_retransmits()` every 400 ms and re-sends.
+A retransmit poller spawned in `init` drains `drain_retransmits()` each tick and re-sends, using
+per-message exponential backoff (see the dedicated backoff item below — now done).
 Receivers emit an ACK for every critical message (`handle_event` `Message` arm), and the
-`PatchEvent::Ack` arm calls `reliability.ack(message_id, peer_id)` to clear the in-flight entry.
-
-Note: retransmit currently uses a fixed 400 ms tick (bounded by `MAX_RETRIES`) rather than the
-`retransmit_delay` exponential-backoff helper, which is still unused.
+`PatchEvent::Ack` arm calls `reliability.ack(message_id, from)` to record progress / clear the entry.
 
 ### ~~[Low] macOS multi-interface *initial* discovery (one-way until first contact)~~ ✅ Implemented (⚠ needs field validation)
 **Files:** `patch-core/src/transport/mod.rs` (`broadcast_per_interface`, `send_per_interface_broadcast`, `set_bound_if`, `usable_iface_indices`, `Outgoing`), `patch-core/src/discovery/mod.rs` (heartbeat)
@@ -306,13 +304,16 @@ Migrations rely entirely on `#[serde(default)]`. A `config_version` field would 
 ordered migrations if a field ever needs renaming/removing (the recent `shortcuts`→`macros` churn
 is a good example of why).
 
-### [Low] Reliability retransmit doesn't use exponential backoff
-**Files:** `patch-core/src/api.rs`, `patch-core/src/reliability/mod.rs`
-**Effort:** small
+### ~~[Low] Reliability retransmit doesn't use exponential backoff~~ ✅ Done
+**Files:** `patch-core/src/reliability/mod.rs`, `patch-core/src/api.rs`
 
-The poller in `api::init` retransmits on a fixed ~400 ms tick; the `retransmit_delay`
-(100→200→400…) helper in `reliability/mod.rs` exists but is unused. Track a per-message next-retry
-instant and honour the backoff curve so a lossy link isn't hammered.
+Each `InFlight` now carries a `ticks_until_retry` countdown; the poller ticks every
+`POLL_INTERVAL_MS` (100 ms) and `drain_retransmits` only re-sends an entry when its countdown hits 0,
+resetting it to `2^retries` ticks after each attempt (≈200 ms → 3.2 s) — a deterministic,
+unit-testable exponential backoff (no wall-clock). The first retransmit still fires within ~one tick.
+The unused `retransmit_delay` sleep helper was removed. New test
+`retransmit_uses_exponential_backoff_spacing`; the max-retries/failure test was reworked to tick
+through the backoff. No FFI change.
 
 ### ~~Message ring buffer: O(n) dedup scan + O(n) front removal~~ ✅ Done
 **File:** `patch-core/src/state/mod.rs` — `store_message()`

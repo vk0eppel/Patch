@@ -12,14 +12,18 @@
 
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
-use std::time::Duration;
 
-use tokio::time::sleep;
 use tracing::{debug, warn};
 use uuid::Uuid;
 
+/// Max retransmit attempts for an unacked critical before it's reported failed.
 const MAX_RETRIES: u32 = 5;
-const RETRY_BASE_MS: u64 = 100; // doubles each retry (exponential backoff)
+
+/// Poll interval (ms) for the retransmit loop. Each in-flight entry retransmits
+/// on an **exponential backoff** measured in these ticks (2 → 4 → 8 → 16 → 32),
+/// i.e. ~200ms, 400ms, 800ms, 1.6s, 3.2s between attempts — so a lossy link
+/// isn't hammered, while the first retransmit still fires within ~one tick.
+pub const POLL_INTERVAL_MS: u64 = 100;
 
 /// Entry tracking an in-flight critical message.
 #[derive(Debug)]
@@ -29,6 +33,9 @@ struct InFlight {
     /// Target addresses that have ACKed so far.
     acked: HashSet<SocketAddr>,
     retries: u32,
+    /// Poll ticks remaining until the next retransmit attempt (0 = due now).
+    /// Set to `2^retries` after each attempt for exponential backoff.
+    ticks_until_retry: u32,
 }
 
 /// A critical message that exhausted its retries without every target ACKing.
@@ -71,6 +78,7 @@ impl ReliabilityManager {
                 targets,
                 acked: HashSet::new(),
                 retries: 0,
+                ticks_until_retry: 0, // first retransmit is due on the next tick
             },
         );
     }
@@ -108,12 +116,25 @@ impl ReliabilityManager {
         let mut to_drop = Vec::new();
 
         for (id, entry) in self.in_flight.iter_mut() {
+            // Exponential backoff — only attempt once the per-entry countdown
+            // elapses; other ticks just decrement it.
+            if entry.ticks_until_retry > 0 {
+                entry.ticks_until_retry -= 1;
+                continue;
+            }
+
             let unacked: Vec<SocketAddr> = entry
                 .targets
                 .iter()
                 .filter(|t| !entry.acked.contains(t))
                 .copied()
                 .collect();
+            if unacked.is_empty() {
+                // Fully acked — `ack()` normally removes the entry, but clear it
+                // defensively here too rather than spin on an empty target set.
+                to_drop.push(*id);
+                continue;
+            }
 
             entry.retries += 1;
             if entry.retries > MAX_RETRIES {
@@ -131,12 +152,8 @@ impl ReliabilityManager {
                 to_drop.push(*id);
                 continue;
             }
-            if unacked.is_empty() {
-                // Fully acked — `ack()` normally removes the entry, but clear it
-                // defensively here too rather than spin on an empty target set.
-                to_drop.push(*id);
-                continue;
-            }
+            // Schedule the next attempt: 2, 4, 8, 16, 32 ticks (capped).
+            entry.ticks_until_retry = 1u32 << entry.retries.min(6);
             debug!(
                 "Retransmitting {} to {} pending target(s) (attempt {})",
                 id,
@@ -152,14 +169,6 @@ impl ReliabilityManager {
 
         result
     }
-}
-
-/// Exponential backoff delay for retry `retry` (100ms → 200ms → 400ms → …).
-/// Helper for a future per-message backoff curve; the current poller uses a
-/// fixed tick (see TODO.md → reliability backoff).
-pub async fn retransmit_delay(retry: u32) {
-    let delay = RETRY_BASE_MS * (1 << retry.min(6));
-    sleep(Duration::from_millis(delay)).await;
 }
 
 #[cfg(test)]
@@ -217,19 +226,38 @@ mod tests {
     }
 
     #[test]
+    fn retransmit_uses_exponential_backoff_spacing() {
+        let mut r = ReliabilityManager::new();
+        let id = Uuid::new_v4();
+        r.track(id, vec![0], vec![addr(1)]);
+        // First attempt is due immediately; the next is scheduled 2 ticks out,
+        // so the two intervening drains are quiet before attempt 2 fires.
+        assert_eq!(r.drain_retransmits().retransmits.len(), 1); // attempt 1
+        assert!(r.drain_retransmits().retransmits.is_empty()); // backoff tick 1/2
+        assert!(r.drain_retransmits().retransmits.is_empty()); // backoff tick 2/2
+        assert_eq!(r.drain_retransmits().retransmits.len(), 1); // attempt 2
+    }
+
+    #[test]
     fn entry_dropped_after_max_retries_and_reports_failure() {
         let mut r = ReliabilityManager::new();
         let id = Uuid::new_v4();
         r.track(id, vec![0], vec![addr(1), addr(2)]);
         r.ack(id, addr(1)); // one of two acks; addr(2) never will
-                            // The first MAX_RETRIES drains surface it for retransmit; the next reports failure.
-        for _ in 0..MAX_RETRIES {
-            assert_eq!(r.drain_retransmits().retransmits.len(), 1);
+                            // Drain until the entry exhausts its retries (backoff spaces the attempts,
+                            // so this takes more ticks than MAX_RETRIES).
+        let mut attempts = 0;
+        let mut failure = None;
+        for _ in 0..1000 {
+            let due = r.drain_retransmits();
+            attempts += due.retransmits.len();
+            if let Some(f) = due.failures.into_iter().next() {
+                failure = Some(f);
+                break;
+            }
         }
-        let due = r.drain_retransmits();
-        assert!(due.retransmits.is_empty());
-        assert_eq!(due.failures.len(), 1);
-        let f = &due.failures[0];
+        let f = failure.expect("must report a failure after MAX_RETRIES");
+        assert_eq!(attempts, MAX_RETRIES as usize); // exactly MAX_RETRIES sends, then failure
         assert_eq!(f.message_id, id);
         assert_eq!(f.acked, 1);
         assert_eq!(f.total, 2);

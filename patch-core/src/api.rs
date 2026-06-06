@@ -71,17 +71,19 @@ pub async fn init(config_dir: Option<String>) -> Result<()> {
             let discovery =
                 Arc::new(Discovery::new(&config, state.clone(), Arc::clone(&transport)).await?);
 
-            // Retransmit poller for unacked critical messages. drain_retransmits
-            // increments each entry's retry counter and surfaces it until it is
-            // acked or exceeds MAX_RETRIES, so a fixed tick gives bounded retries.
-            // When an entry exhausts its retries it comes back as a `failure`,
+            // Retransmit poller for unacked critical messages. It ticks every
+            // POLL_INTERVAL_MS; each in-flight entry retransmits on its own
+            // exponential backoff (drain_retransmits) until acked or it exceeds
+            // MAX_RETRIES. When an entry exhausts its retries it comes back as a `failure`,
             // which we surface to the UI as a failed `MessageDelivery` naming the
             // peers that never ACKed.
             let rt_transport = Arc::clone(&transport);
             let rt_reliability = Arc::clone(&reliability);
             let rt_state = state.clone();
             tokio::spawn(async move {
-                let mut interval = tokio::time::interval(std::time::Duration::from_millis(400));
+                let mut interval = tokio::time::interval(std::time::Duration::from_millis(
+                    crate::reliability::POLL_INTERVAL_MS,
+                ));
                 loop {
                     interval.tick().await;
                     let due = rt_reliability.lock().await.drain_retransmits();
