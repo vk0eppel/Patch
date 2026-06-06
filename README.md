@@ -169,6 +169,7 @@ flash_on_critical = true       # Auto-flash on priority-3 messages (Settings →
 flash_on_message = false       # Auto-flash on every message (Settings → Behavior)
 flash_count = 4                # Flash pulse count per event, 3–7 (Settings → Behavior)
 macros_columns = 1             # Macros panel column count, 1–3 (Settings → Behavior)
+audible_alert = false          # Play a sound on flash — critical/page/broadcast; off by default (Settings → Behavior)
 
 heartbeat_interval_secs = 7
 

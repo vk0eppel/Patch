@@ -33,6 +33,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _flashOnMessage = false;
   int _flashCount = 4;
   bool _hideKeyboard = true;
+  bool _audibleAlert = false;
   int _macrosColumns = 1;
 
   // Global macros (shown on every channel)
@@ -74,6 +75,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _flashOnMessage = (data['flash_on_message'] as bool?) ?? false;
           _flashCount = (data['flash_count'] as int?) ?? 4;
           _hideKeyboard = (data['hide_keyboard'] as bool?) ?? true;
+          _audibleAlert = (data['audible_alert'] as bool?) ?? false;
           _macrosColumns = (data['macros_columns'] as int?) ?? 1;
           _globalMacros = ((data['global_macros'] as List<dynamic>?) ?? [])
               .map((m) => MacroMessage.fromJson(m as Map<String, dynamic>))
@@ -325,12 +327,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _flashOnMessage = false;
                 _flashCount = 4;
                 _hideKeyboard = true;
+                _audibleAlert = false;
                 _macrosColumns = 1;
               });
               widget.bridge.setFlashOnCritical(true);
               widget.bridge.setFlashOnMessage(false);
               widget.bridge.setFlashCount(4);
               widget.bridge.setHideKeyboard(true);
+              widget.bridge.setAudibleAlert(false);
               widget.bridge.setMacrosColumns(1);
             }),
           ]),
@@ -367,6 +371,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onChanged: (val) {
               setState(() => _flashOnCritical = val);
               widget.bridge.setFlashOnCritical(val);
+            },
+          ),
+          SwitchListTile(
+            title: const Text(
+              'Audible alert',
+              style: TextStyle(color: PatchTheme.textPrimary, fontSize: PatchTheme.fontSizeSmall),
+            ),
+            subtitle: const Text(
+              'Play a sound when a channel flashes (critical / page / broadcast)',
+              style: TextStyle(color: PatchTheme.textSecondary, fontSize: 11),
+            ),
+            value: _audibleAlert,
+            activeThumbColor: PatchTheme.accent,
+            contentPadding: EdgeInsets.zero,
+            onChanged: (val) {
+              setState(() => _audibleAlert = val);
+              widget.bridge.setAudibleAlert(val);
             },
           ),
           const SizedBox(height: 8),

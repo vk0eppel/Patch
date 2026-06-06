@@ -289,6 +289,7 @@ pub struct ConfigSnapshot {
     pub flash_count: u8,
     pub macros_columns: u8,
     pub hide_keyboard: bool,
+    pub audible_alert: bool,
     pub global_macros: Vec<MacroMessage>,
     /// Presence heartbeat interval (seconds). The UI derives its peer
     /// online/amber/grey dot thresholds from this.
@@ -307,6 +308,7 @@ pub async fn get_config() -> ConfigSnapshot {
         flash_count: cfg.flash_count,
         macros_columns: cfg.macros_columns,
         hide_keyboard: cfg.hide_keyboard,
+        audible_alert: cfg.audible_alert,
         global_macros: cfg.global_macros,
         heartbeat_interval_secs: cfg.heartbeat_interval_secs as u32,
     }
@@ -349,6 +351,10 @@ pub async fn set_macros_columns(columns: u8) -> Result<()> {
 
 pub async fn set_hide_keyboard(enabled: bool) -> Result<()> {
     engine().state.set_hide_keyboard(enabled).await
+}
+
+pub async fn set_audible_alert(enabled: bool) -> Result<()> {
+    engine().state.set_audible_alert(enabled).await
 }
 
 pub async fn set_channel_flash(

@@ -196,6 +196,7 @@ class BridgeClient {
           'flash_count': cfg.flashCount,
           'macros_columns': cfg.macrosColumns,
           'hide_keyboard': cfg.hideKeyboard,
+          'audible_alert': cfg.audibleAlert,
           'global_macros': cfg.globalMacros.map(_macroToMap).toList(),
           'heartbeat_interval_secs': cfg.heartbeatIntervalSecs,
         },
@@ -484,6 +485,15 @@ class BridgeClient {
   Future<void> setHideKeyboard(bool enabled) async {
     try {
       await rust.setHideKeyboard(enabled: enabled);
+      await getConfig();
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
+  Future<void> setAudibleAlert(bool enabled) async {
+    try {
+      await rust.setAudibleAlert(enabled: enabled);
       await getConfig();
     } catch (e) {
       _emitError(e);

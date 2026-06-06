@@ -89,6 +89,9 @@ Future<void> setMacrosColumns({required int columns}) =>
 Future<void> setHideKeyboard({required bool enabled}) =>
     RustLib.instance.api.crateApiSetHideKeyboard(enabled: enabled);
 
+Future<void> setAudibleAlert({required bool enabled}) =>
+    RustLib.instance.api.crateApiSetAudibleAlert(enabled: enabled);
+
 Future<void> setChannelFlash({
   required String channelId,
   bool? flashOnCritical,
@@ -238,6 +241,7 @@ class ConfigSnapshot {
   final int flashCount;
   final int macrosColumns;
   final bool hideKeyboard;
+  final bool audibleAlert;
   final List<MacroMessage> globalMacros;
 
   /// Presence heartbeat interval (seconds). The UI derives its peer
@@ -254,6 +258,7 @@ class ConfigSnapshot {
     required this.flashCount,
     required this.macrosColumns,
     required this.hideKeyboard,
+    required this.audibleAlert,
     required this.globalMacros,
     required this.heartbeatIntervalSecs,
   });
@@ -269,6 +274,7 @@ class ConfigSnapshot {
       flashCount.hashCode ^
       macrosColumns.hashCode ^
       hideKeyboard.hashCode ^
+      audibleAlert.hashCode ^
       globalMacros.hashCode ^
       heartbeatIntervalSecs.hashCode;
 
@@ -286,6 +292,7 @@ class ConfigSnapshot {
           flashCount == other.flashCount &&
           macrosColumns == other.macrosColumns &&
           hideKeyboard == other.hideKeyboard &&
+          audibleAlert == other.audibleAlert &&
           globalMacros == other.globalMacros &&
           heartbeatIntervalSecs == other.heartbeatIntervalSecs;
 }

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -77,6 +78,11 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _showMacros = false;
   int _macrosColumns = 1;
   bool _hideKeyboard = true;
+  /// Play a sound when a channel flashes (critical / page / broadcast). Off by default.
+  bool _audibleAlert = false;
+  /// Plays the bundled alert sound. A single reusable player; the source is
+  /// preloaded in initState (ReleaseMode.stop) so even the first alert is instant.
+  final AudioPlayer _alertPlayer = AudioPlayer();
   /// Macros shown on every channel (configured once); fired on the currently-
   /// selected channel(s). Sourced from the engine config via `getConfig`.
   List<MacroMessage> _globalMacros = [];
@@ -178,6 +184,16 @@ class _HomeScreenState extends State<HomeScreen> {
     widget.bridge.getPeers();
     widget.bridge.getConfig();
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
+    // Use the playback audio category so the alert sounds on iOS even with the
+    // ring/silent switch on (an operational alert must not be muted by silent).
+    unawaited(AudioPlayer.global.setAudioContext(AudioContext(
+      iOS: AudioContextIOS(category: AVAudioSessionCategory.playback),
+    )));
+    // Preload the alert so the *first* play after launch isn't delayed by asset
+    // extraction + native prepare. ReleaseMode.stop keeps the source loaded
+    // between plays, so `_emitAlert` just seeks to the start and resumes.
+    unawaited(_alertPlayer.setReleaseMode(ReleaseMode.stop));
+    unawaited(_alertPlayer.setSource(AssetSource('sounds/alert.wav')));
   }
 
   @override
@@ -185,6 +201,7 @@ class _HomeScreenState extends State<HomeScreen> {
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     _peersRefresh?.cancel();
     _eventSub?.cancel();
+    _alertPlayer.dispose();
     super.dispose();
   }
 
@@ -378,6 +395,8 @@ class _HomeScreenState extends State<HomeScreen> {
               (event['data']['macros_columns'] as int?) ?? 1;
           _hideKeyboard =
               (event['data']['hide_keyboard'] as bool?) ?? true;
+          _audibleAlert =
+              (event['data']['audible_alert'] as bool?) ?? false;
           _globalMacros =
               ((event['data']['global_macros'] as List<dynamic>?) ?? [])
                   .map((m) => MacroMessage.fromJson(m as Map<String, dynamic>))
@@ -424,6 +443,28 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Short audible alert played alongside a flash, when enabled in Settings.
+  /// Uses the preloaded bundled asset via `audioplayers` (`SystemSound.alert` is
+  /// a no-op on macOS/iOS). Fire-and-forget.
+  void _playAlert() {
+    if (_audibleAlert) unawaited(_emitAlert());
+  }
+
+  /// Replays the preloaded alert from the start (no first-play latency); falls
+  /// back to a fresh load if the preload wasn't ready yet.
+  Future<void> _emitAlert() async {
+    try {
+      await _alertPlayer.seek(Duration.zero);
+      await _alertPlayer.resume();
+    } catch (_) {
+      try {
+        await _alertPlayer.play(AssetSource('sounds/alert.wav'));
+      } catch (_) {
+        // Best-effort — never let a failed alert disrupt messaging.
+      }
+    }
+  }
+
   void _triggerFlash(String channelId) {
     final ch = _channels.firstWhere(
       (c) => c.id == channelId,
@@ -431,6 +472,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ? const PatchChannel(id: '', displayName: '?', color: Colors.white)
           : _channels.first,
     );
+    _playAlert();
     setState(() {
       _flashCounts[channelId] = (_flashCounts[channelId] ?? 0) + 1;
       // Only pulse the main screen overlay when the channel is selected.
@@ -446,6 +488,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// message area (a broadcast is visible in whatever view the operator is in),
   /// in the accent colour.
   void _triggerBroadcastFlash() {
+    _playAlert();
     setState(() {
       _flashCounts[kAllChannelId] = (_flashCounts[kAllChannelId] ?? 0) + 1;
       _flashNotify++;

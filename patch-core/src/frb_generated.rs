@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1554407140;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 874304143;
 
 // Section: executor
 
@@ -956,6 +956,42 @@ fn wire__crate__api__send_message_impl(
         },
     )
 }
+fn wire__crate__api__set_audible_alert_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "set_audible_alert",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_enabled = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || async move {
+                        let output_ok = crate::api::set_audible_alert(api_enabled).await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__set_channel_flash_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1563,6 +1599,7 @@ impl SseDecode for crate::api::ConfigSnapshot {
         let mut var_flashCount = <u8>::sse_decode(deserializer);
         let mut var_macrosColumns = <u8>::sse_decode(deserializer);
         let mut var_hideKeyboard = <bool>::sse_decode(deserializer);
+        let mut var_audibleAlert = <bool>::sse_decode(deserializer);
         let mut var_globalMacros =
             <Vec<crate::state::channel::MacroMessage>>::sse_decode(deserializer);
         let mut var_heartbeatIntervalSecs = <u32>::sse_decode(deserializer);
@@ -1576,6 +1613,7 @@ impl SseDecode for crate::api::ConfigSnapshot {
             flash_count: var_flashCount,
             macros_columns: var_macrosColumns,
             hide_keyboard: var_hideKeyboard,
+            audible_alert: var_audibleAlert,
             global_macros: var_globalMacros,
             heartbeat_interval_secs: var_heartbeatIntervalSecs,
         };
@@ -2051,19 +2089,20 @@ fn pde_ffi_dispatcher_primary_impl(
         23 => wire__crate__api__save_session_impl(port, ptr, rust_vec_len, data_len),
         24 => wire__crate__api__send_flash_impl(port, ptr, rust_vec_len, data_len),
         25 => wire__crate__api__send_message_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__set_channel_flash_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__set_client_name_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__set_flash_count_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__set_flash_on_critical_impl(port, ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__set_flash_on_message_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__set_hide_keyboard_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__set_interface_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__set_macros_columns_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__shutdown_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__upsert_channel_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__upsert_global_macro_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__upsert_macro_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__set_audible_alert_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__set_channel_flash_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__set_client_name_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__set_flash_count_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__set_flash_on_critical_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__set_flash_on_message_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__set_hide_keyboard_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__set_interface_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__set_macros_columns_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__shutdown_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__upsert_channel_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__upsert_global_macro_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__upsert_macro_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2143,6 +2182,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::ConfigSnapshot {
             self.flash_count.into_into_dart().into_dart(),
             self.macros_columns.into_into_dart().into_dart(),
             self.hide_keyboard.into_into_dart().into_dart(),
+            self.audible_alert.into_into_dart().into_dart(),
             self.global_macros.into_into_dart().into_dart(),
             self.heartbeat_interval_secs.into_into_dart().into_dart(),
         ]
@@ -2527,6 +2567,7 @@ impl SseEncode for crate::api::ConfigSnapshot {
         <u8>::sse_encode(self.flash_count, serializer);
         <u8>::sse_encode(self.macros_columns, serializer);
         <bool>::sse_encode(self.hide_keyboard, serializer);
+        <bool>::sse_encode(self.audible_alert, serializer);
         <Vec<crate::state::channel::MacroMessage>>::sse_encode(self.global_macros, serializer);
         <u32>::sse_encode(self.heartbeat_interval_secs, serializer);
     }

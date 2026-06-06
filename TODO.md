@@ -386,12 +386,19 @@ A search field that filters the visible feed by substring (sender or payload) an
 Dart-side filter over the already-loaded `_messages` buffer — no engine change. Useful for finding a
 specific call in a busy show log before exporting.
 
-### Audible alert on critical / flash (headset-friendly)
-**Files:** `patch_app/lib/screens/home_screen.dart` (+ a sound asset), `patch_app/pubspec.yaml` · **Effort:** small
-Live operators have eyes on the stage, not the screen. Optionally play a short system sound on an incoming
-Critical message (and/or flash), gated by a Settings → Behavior toggle and a per-channel mute. Use a
-lightweight `SystemSound`/`audioplayers` call. Pairs naturally with a Do-Not-Disturb toggle (mute flash +
-sound for a set period).
+### ~~Audible alert on critical / flash (headset-friendly)~~ ✅ Done
+**Files:** `patch-core/src/state/config.rs` (`audible_alert`), `state/mod.rs`, `api.rs`, `patch_app/lib/{bridge/bridge_client,screens/home_screen,screens/settings_screen}.dart`
+A short sound plays whenever a channel **flashes** (critical message / page / broadcast) — tied to the
+existing flash triggers (`_triggerFlash` / `_triggerBroadcastFlash`), so it respects all the flash flags
+(critical-by-default; every message if flash-on-message). Plays the bundled `assets/sounds/alert.wav`
+via **`audioplayers`** — `SystemSound.play(SystemSoundType.alert)` was tried first but is a **no-op on
+macOS and iOS**. Gated by `audible_alert` in `patch.toml` (default **off** — opt-in), set via
+`set_audible_alert` (FRB regen) and the **Settings → Behavior → "Audible alert"** toggle; included in the
+Behavior reset. Persisted; covered by the `config_mutations_persist_to_disk` test.
+
+Follow-ups (not done): a per-channel mute; a Do-Not-Disturb window (mute flash + sound for a set period);
+and optionally suppress the alert for the *sender's own* sent criticals/pages (needs comparing `sender_id`
+to the local client id).
 
 ### ~~Alert the sender when a critical message isn't received by every peer~~ ✅ Done
 **Files:** `patch-core/src/reliability/mod.rs`, `patch-core/src/state/mod.rs`, `patch-core/src/api.rs`, `patch-core/src/transport/mod.rs`, `patch_app/lib/{bridge/bridge_client,models/message,screens/home_screen,widgets/message_list}.dart`

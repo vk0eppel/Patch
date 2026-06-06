@@ -158,6 +158,11 @@ impl AppState {
         self.save_config().await
     }
 
+    pub async fn set_audible_alert(&self, enabled: bool) -> anyhow::Result<()> {
+        self.0.config.write().await.audible_alert = enabled;
+        self.save_config().await
+    }
+
     /// Update per-channel flash flags. `None` means "leave unchanged".
     pub async fn set_channel_flash(
         &self,
@@ -1150,6 +1155,7 @@ mod tests {
         let st = test_state();
         st.set_flash_count(6).await.unwrap();
         st.set_hide_keyboard(false).await.unwrap();
+        st.set_audible_alert(true).await.unwrap();
         st.set_macros_columns(2).await.unwrap();
         st.add_static_peer("10.0.0.5".into(), 9000, Some("Booth".into()))
             .await
@@ -1158,6 +1164,7 @@ mod tests {
         let loaded = Config::load_or_default().unwrap();
         assert_eq!(loaded.flash_count, 6);
         assert!(!loaded.hide_keyboard);
+        assert!(loaded.audible_alert);
         assert_eq!(loaded.macros_columns, 2);
         assert_eq!(loaded.static_peers.len(), 1);
         assert_eq!(loaded.static_peers[0].address, "10.0.0.5");
