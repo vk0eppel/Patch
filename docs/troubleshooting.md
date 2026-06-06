@@ -112,3 +112,14 @@ This is most likely a config file issue. Try:
 3. Relaunch — Patch will generate a fresh config with defaults
 
 If the crash persists, run from Terminal to capture the panic message.
+
+---
+
+## "No route to host" lines in the console
+
+If you run Patch from a terminal (or with `RUST_LOG=debug`) you may see occasional
+`No route to host` lines for `255.255.255.255` or `ff02::fb` (mDNS) on interfaces
+like cellular, VPN tunnels (`utun`), or `awdl`. **These are harmless.** Patch and
+the mDNS library try to announce on every interface; the ones that can't carry a
+broadcast/multicast simply fail, and discovery still works over the interface that
+can (plus unicast and static peers). At the default log level these are suppressed.
