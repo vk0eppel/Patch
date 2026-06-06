@@ -20,8 +20,13 @@ use chrono::Utc;
 /// everything through one task means the per-interface broadcast can set/clear
 /// the socket's `IP_BOUND_IF` option without racing concurrent unicast sends.
 enum Outgoing {
-    /// Send these bytes to a specific address via the default route.
+    /// Unicast these bytes to a specific peer via the default route.
     To(Vec<u8>, SocketAddr),
+    /// Best-effort broadcast (presence/discovery beacon). Send failures are
+    /// *expected* on some networks — e.g. iOS routinely has no route for the
+    /// limited broadcast `255.255.255.255` (cellular / Wi-Fi transitions),
+    /// returning `EHOSTUNREACH` — so they're logged at `debug`, not `error`.
+    Broadcast(Vec<u8>, SocketAddr),
     /// macOS only: send `255.255.255.255:port` out of **every** usable interface
     /// (optionally pinned to one), binding each send to the interface via
     /// `IP_BOUND_IF`. Works around macOS only egressing the limited broadcast on
@@ -104,8 +109,16 @@ impl Transport {
     /// copy out each NIC. `iface` pins to a single interface when set.
     pub async fn broadcast(&self, bytes: Vec<u8>, port: u16, iface: Option<&str>) -> Result<()> {
         for addr in broadcast_targets(iface, port) {
-            if let Err(e) = self.send_to(bytes.clone(), addr).await {
-                warn!("Presence broadcast to {} failed: {}", addr, e);
+            // Enqueue as a best-effort Broadcast so send failures (common on iOS
+            // for 255.255.255.255) don't surface as errors.
+            if self
+                .send_tx
+                .send(Outgoing::Broadcast(bytes.clone(), addr))
+                .await
+                .is_err()
+            {
+                warn!("Send channel closed during broadcast");
+                break;
             }
         }
         Ok(())
@@ -376,7 +389,16 @@ async fn send_loop(socket: Arc<UdpSocket>, mut rx: mpsc::Receiver<Outgoing>) {
         match item {
             Outgoing::To(bytes, addr) => {
                 if let Err(e) = socket.send_to(&bytes, addr).await {
-                    error!("UDP send error to {}: {}", addr, e);
+                    // A unicast send can fail when a peer has just left the
+                    // network — recoverable, so warn rather than error.
+                    warn!("UDP send error to {}: {}", addr, e);
+                }
+            }
+            Outgoing::Broadcast(bytes, addr) => {
+                if let Err(e) = socket.send_to(&bytes, addr).await {
+                    // Best-effort discovery; failures (e.g. iOS with no broadcast
+                    // route for 255.255.255.255) are expected and non-fatal.
+                    debug!("Broadcast to {} failed (best-effort): {}", addr, e);
                 }
             }
             #[cfg(target_os = "macos")]
