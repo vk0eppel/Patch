@@ -34,6 +34,7 @@ Channels are your departments: AUDIO, RF, LIGHTING, VIDEO, STAGE, etc. Each chan
 
 - **Tap** a channel tab to focus it.
 - **Tap** a channel tab to toggle it in or out of the view. Multiple channels can be active at once — their feeds are combined and sorted by time. At least one channel is always selected.
+- **ALL tab** (pinned at the top, 📢) — shows every channel's traffic combined, and anything you send from it is a **crew-wide broadcast**: it reaches everyone in whatever channel they're viewing, even channels you don't have. Use it for all-department calls ("HOLD ALL", "LUNCH", a show stop). Broadcast messages show a 📢 and appear in every channel's feed.
 
 The default channels are seeded on first run. Your production manager may load a custom session with show-specific channels before the gig — see [Channels & Sessions](channels-and-sessions.md).
 

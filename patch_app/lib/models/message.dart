@@ -1,3 +1,7 @@
+/// Reserved channel id for crew-wide broadcasts (the ALL tab). A message on this
+/// id is shown in every peer's channel feeds regardless of their configuration.
+const String kAllChannelId = '__all__';
+
 class PatchMessage {
   final String messageId;
   final String senderId;

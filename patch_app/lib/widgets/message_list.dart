@@ -132,8 +132,14 @@ class _MessageTile extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Channel dot — only shown in multi-channel mode
-            if (channelColor != null) ...[
+            // Broadcast marker (📢) for ALL-channel messages, else the channel
+            // dot in multi-channel / ALL views.
+            if (message.channelId == kAllChannelId) ...[
+              const Padding(
+                padding: EdgeInsets.only(top: 2, right: 6),
+                child: Text('📢', style: TextStyle(fontSize: 11)),
+              ),
+            ] else if (channelColor != null) ...[
               Padding(
                 padding: const EdgeInsets.only(top: 4, right: 6),
                 child: Container(

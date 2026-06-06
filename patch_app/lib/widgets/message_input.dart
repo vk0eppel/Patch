@@ -8,10 +8,14 @@ class MessageInput extends StatefulWidget {
   final ValueChanged<String> onSend;
   final bool hideKeyboard;
 
+  /// Overrides the placeholder text (e.g. a broadcast hint in ALL mode).
+  final String? hint;
+
   const MessageInput({
     super.key,
     required this.onSend,
     this.hideKeyboard = false,
+    this.hint,
   });
 
   @override
@@ -53,7 +57,8 @@ class _MessageInputState extends State<MessageInput> {
                 fontSize: PatchTheme.fontSizeMedium,
               ),
               decoration: InputDecoration(
-                hintText: widget.hideKeyboard ? 'Tap to type…' : 'Type a message…',
+                hintText: widget.hint ??
+                    (widget.hideKeyboard ? 'Tap to type…' : 'Type a message…'),
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,

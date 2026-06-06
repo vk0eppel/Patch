@@ -399,6 +399,11 @@ pub async fn upsert_channel(
             id
         );
     }
+    // `__all__` is reserved for the crew-wide broadcast (the ALL tab); it must
+    // not be a real channel a user can create/delete.
+    if id == "__all__" {
+        anyhow::bail!("channel id '__all__' is reserved for crew-wide broadcasts");
+    }
     let id_for_name = id.clone();
     let display_name = display_name.unwrap_or(id_for_name);
     let color = color.unwrap_or_else(|| "#607D8B".to_string());
@@ -761,6 +766,15 @@ impl From<AppEvent> for PatchAppEvent {
 #[cfg(test)]
 mod tests {
     use super::csv_escape;
+
+    /// `upsert_channel` must reject the reserved broadcast id. The validation
+    /// runs before `engine()`, so this returns Err without a running engine.
+    #[tokio::test]
+    async fn upsert_channel_rejects_reserved_all_id() {
+        assert!(super::upsert_channel("__all__".into(), None, None)
+            .await
+            .is_err());
+    }
 
     #[test]
     fn csv_escape_neutralises_formulas() {

@@ -17,6 +17,9 @@ import '../widgets/sessions_dialog.dart';
 import '../widgets/macros_panel.dart' show MacrosPanel, ChannelMacro;
 import 'settings_screen.dart';
 
+// `kAllChannelId` (the reserved broadcast id surfaced via the ALL tab) is defined
+// in models/message.dart so both this screen and message_list.dart can share it.
+
 /// Root screen — channel tab strip on the left, message area on the right.
 class HomeScreen extends StatefulWidget {
   final BridgeClient bridge;
@@ -93,20 +96,36 @@ class _HomeScreenState extends State<HomeScreen> {
   List<PatchChannel> get _selectedChannels =>
       _channels.where((c) => _selectedIds.contains(c.id)).toList();
 
+  /// ALL mode — the broadcast tab is selected (it's exclusive, so it's the only
+  /// id in `_selectedIds`). Shows every channel's traffic; sends broadcasts.
+  bool get _isAllMode => _selectedIds.contains(kAllChannelId);
+
   bool get _isMultiChannel => _selectedIds.length > 1;
 
-  /// Messages from all selected channels, merged and sorted by timestamp.
+  /// Messages for the current view, merged and sorted by timestamp. In ALL mode
+  /// that's every channel's traffic; otherwise it's the selected channels plus
+  /// any broadcasts (`__all__`), so a broadcast shows up in whatever channel a
+  /// heads-down operator is viewing.
   List<PatchMessage> get _combinedMessages {
     final all = <PatchMessage>[];
-    for (final id in _selectedIds) {
-      all.addAll(_messages[id] ?? []);
+    if (_isAllMode) {
+      for (final list in _messages.values) {
+        all.addAll(list);
+      }
+    } else {
+      for (final id in _selectedIds) {
+        all.addAll(_messages[id] ?? []);
+      }
+      all.addAll(_messages[kAllChannelId] ?? []);
     }
     all.sort((a, b) => a.timestamp.compareTo(b.timestamp));
     return all;
   }
 
-  /// Channel-colour map for the message list (only populated in multi-channel mode).
+  /// Channel-colour map for the message list. Populated in multi-channel and ALL
+  /// modes (so each row shows its channel dot); empty for a single channel.
   Map<String, Color> get _channelColors {
+    if (_isAllMode) return {for (final c in _channels) c.id: c.color};
     if (!_isMultiChannel) return {};
     return {for (final c in _selectedChannels) c.id: c.color};
   }
@@ -128,13 +147,14 @@ class _HomeScreenState extends State<HomeScreen> {
       ];
 
   /// Send a macro. A per-channel macro goes to its own channel; a global macro
-  /// (empty `channelId`) fires on every currently-selected channel — as if it
-  /// existed on each of them.
+  /// (empty `channelId`) fires on every currently-selected channel — or, in ALL
+  /// mode, broadcasts on `__all__` — as if it existed on each of them.
   void _fireMacro(ChannelMacro cm) {
     if (cm.channelId.isEmpty) {
-      for (final ch in _selectedChannels) {
+      final targets = _isAllMode ? [kAllChannelId] : _selectedIds.toList();
+      for (final id in targets) {
         widget.bridge.sendMessage(
-          channelId: ch.id,
+          channelId: id,
           payload: cm.macro.payload,
           priority: cm.macro.priority,
         );
@@ -226,8 +246,9 @@ class _HomeScreenState extends State<HomeScreen> {
             _selectedIds = {_channels.first.id};
             widget.bridge.getMessages(_channels.first.id);
           }
-          // Remove stale IDs (deleted channels).
-          final validIds = _channels.map((c) => c.id).toSet();
+          // Remove stale IDs (deleted channels), but keep the synthetic ALL id
+          // so a channel reload doesn't silently kick the user out of ALL mode.
+          final validIds = _channels.map((c) => c.id).toSet()..add(kAllChannelId);
           _selectedIds = _selectedIds.intersection(validIds);
           if (_selectedIds.isEmpty && _channels.isNotEmpty) {
             _selectedIds = {_channels.first.id};
@@ -259,13 +280,20 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         });
         // Flash if global OR per-channel flag is set.
-        final ch = _channels.cast<PatchChannel?>()
-            .firstWhere((c) => c?.id == msg.channelId, orElse: () => null);
-        if (ch != null) {
+        if (msg.channelId == kAllChannelId) {
+          // Broadcast — global flags only (it isn't tied to a channel).
           final shouldFlash =
-              (_flashOnMessage || ch.flashOnMessage) ||
-              ((_flashOnCritical || ch.flashOnCritical) && msg.isCritical);
-          if (shouldFlash) _triggerFlash(msg.channelId);
+              _flashOnMessage || (_flashOnCritical && msg.isCritical);
+          if (shouldFlash) _triggerBroadcastFlash();
+        } else {
+          final ch = _channels.cast<PatchChannel?>()
+              .firstWhere((c) => c?.id == msg.channelId, orElse: () => null);
+          if (ch != null) {
+            final shouldFlash =
+                (_flashOnMessage || ch.flashOnMessage) ||
+                ((_flashOnCritical || ch.flashOnCritical) && msg.isCritical);
+            if (shouldFlash) _triggerFlash(msg.channelId);
+          }
         }
 
       case 'ack_send':
@@ -312,7 +340,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
       case 'channel_flash':
         final chId = event['data']['channel_id'] as String;
-        _triggerFlash(chId);
+        if (chId == kAllChannelId) {
+          _triggerBroadcastFlash();
+        } else {
+          _triggerFlash(chId);
+        }
 
       case 'channel_list_updated':
         widget.bridge.getChannels();
@@ -410,18 +442,38 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  /// Flash for a broadcast (`__all__`): pulses the ALL tab and always flashes the
+  /// message area (a broadcast is visible in whatever view the operator is in),
+  /// in the accent colour.
+  void _triggerBroadcastFlash() {
+    setState(() {
+      _flashCounts[kAllChannelId] = (_flashCounts[kAllChannelId] ?? 0) + 1;
+      _flashNotify++;
+      _flashColor = PatchTheme.accent;
+      _flashPulseCount = _globalFlashCount;
+    });
+  }
+
   // ── Channel selection ───────────────────────────────────────────────────────
 
   /// Tap — toggle channel in/out of selection. At least one channel stays selected.
   void _toggleChannel(String id) {
     setState(() {
-      if (_selectedIds.contains(id)) {
+      if (id == kAllChannelId) {
+        // ALL is an exclusive mode — selecting it replaces the selection.
+        _selectedIds = {kAllChannelId};
+        if (!_messages.containsKey(kAllChannelId)) {
+          widget.bridge.getMessages(kAllChannelId); // backfill broadcast history
+        }
+      } else if (_isAllMode) {
+        // Tapping a normal channel exits ALL mode.
+        _selectedIds = {id};
+        if (!_messages.containsKey(id)) widget.bridge.getMessages(id);
+      } else if (_selectedIds.contains(id)) {
         if (_selectedIds.length > 1) _selectedIds.remove(id);
       } else {
         _selectedIds.add(id);
-        if (!_messages.containsKey(id)) {
-          widget.bridge.getMessages(id);
-        }
+        if (!_messages.containsKey(id)) widget.bridge.getMessages(id);
       }
     });
     if (_hideKeyboard) FocusScope.of(context).unfocus();
@@ -447,6 +499,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ? const Center(child: Text('No channels'))
                 : _ChannelView(
                     selectedChannels: _selectedChannels,
+                    isAllMode: _isAllMode,
                     messages: _combinedMessages,
                     channelColors: _channelColors,
                     delivery: _delivery,
@@ -530,6 +583,19 @@ class _ChannelStrip extends StatelessWidget {
           ),
           const Divider(color: PatchTheme.border, height: 1),
           const SizedBox(height: 8),
+          // Pinned ALL tab — crew-wide broadcast view/send.
+          ChannelTab(
+            channel: const PatchChannel(
+              id: kAllChannelId,
+              displayName: 'ALL',
+              color: PatchTheme.accent,
+            ),
+            isSelected: selectedIds.contains(kAllChannelId),
+            flashCount: flashCounts[kAllChannelId] ?? 0,
+            pulseCount: globalFlashCount,
+            onTap: () => onTap(kAllChannelId),
+          ),
+          const Divider(color: PatchTheme.border, height: 1, indent: 12, endIndent: 12),
           Expanded(
             child: ListView.builder(
               itemCount: channels.length,
@@ -633,6 +699,10 @@ class _ChannelStrip extends StatelessWidget {
 
 class _ChannelView extends StatelessWidget {
   final List<PatchChannel> selectedChannels;
+
+  /// Broadcast (ALL) mode — `selectedChannels` is empty; send/flash target the
+  /// reserved `__all__` id and the feed shows every channel's traffic.
+  final bool isAllMode;
   final List<PatchMessage> messages;
   final Map<String, Color> channelColors; // empty when single channel
   final Map<String, MessageDeliveryStatus> delivery;
@@ -649,6 +719,7 @@ class _ChannelView extends StatelessWidget {
 
   const _ChannelView({
     required this.selectedChannels,
+    required this.isAllMode,
     required this.messages,
     required this.channelColors,
     required this.delivery,
@@ -667,21 +738,31 @@ class _ChannelView extends StatelessWidget {
   bool get _isMulti => selectedChannels.length > 1;
 
   void _sendMessage(String text) {
-    for (final ch in selectedChannels) {
-      bridge.sendMessage(channelId: ch.id, payload: text);
+    if (isAllMode) {
+      bridge.sendMessage(channelId: kAllChannelId, payload: text); // one broadcast
+    } else {
+      for (final ch in selectedChannels) {
+        bridge.sendMessage(channelId: ch.id, payload: text);
+      }
     }
   }
 
   void _sendFlash() {
-    for (final ch in selectedChannels) {
-      bridge.sendFlash(ch.id);
+    if (isAllMode) {
+      bridge.sendFlash(kAllChannelId);
+    } else {
+      for (final ch in selectedChannels) {
+        bridge.sendFlash(ch.id);
+      }
     }
   }
 
   Future<void> _exportMessages(BuildContext context) async {
-    final label = selectedChannels.length == 1
-        ? selectedChannels.first.displayName.toLowerCase()
-        : 'all_channels';
+    final label = isAllMode
+        ? 'all_channels'
+        : selectedChannels.length == 1
+            ? selectedChannels.first.displayName.toLowerCase()
+            : 'all_channels';
     final path = await FilePicker.platform.saveFile(
       dialogTitle: 'Export Messages',
       fileName: 'patch_$label.csv',
@@ -689,14 +770,18 @@ class _ChannelView extends StatelessWidget {
       type: FileType.custom,
     );
     if (path == null) return;
-    final channelId = selectedChannels.length == 1 ? selectedChannels.first.id : null;
+    // ALL or multi-channel → export everything (null); single channel → that one.
+    final channelId =
+        (!isAllMode && selectedChannels.length == 1) ? selectedChannels.first.id : null;
     bridge.exportMessages(channelId: channelId, path: path);
   }
 
   void _confirmClear(BuildContext context) {
-    final label = selectedChannels.length == 1
-        ? selectedChannels.first.displayName
-        : '${selectedChannels.length} channels';
+    final label = isAllMode
+        ? 'all channels'
+        : selectedChannels.length == 1
+            ? selectedChannels.first.displayName
+            : '${selectedChannels.length} channels';
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -717,8 +802,12 @@ class _ChannelView extends StatelessWidget {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: PatchTheme.critical),
             onPressed: () {
-              for (final ch in selectedChannels) {
-                bridge.clearMessages(channelId: ch.id);
+              if (isAllMode) {
+                bridge.clearMessages(channelId: null); // clear everything
+              } else {
+                for (final ch in selectedChannels) {
+                  bridge.clearMessages(channelId: ch.id);
+                }
               }
               Navigator.pop(context);
             },
@@ -742,7 +831,22 @@ class _ChannelView extends StatelessWidget {
           child: Row(
             children: [
               // Channel dot(s) + name(s)
-              if (_isMulti) ...[
+              if (isAllMode) ...[
+                const Text('📢', style: TextStyle(fontSize: 16)),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'ALL CHANNELS',
+                    style: TextStyle(
+                      color: PatchTheme.accent,
+                      fontSize: PatchTheme.fontSizeLarge,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.2,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ] else if (_isMulti) ...[
                 Expanded(child: _MultiChannelLabel(channels: selectedChannels)),
               ] else ...[
                 Container(
@@ -791,7 +895,7 @@ class _ChannelView extends StatelessWidget {
             children: [
               MessageList(
                 messages: messages,
-                channelColors: _isMulti ? channelColors : null,
+                channelColors: (_isMulti || isAllMode) ? channelColors : null,
                 delivery: delivery,
               ),
               Positioned(
@@ -820,7 +924,11 @@ class _ChannelView extends StatelessWidget {
         const Divider(color: PatchTheme.border, height: 1),
 
         // ── Input ─────────────────────────────────────────────────────────
-        MessageInput(onSend: _sendMessage, hideKeyboard: hideKeyboard),
+        MessageInput(
+          onSend: _sendMessage,
+          hideKeyboard: hideKeyboard,
+          hint: isAllMode ? '📢 Broadcast to ALL channels…' : null,
+        ),
       ],
     );
 

@@ -107,7 +107,7 @@ per-message exponential backoff (see the dedicated backoff item below — now do
 Receivers emit an ACK for every critical message (`handle_event` `Message` arm), and the
 `PatchEvent::Ack` arm calls `reliability.ack(message_id, from)` to record progress / clear the entry.
 
-### ~~[Low] macOS multi-interface *initial* discovery (one-way until first contact)~~ ✅ Implemented (⚠ needs field validation)
+### ~~[Low] macOS multi-interface *initial* discovery (one-way until first contact)~~ ✅ Done (field-validated)
 **Files:** `patch-core/src/transport/mod.rs` (`broadcast_per_interface`, `send_per_interface_broadcast`, `set_bound_if`, `usable_iface_indices`, `Outgoing`), `patch-core/src/discovery/mod.rs` (heartbeat)
 
 Implemented **Option A — per-interface limited broadcast** (macOS-only, `IP_BOUND_IF`). Each heartbeat,
@@ -120,12 +120,11 @@ the correct unicast port and the existing unicast-bootstrap takes over. Additive
 working path. No-op off macOS (Linux/Windows already egress subnet-directed broadcasts out each NIC,
 and those *are* delivered to apps there).
 
-**⚠ Still needs validation on real hardware:** verified locally that interface enumeration is correct
-(`usable_iface_indices_are_nonzero_and_pinnable` test; `print_iface_indices` diagnostic shows `en0`
-egress on a Wi-Fi-only Mac), but the actual two-machine fix (VPN/Ethernet default route + Wi-Fi) can't
-be unit-tested — run both machines with `RUST_LOG=debug` and confirm `per-iface broadcast → … via en0`
-lines and that they now discover each other. Static peers remain the guaranteed fallback. Multicast is
-a separate, larger item (next).
+**Field-validated (2026-06-06):** the two machines now discover each other in the *exact* configuration
+that previously failed zero-way. (Not captured via `RUST_LOG=debug` per-iface log lines, but the
+behavioural outcome — discovery working where it didn't before — confirms the fix.) Interface enumeration
+is also covered locally (`usable_iface_indices_are_nonzero_and_pinnable` test; `print_iface_indices`
+diagnostic). Static peers remain the guaranteed fallback; multicast stays a separate, larger item (next).
 
 ### Multicast transport option
 **Files:** `patch-core/src/transport/mod.rs`, `patch-core/src/discovery/mod.rs`, `patch-core/src/state/config.rs`
@@ -412,24 +411,22 @@ new return types.
 Possible follow-ups (not done): persist/animate the in-progress state (it's already live), and a per-message
 "resend" affordance on failure.
 
-### ALL channel — broadcast view + all-department send
-**Effort:** small
+### ~~ALL channel — broadcast view + all-department send~~ ✅ Done
+**Files:** `patch_app/lib/{screens/home_screen,widgets/message_list,widgets/message_input,models/message}.dart`, `patch-core/src/api.rs`
 
-A permanent `ALL` tab at the top of the channel strip. Shows every message from
-every channel combined, sorted by timestamp, with per-message channel colour dots.
-Also supports **sending to all channels simultaneously** — messages are broadcast
-to every channel at once and displayed with a 📢 indicator so recipients know it's
-an all-department call. The input bar shows a "Sending to ALL channels" hint.
-Auto-updates as channels are added or removed.
-
-Implementation:
-- Add `send_broadcast(payload, priority)` to `api.rs` — loops over all channels and calls `send_message` for each
-- Add `get_all_messages(limit)` to `api.rs` — same as `get_messages` without the `channel_id` filter
-- Add `sendBroadcast()` / `getAllMessages()` to `bridge_client.dart`
-- Prepend a synthetic `__all__` entry to the channel sidebar in `home_screen.dart`
-- When `__all__` selected: use `getAllMessages()`, populate full `_channelColors` map, show broadcast input with hint text
-- Messages sent from ALL get a 📢 icon in place of the channel dot in `message_list.dart`
-- No new OSC addresses, no FRB codegen needed
+Implemented as a **single broadcast on a reserved `__all__` channel id** (decided with user, over the
+fan-out-to-my-channels alternative) — so it reaches **every peer regardless of their channel config,
+including channels the sender doesn't have**. A channel id is just a routing label (every peer receives
+every packet), so the broadcast rides the existing `send_message`/`get_messages` path — **no new OSC
+address, no FRB regen**. A pinned **ALL** tab (reuses `ChannelTab` with a synthetic accent channel) is
+**exclusive** (selecting it replaces the selection; a channel tap exits it). In ALL mode the feed shows
+every channel's traffic; in normal mode each channel folds in `__all__` messages so a broadcast appears
+in whatever a heads-down operator is viewing. Broadcast rows show a 📢 marker (`message_list.dart`); the
+input shows a "📢 Broadcast to ALL channels…" hint; a 📢 flash pulses the ALL tab + message area.
+Delivery badge / critical retransmit / global macros all work unchanged. Engine: `upsert_channel` rejects
+the reserved `__all__` id (test `upsert_channel_rejects_reserved_all_id`); 📢-marker widget test added.
+Backfill of full cross-channel history on first open is out of scope (the event stream carries the
+session's traffic; a `get_all_messages` FFI fn would be needed for persisted history).
 
 ### Direct messages (peer-to-peer, outside channels)
 **Effort:** medium

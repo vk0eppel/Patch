@@ -77,4 +77,21 @@ void main() {
     expect(find.byIcon(Icons.done_all), findsNothing);
     expect(find.byIcon(Icons.error_outline), findsNothing);
   });
+
+  testWidgets('broadcast (__all__) messages show the 📢 marker', (tester) async {
+    final broadcast = PatchMessage(
+      messageId: 'b1',
+      senderId: 's',
+      senderName: 'PM',
+      channelId: kAllChannelId,
+      timestamp: DateTime(2026, 6, 6, 9, 30),
+      priority: 1,
+      payload: 'LUNCH BREAK',
+    );
+    await tester.pumpWidget(_host([broadcast, _msg('normal')]));
+    await tester.pumpAndSettle();
+    // Exactly one 📢 — on the broadcast row, not the normal one.
+    expect(find.text('📢'), findsOneWidget);
+    expect(find.text('LUNCH BREAK'), findsOneWidget);
+  });
 }
