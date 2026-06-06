@@ -33,7 +33,7 @@ These are starting points — edit, reorder, add, or delete them per channel in 
 ### Creating a channel
 
 1. Go to **Settings → Channels & Macros**.
-2. Tap **+ Add channel**.
+2. Tap **New channel**.
 3. Enter a name and pick a colour.
 4. The channel ID (slug) is auto-generated from the name — lowercase, no spaces.
 

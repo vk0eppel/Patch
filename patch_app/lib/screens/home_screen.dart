@@ -661,11 +661,8 @@ class _ChannelStrip extends StatelessWidget {
             ),
           ),
           const Divider(color: PatchTheme.border, height: 1),
-          IconButton(
-            icon: const Icon(Icons.add, color: PatchTheme.textMuted),
-            tooltip: 'Add channel',
-            onPressed: () => _showAddChannel(context, bridge),
-          ),
+          // Channels are created/edited/deleted in Settings → Channels & Macros
+          // (with colour); no separate quick-add here.
           IconButton(
             icon: const Icon(Icons.folder_outlined, color: PatchTheme.textMuted),
             tooltip: 'Sessions',
@@ -686,59 +683,6 @@ class _ChannelStrip extends StatelessWidget {
           ),
           const SizedBox(height: 4),
         ],
-      ),
-    );
-  }
-
-  /// Same rule the engine enforces in `api.rs::upsert_channel`.
-  static final RegExp _slugRegex = RegExp(r'^[a-z0-9_-]+$');
-
-  void _showAddChannel(BuildContext context, BridgeClient bridge) {
-    final idCtrl = TextEditingController();
-    final nameCtrl = TextEditingController();
-    String? idError;
-    showDialog(
-      context: context,
-      builder: (_) => StatefulBuilder(
-        builder: (context, setLocal) => AlertDialog(
-          title: const Text('New Channel'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: idCtrl,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: 'ID (slug, e.g. "rf")',
-                  errorText: idError,
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(hintText: 'Display Name'),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () {
-                final id = idCtrl.text.trim();
-                if (!_slugRegex.hasMatch(id)) {
-                  setLocal(() => idError =
-                      'Use only lowercase letters, digits, _ or -');
-                  return; // keep the dialog open with feedback
-                }
-                bridge.upsertChannel(id, nameCtrl.text.trim(), '#607D8B');
-                Navigator.pop(context);
-              },
-              child: const Text('Create'),
-            ),
-          ],
-        ),
       ),
     );
   }
