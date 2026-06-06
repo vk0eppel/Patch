@@ -583,17 +583,23 @@ class _ChannelStrip extends StatelessWidget {
           ),
           const Divider(color: PatchTheme.border, height: 1),
           const SizedBox(height: 8),
-          // Pinned ALL tab — crew-wide broadcast view/send.
-          ChannelTab(
-            channel: const PatchChannel(
-              id: kAllChannelId,
-              displayName: 'ALL',
-              color: PatchTheme.accent,
+          // Pinned ALL tab — crew-wide broadcast view/send. Wrapped in a
+          // full-width SizedBox so its frame matches the channel tabs below
+          // (those stretch to the strip width inside the ListView; a bare tab in
+          // this Column would otherwise centre-shrink to hug its text).
+          SizedBox(
+            width: double.infinity,
+            child: ChannelTab(
+              channel: const PatchChannel(
+                id: kAllChannelId,
+                displayName: 'ALL',
+                color: PatchTheme.accent,
+              ),
+              isSelected: selectedIds.contains(kAllChannelId),
+              flashCount: flashCounts[kAllChannelId] ?? 0,
+              pulseCount: globalFlashCount,
+              onTap: () => onTap(kAllChannelId),
             ),
-            isSelected: selectedIds.contains(kAllChannelId),
-            flashCount: flashCounts[kAllChannelId] ?? 0,
-            pulseCount: globalFlashCount,
-            onTap: () => onTap(kAllChannelId),
           ),
           const Divider(color: PatchTheme.border, height: 1, indent: 12, endIndent: 12),
           Expanded(
