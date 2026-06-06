@@ -6,8 +6,9 @@ import '../theme/patch_theme.dart';
 
 /// Collapsible right panel showing online peers.
 ///
-/// Rebuilds every 10 s so dot colours (based on DateTime.now()) stay accurate
-/// without waiting for an external event to trigger a Flutter rebuild.
+/// Rebuilds every 3 s so dot colours and the "last seen" counter (both based on
+/// DateTime.now()) stay accurate without waiting for an external event to
+/// trigger a Flutter rebuild.
 class PeersPanel extends StatefulWidget {
   final List<PeerInfo> peers;
 

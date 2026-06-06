@@ -153,7 +153,7 @@ class BridgeClient {
     }
   }
 
-  Future<void> getMessages(String channelId, {int limit = 50}) async {
+  Future<void> getMessages(String channelId, {int limit = 500}) async {
     try {
       final messages = await rust.getMessages(
         channelId: channelId,

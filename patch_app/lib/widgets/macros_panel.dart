@@ -24,9 +24,9 @@ class ChannelMacro {
 /// is never any hidden content. Users curate the macro list before the show
 /// to keep button sizes comfortable.
 ///
-/// [columns] (1 or 2) controls how many buttons appear per row. The preference
-/// is persisted via the Rust config and toggled with the [1] [2] control in the
-/// panel header.
+/// [columns] (1–3) controls how many buttons appear per row. The preference is
+/// persisted via the Rust config and set with the column-count control in
+/// Settings → Behavior.
 ///
 /// When [isMulti] is true (multiple channels selected), macros are grouped
 /// by channel with a thin colour-coded divider and channel name label.

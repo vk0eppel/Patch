@@ -1,6 +1,6 @@
 //! Hybrid peer discovery:
 //!   1. mDNS / Bonjour  — `_patch._udp.local.`
-//!   2. OSC broadcast beacon — `/patch/discovery`
+//!   2. OSC broadcast beacon — `/patch/presence`
 //!   3. Static IP fallback — seeded from config, no active probing needed here
 
 use anyhow::Result;
