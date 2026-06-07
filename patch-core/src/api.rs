@@ -16,9 +16,10 @@ use anyhow::Result;
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, OnceCell};
+use uuid::Uuid;
 
 use crate::discovery::Discovery;
-use crate::osc::codec::{encode_bye, encode_flash, encode_message};
+use crate::osc::codec::{encode_bye, encode_channels_request, encode_flash, encode_message};
 use crate::osc::types::{ChannelFlash, PatchMessage, Priority};
 use crate::reliability::ReliabilityManager;
 use crate::state::channel::{Channel, MacroMessage};
@@ -533,6 +534,41 @@ pub async fn reset_channels() -> Result<()> {
     engine().state.reset_channels().await
 }
 
+// ── Channel sharing over the network ──────────────────────────────────────────
+
+/// Ask a peer (by id) for its channel layout. The peer replies with a
+/// `/patch/channels/announce`, surfaced to the UI as a `ChannelsOffered` event —
+/// it is **not** auto-applied; the UI previews and calls `adopt_channels`.
+pub async fn request_channels(peer_id: String) -> Result<()> {
+    let h = engine();
+    let pid = Uuid::parse_str(&peer_id).map_err(|_| anyhow::anyhow!("invalid peer id"))?;
+    let peer = h
+        .state
+        .get_peers()
+        .await
+        .into_iter()
+        .find(|p| p.peer_id == pid)
+        .ok_or_else(|| anyhow::anyhow!("peer not found"))?;
+    if !peer.has_address() {
+        anyhow::bail!("peer has no resolved address yet — try again once it's online");
+    }
+    let ip: IpAddr = peer
+        .address
+        .parse()
+        .map_err(|_| anyhow::anyhow!("peer has an invalid address"))?;
+    let addr = SocketAddr::new(ip, peer.osc_port);
+    let config = h.state.config().await;
+    let bytes = encode_channels_request(config.client_id)?;
+    h.transport.send_to(bytes, addr).await?;
+    Ok(())
+}
+
+/// Adopt channels offered by a peer — **merge** (adds only ids we don't already
+/// have; never overwrites or deletes). Returns the number actually added.
+pub async fn adopt_channels(channels: Vec<Channel>) -> Result<u32> {
+    Ok(engine().state.merge_channels(channels).await? as u32)
+}
+
 pub async fn upsert_macro(
     channel_id: String,
     label: String,
@@ -751,6 +787,13 @@ pub enum PatchAppEvent {
     },
     ChannelFlash(ChannelFlash),
     ChannelListUpdated,
+    /// A peer offered its channel layout (reply to our `request_channels`).
+    /// Surfaced for a UI preview/merge prompt — not auto-applied.
+    ChannelsOffered {
+        from_peer_id: String,
+        from_name: String,
+        channels: Vec<Channel>,
+    },
     ClientNameChanged {
         name: String,
     },
@@ -790,6 +833,15 @@ impl From<AppEvent> for PatchAppEvent {
             },
             AppEvent::ChannelFlash(f) => Self::ChannelFlash(f),
             AppEvent::ChannelListUpdated => Self::ChannelListUpdated,
+            AppEvent::ChannelsOffered {
+                from_peer_id,
+                from_name,
+                channels,
+            } => Self::ChannelsOffered {
+                from_peer_id: from_peer_id.to_string(),
+                from_name,
+                channels,
+            },
             AppEvent::ClientNameChanged(name) => Self::ClientNameChanged { name },
             AppEvent::PermissionDenied { context } => Self::PermissionDenied { context },
         }

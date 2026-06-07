@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1630261029;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1379189383;
 
 // Section: executor
 
@@ -77,6 +77,42 @@ fn wire__crate__api__add_static_peer_impl(
                     (move || async move {
                         let output_ok =
                             crate::api::add_static_peer(api_address, api_port, api_label).await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__adopt_channels_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "adopt_channels",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_channels = <Vec<crate::state::channel::Channel>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || async move {
+                        let output_ok = crate::api::adopt_channels(api_channels).await?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -801,6 +837,42 @@ fn wire__crate__api__reorder_macros_impl(
                     (move || async move {
                         let output_ok =
                             crate::api::reorder_macros(api_channel_id, api_ordered_labels).await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__request_channels_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "request_channels",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_peer_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || async move {
+                        let output_ok = crate::api::request_channels(api_peer_id).await?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -1907,10 +1979,21 @@ impl SseDecode for crate::api::PatchAppEvent {
                 return crate::api::PatchAppEvent::ChannelListUpdated;
             }
             7 => {
+                let mut var_fromPeerId = <String>::sse_decode(deserializer);
+                let mut var_fromName = <String>::sse_decode(deserializer);
+                let mut var_channels =
+                    <Vec<crate::state::channel::Channel>>::sse_decode(deserializer);
+                return crate::api::PatchAppEvent::ChannelsOffered {
+                    from_peer_id: var_fromPeerId,
+                    from_name: var_fromName,
+                    channels: var_channels,
+                };
+            }
+            8 => {
                 let mut var_name = <String>::sse_decode(deserializer);
                 return crate::api::PatchAppEvent::ClientNameChanged { name: var_name };
             }
-            8 => {
+            9 => {
                 let mut var_context = <String>::sse_decode(deserializer);
                 return crate::api::PatchAppEvent::PermissionDenied {
                     context: var_context,
@@ -2107,45 +2190,47 @@ fn pde_ffi_dispatcher_primary_impl(
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
         1 => wire__crate__api__add_static_peer_impl(port, ptr, rust_vec_len, data_len),
-        2 => wire__crate__api__clear_messages_impl(port, ptr, rust_vec_len, data_len),
-        3 => wire__crate__api__clear_stale_peers_impl(port, ptr, rust_vec_len, data_len),
-        4 => wire__crate__api__delete_channel_impl(port, ptr, rust_vec_len, data_len),
-        5 => wire__crate__api__delete_global_macro_impl(port, ptr, rust_vec_len, data_len),
-        6 => wire__crate__api__delete_macro_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__delete_session_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__export_layout_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__export_messages_impl(port, ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__get_channels_impl(port, ptr, rust_vec_len, data_len),
-        11 => wire__crate__api__get_config_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__get_interfaces_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__get_messages_impl(port, ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__get_peers_impl(port, ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__import_layout_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__init_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__list_sessions_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__load_session_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__remove_static_peer_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__reorder_global_macros_impl(port, ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__reorder_macros_impl(port, ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__reset_channels_impl(port, ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__save_session_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__send_flash_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__send_message_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__set_audible_alert_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__set_channel_flash_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__set_client_name_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__set_flash_count_impl(port, ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__set_flash_on_critical_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__set_flash_on_message_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__set_hide_keyboard_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__set_interface_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__set_macros_columns_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__set_role_impl(port, ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__shutdown_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__upsert_channel_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__upsert_global_macro_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__upsert_macro_impl(port, ptr, rust_vec_len, data_len),
+        2 => wire__crate__api__adopt_channels_impl(port, ptr, rust_vec_len, data_len),
+        3 => wire__crate__api__clear_messages_impl(port, ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__clear_stale_peers_impl(port, ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__delete_channel_impl(port, ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__delete_global_macro_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__delete_macro_impl(port, ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__delete_session_impl(port, ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__export_layout_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__export_messages_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__get_channels_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__get_config_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__get_interfaces_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__get_messages_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__get_peers_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__import_layout_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__init_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__list_sessions_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__load_session_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__remove_static_peer_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__reorder_global_macros_impl(port, ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__reorder_macros_impl(port, ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__request_channels_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__reset_channels_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__save_session_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__send_flash_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__send_message_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__set_audible_alert_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__set_channel_flash_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__set_client_name_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__set_flash_count_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__set_flash_on_critical_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__set_flash_on_message_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__set_hide_keyboard_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__set_interface_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__set_macros_columns_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__set_role_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__shutdown_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__upsert_channel_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__upsert_global_macro_impl(port, ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__upsert_macro_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2346,11 +2431,22 @@ impl flutter_rust_bridge::IntoDart for crate::api::PatchAppEvent {
                 [5.into_dart(), field0.into_into_dart().into_dart()].into_dart()
             }
             crate::api::PatchAppEvent::ChannelListUpdated => [6.into_dart()].into_dart(),
+            crate::api::PatchAppEvent::ChannelsOffered {
+                from_peer_id,
+                from_name,
+                channels,
+            } => [
+                7.into_dart(),
+                from_peer_id.into_into_dart().into_dart(),
+                from_name.into_into_dart().into_dart(),
+                channels.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
             crate::api::PatchAppEvent::ClientNameChanged { name } => {
-                [7.into_dart(), name.into_into_dart().into_dart()].into_dart()
+                [8.into_dart(), name.into_into_dart().into_dart()].into_dart()
             }
             crate::api::PatchAppEvent::PermissionDenied { context } => {
-                [8.into_dart(), context.into_into_dart().into_dart()].into_dart()
+                [9.into_dart(), context.into_into_dart().into_dart()].into_dart()
             }
             _ => {
                 unimplemented!("");
@@ -2834,12 +2930,22 @@ impl SseEncode for crate::api::PatchAppEvent {
             crate::api::PatchAppEvent::ChannelListUpdated => {
                 <i32>::sse_encode(6, serializer);
             }
-            crate::api::PatchAppEvent::ClientNameChanged { name } => {
+            crate::api::PatchAppEvent::ChannelsOffered {
+                from_peer_id,
+                from_name,
+                channels,
+            } => {
                 <i32>::sse_encode(7, serializer);
+                <String>::sse_encode(from_peer_id, serializer);
+                <String>::sse_encode(from_name, serializer);
+                <Vec<crate::state::channel::Channel>>::sse_encode(channels, serializer);
+            }
+            crate::api::PatchAppEvent::ClientNameChanged { name } => {
+                <i32>::sse_encode(8, serializer);
                 <String>::sse_encode(name, serializer);
             }
             crate::api::PatchAppEvent::PermissionDenied { context } => {
-                <i32>::sse_encode(8, serializer);
+                <i32>::sse_encode(9, serializer);
                 <String>::sse_encode(context, serializer);
             }
             _ => {

@@ -49,6 +49,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Static peers
   List<Map<String, dynamic>> _staticPeers = [];
 
+  // Live peers (for "import channels from a peer")
+  List<Map<String, dynamic>> _peers = [];
+
+  /// True between sending a channels request and receiving the offer, so an
+  /// unsolicited `channels_offered` (a peer announcing without us asking) is
+  /// ignored rather than popping a dialog.
+  bool _awaitingOffer = false;
+
   @override
   void initState() {
     super.initState();
@@ -56,6 +64,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _sub = widget.bridge.events.listen(_handleEvent);
     widget.bridge.getConfig();
     widget.bridge.getInterfaces();
+    widget.bridge.getPeers();
   }
 
   @override
@@ -120,6 +129,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
         });
       case 'channel_list_updated':
         widget.bridge.getChannels();
+      case 'peers':
+        final data = event['data'] as List<dynamic>;
+        setState(() {
+          _peers = List<Map<String, dynamic>>.from(
+            data.map((p) => Map<String, dynamic>.from(p as Map)),
+          );
+        });
+      case 'channels_offered':
+        if (!_awaitingOffer) break; // ignore unsolicited announces
+        _awaitingOffer = false;
+        final channels = ((event['channels'] as List<dynamic>?) ?? [])
+            .map((c) => Map<String, dynamic>.from(c as Map))
+            .toList();
+        final fromName = event['from_name'] as String? ?? 'peer';
+        if (mounted) _showOfferDialog(fromName, channels);
+      case 'channels_adopted':
+        final added = (event['added'] as num?)?.toInt() ?? 0;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(added == 0
+                  ? 'No new channels to add — you already have them all'
+                  : 'Added $added channel${added == 1 ? '' : 's'}'),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
     }
   }
 
@@ -137,6 +173,168 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) setState(() => _roleSaved = false);
     });
+  }
+
+  // ── Import channels from a peer over the network ──────────────────────────
+
+  /// Pick a peer (with a resolved address) to request a channel layout from.
+  void _showImportFromPeer() {
+    widget.bridge.getPeers(); // refresh the list before showing it
+    final candidates = _peers
+        .where((p) =>
+            (p['address'] as String? ?? '').isNotEmpty &&
+            ((p['osc_port'] as num?)?.toInt() ?? 0) > 0)
+        .toList();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Import channels from…'),
+        content: SizedBox(
+          width: double.infinity,
+          child: candidates.isEmpty
+              ? const Text(
+                  'No peers with a known address are online yet. Wait for a peer '
+                  'to appear in the peers panel, then try again.',
+                  style: TextStyle(color: PatchTheme.textSecondary),
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Pick a peer to copy their channel layout from. Only channels "
+                      "you don't already have are added — your channels are kept.",
+                      style: TextStyle(
+                        color: PatchTheme.textSecondary,
+                        fontSize: PatchTheme.fontSizeSmall,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ...candidates.map((p) => ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.person_outline, size: 18),
+                          title: Text(p['peer_name'] as String? ?? 'peer'),
+                          subtitle: Text(p['address'] as String? ?? ''),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _requestFromPeer(
+                              p['peer_id'] as String,
+                              p['peer_name'] as String? ?? 'peer',
+                            );
+                          },
+                        )),
+                  ],
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _requestFromPeer(String peerId, String name) {
+    setState(() => _awaitingOffer = true);
+    widget.bridge.requestChannels(peerId);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Requesting channels from $name…'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+    // Clear the flag if no offer arrives (peer offline / not a Patch node), so a
+    // later unsolicited announce can't pop a stale dialog.
+    Future.delayed(const Duration(seconds: 6), () {
+      if (mounted && _awaitingOffer) setState(() => _awaitingOffer = false);
+    });
+  }
+
+  /// Preview a peer's offered channels and merge-adopt the ones we're missing.
+  void _showOfferDialog(String fromName, List<Map<String, dynamic>> channelMaps) {
+    final existing = _channels.map((c) => c.id).toSet();
+    final parsed =
+        channelMaps.map((m) => (map: m, ch: PatchChannel.fromJson(m))).toList();
+    final fresh = parsed.where((e) => !existing.contains(e.ch.id)).toList();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Channels from $fromName'),
+        content: SizedBox(
+          width: double.infinity,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                fresh.isEmpty
+                    ? 'You already have all ${parsed.length} of their channels.'
+                    : '${fresh.length} new of ${parsed.length} will be added '
+                        '(existing channels are kept unchanged):',
+                style: const TextStyle(
+                  color: PatchTheme.textSecondary,
+                  fontSize: PatchTheme.fontSizeSmall,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ...parsed.map((e) {
+                final isNew = !existing.contains(e.ch.id);
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: e.ch.color,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          e.ch.displayName,
+                          style: const TextStyle(color: PatchTheme.textPrimary),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Text(
+                        isNew ? 'new' : 'have',
+                        style: TextStyle(
+                          color:
+                              isNew ? PatchTheme.success : PatchTheme.textMuted,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: fresh.isEmpty
+                ? null
+                : () {
+                    widget.bridge
+                        .adoptChannels(fresh.map((e) => e.map).toList());
+                    Navigator.pop(ctx);
+                  },
+            child: Text(fresh.isEmpty ? 'Nothing to add' : 'Add ${fresh.length}'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _confirmDeleteChannel(PatchChannel channel) {
@@ -524,6 +722,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Row(
             children: [
               Expanded(child: _SectionHeader('Channels & Macros')),
+              IconButton(
+                icon: const Icon(Icons.cloud_download_outlined, size: 18),
+                color: PatchTheme.textMuted,
+                tooltip: 'Import channels from a peer',
+                onPressed: _showImportFromPeer,
+              ),
               TextButton.icon(
                 icon: const Icon(Icons.add, size: 16),
                 label: const Text('New channel'),

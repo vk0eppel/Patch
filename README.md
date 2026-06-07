@@ -31,7 +31,8 @@ Inspired by [Wavetool](https://wavetool.fi/) chat and [SideChain's TheaterChat](
 - **Session presets** — save and restore named channel layouts; accessible from the folder icon in the sidebar; import/export `.toml` files to share layouts across machines
 - **Hybrid discovery** — mDNS/Bonjour auto-discovery + OSC beacon broadcast every 7s + manual static IP for AP-isolated or VLAN-segmented show networks
 - **Static peer management** — add/remove known peers by IP from the Settings screen; static peers are always contacted regardless of discovery state, bypassing AP isolation
-- **Peer presence at a glance** — the peers panel shows who's online with a per-peer "last seen" time and a green/amber/grey status dot (amber = a heartbeat or more missed, so you catch a node going quiet before it drops); a peer leaving (graceful quit or mDNS departure) goes grey promptly but stays in the list, so you can still see who was connected
+- **Peer presence at a glance** — the peers panel shows who's online with a per-peer "last seen" time and a green/amber/grey status dot (amber = a heartbeat or more missed, so you catch a node going quiet before it drops); a peer leaving (graceful quit or mDNS departure) goes grey promptly but stays in the list, so you can still see who was connected. Each peer also shows **colour dots for the channels they're on** and an optional **role label** (e.g. FOH, Monitors, PM) so you can tell crew apart at a glance
+- **Channel layout sharing** — pull another peer's full channel set (names, colours, macros) over the network in one tap (**Settings → Channels & Macros → import from a peer**); it merges in only the channels you're missing, so a newcomer matches the crew's layout instantly
 - **Configurable identity** — set your display name and network interface from the settings screen; NIC picker filters out virtual/tunnel interfaces and shows only real NICs with IPv4 addresses; changes persist immediately
 - **Priority levels** — info / warning / critical; critical messages are visually distinct and require ACK
 - **Clear inactive peers** — remove grey-dot dynamic peers from the panel via the 👤 button in the peers panel header; static/manual peers are never removed; cleared peers reappear automatically when they come back online
@@ -163,6 +164,7 @@ Flash/page a channel from any OSC source:
 ```toml
 client_id = "..."              # UUID — generated once, stable across sessions
 client_name = "FOH Engineer"   # Editable from the Settings screen
+role = "FOH"                   # Optional self-assigned role (free text); shown next to your name on peers
 osc_port = 9000
 network_interface = "en0"      # Scopes the discovery beacon to one NIC; omit to announce on all (Patch always listens on all)
 flash_on_critical = true       # Auto-flash on priority-3 messages (Settings → Behavior)
@@ -196,6 +198,8 @@ label = "Monitor World"
 - [x] Session presets — save / load / delete named channel layouts; sidebar folder icon (not Settings); import/export `.toml` files
 - [x] Multi-channel view — tap to toggle channels; combined feed sorted by timestamp
 - [x] ALL channel — combined view + crew-wide broadcast send (reserved `__all__` id, shown in every feed)
+- [x] Peer identification — channel-membership colour dots + optional self-assigned role label per peer
+- [x] Channel layout sharing over the network — pull a peer's channels and merge-adopt the missing ones
 - [x] Flash animation — channel tab pulse + message box border/tint (configurable pulse count)
 - [x] Auto-flash on critical messages — global default in Settings → Behavior
 - [x] Per-channel flash settings — override "flash on message", "flash on critical", and pulse count per channel

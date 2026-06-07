@@ -51,6 +51,14 @@ Swipe left on a channel row (iOS) or tap the delete icon. The channel and all it
 
 Tap the **↺** icon at the top-right of the Channels & Macros section → confirm. This replaces all channels with the factory defaults (AUDIO, RF, LIGHTING, VIDEO, STAGE).
 
+### Importing channels from a peer
+
+To get a new machine onto the crew's channel set quickly, tap the **cloud-download icon** at the top of **Settings → Channels & Macros**, pick a peer that's already online, and Patch requests their channel layout over the network. You'll see a preview marking each channel **new** or **have**, then tap **Add N** to import. This is a **merge**: only channels you don't already have are added — your existing channels (and their colours and macros) are left untouched. Channels carry their names, colours, and macros across, so a newcomer matches the crew in one tap without retyping anything.
+
+### Roles & channel dots in the peers panel
+
+Set an optional **role** (e.g. "FOH", "Monitors", "PM") in **Settings → Identity** — it shows as a small label next to your name on every other device's peers panel. Each peer row also shows small **colour dots** for the channels that peer is on (using your own channel colours), so you can see who covers what at a glance. Dots for a channel you don't have appear grey until you import that channel (see above).
+
 ---
 
 ## Macros

@@ -72,6 +72,37 @@ pub fn encode_bye(peer_id: Uuid) -> Result<Vec<u8>> {
     rosc::encoder::encode(&OscPacket::Message(osc)).context("Failed to encode /patch/bye")
 }
 
+/// Encode a channel-layout request (sent unicast to a chosen peer).
+pub fn encode_channels_request(peer_id: Uuid) -> Result<Vec<u8>> {
+    let osc = OscMessage {
+        addr: addresses::CHANNELS_REQUEST.to_string(),
+        args: vec![OscType::String(peer_id.to_string())],
+    };
+    rosc::encoder::encode(&OscPacket::Message(osc))
+        .context("Failed to encode /patch/channels/request")
+}
+
+/// Encode a channel-layout announce (the reply to a request). `channels_json` is
+/// the responder's channel list already serialised to JSON — kept as a string
+/// here so the codec layer doesn't depend on the higher-level `Channel` type
+/// (the transport/state layer serialises and parses it).
+pub fn encode_channels_announce(
+    peer_id: Uuid,
+    peer_name: &str,
+    channels_json: &str,
+) -> Result<Vec<u8>> {
+    let osc = OscMessage {
+        addr: addresses::CHANNELS_ANNOUNCE.to_string(),
+        args: vec![
+            OscType::String(peer_id.to_string()),
+            OscType::String(peer_name.to_string()),
+            OscType::String(channels_json.to_string()),
+        ],
+    };
+    rosc::encoder::encode(&OscPacket::Message(osc))
+        .context("Failed to encode /patch/channels/announce")
+}
+
 /// Encode an ACK for a given message_id.
 pub fn encode_ack(message_id: Uuid, peer_id: Uuid) -> Result<Vec<u8>> {
     let osc = OscMessage {
@@ -90,10 +121,26 @@ pub fn encode_ack(message_id: Uuid, peer_id: Uuid) -> Result<Vec<u8>> {
 #[derive(Debug)]
 pub enum PatchEvent {
     Message(PatchMessage),
-    Ack { message_id: Uuid, peer_id: Uuid },
+    Ack {
+        message_id: Uuid,
+        peer_id: Uuid,
+    },
     Presence(PeerPresence),
-    Bye { peer_id: Uuid },
+    Bye {
+        peer_id: Uuid,
+    },
     Flash(ChannelFlash),
+    /// A peer asked us for our channel layout. We reply with a ChannelsAnnounce.
+    ChannelsRequest {
+        peer_id: Uuid,
+    },
+    /// A peer's channel layout, in reply to our request. `channels_json` is the
+    /// raw JSON-serialised `Vec<Channel>`; the transport layer parses + validates.
+    ChannelsAnnounce {
+        peer_id: Uuid,
+        peer_name: String,
+        channels_json: String,
+    },
     Unknown(OscMessage),
 }
 
@@ -115,6 +162,8 @@ fn decode_message(msg: OscMessage) -> Result<PatchEvent> {
         addresses::ACK => decode_ack(msg),
         addresses::PRESENCE => decode_presence(msg),
         addresses::BYE => decode_bye(msg),
+        addresses::CHANNELS_REQUEST => decode_channels_request(msg),
+        addresses::CHANNELS_ANNOUNCE => decode_channels_announce(msg),
         addr if addr.ends_with("/flash") => decode_flash(msg),
         _ => Ok(PatchEvent::Unknown(msg)),
     }
@@ -227,6 +276,44 @@ fn decode_bye(msg: OscMessage) -> Result<PatchEvent> {
     }
     Ok(PatchEvent::Bye {
         peer_id: parse_uuid(&msg.args[0])?,
+    })
+}
+
+/// Defensive cap on an announced channel-layout JSON blob (network input). A
+/// full layout is a few KB; this bounds a malicious/oversized payload.
+const MAX_CHANNELS_JSON: usize = 64 * 1024;
+
+fn decode_channels_request(msg: OscMessage) -> Result<PatchEvent> {
+    if msg.args.is_empty() {
+        bail!("Expected 1 arg for /patch/channels/request, got 0");
+    }
+    Ok(PatchEvent::ChannelsRequest {
+        peer_id: parse_uuid(&msg.args[0])?,
+    })
+}
+
+fn decode_channels_announce(msg: OscMessage) -> Result<PatchEvent> {
+    let args = msg.args;
+    if args.len() < 3 {
+        bail!(
+            "Expected 3 args for /patch/channels/announce, got {}",
+            args.len()
+        );
+    }
+    let peer_id = parse_uuid(&args[0])?;
+    let peer_name = parse_string(&args[1])?;
+    let channels_json = parse_string(&args[2])?;
+    if channels_json.len() > MAX_CHANNELS_JSON {
+        bail!(
+            "channels announce payload {} bytes exceeds max {}",
+            channels_json.len(),
+            MAX_CHANNELS_JSON
+        );
+    }
+    Ok(PatchEvent::ChannelsAnnounce {
+        peer_id,
+        peer_name,
+        channels_json,
     })
 }
 
@@ -415,6 +502,49 @@ mod tests {
             PatchEvent::Bye { peer_id } => assert_eq!(peer_id, pid),
             other => panic!("expected Bye, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn channels_request_round_trip() {
+        let pid = Uuid::new_v4();
+        let bytes = encode_channels_request(pid).unwrap();
+        match decode_packet(&bytes).unwrap() {
+            PatchEvent::ChannelsRequest { peer_id } => assert_eq!(peer_id, pid),
+            other => panic!("expected ChannelsRequest, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn channels_announce_round_trip_carries_json() {
+        let pid = Uuid::new_v4();
+        let json = r##"[{"id":"rf","display_name":"RF","color":"#1E88E5"}]"##;
+        let bytes = encode_channels_announce(pid, "FOH", json).unwrap();
+        match decode_packet(&bytes).unwrap() {
+            PatchEvent::ChannelsAnnounce {
+                peer_id,
+                peer_name,
+                channels_json,
+            } => {
+                assert_eq!(peer_id, pid);
+                assert_eq!(peer_name, "FOH");
+                assert_eq!(channels_json, json);
+            }
+            other => panic!("expected ChannelsAnnounce, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn oversized_channels_announce_is_rejected() {
+        let big = "x".repeat(MAX_CHANNELS_JSON + 1);
+        let msg = OscMessage {
+            addr: addresses::CHANNELS_ANNOUNCE.to_string(),
+            args: vec![
+                OscType::String(Uuid::new_v4().to_string()),
+                OscType::String("FOH".into()),
+                OscType::String(big),
+            ],
+        };
+        assert!(decode_message(msg).is_err());
     }
 
     #[test]

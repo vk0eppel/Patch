@@ -10,11 +10,15 @@ use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, warn};
 use uuid::Uuid;
 
-use crate::osc::codec::{decode_packet, encode_ack, PatchEvent};
+use crate::osc::codec::{decode_packet, encode_ack, encode_channels_announce, PatchEvent};
 use crate::osc::types::PeerPresence;
 use crate::reliability::ReliabilityManager;
+use crate::state::channel::Channel;
 use crate::state::{AppEvent, AppState, Config};
 use chrono::Utc;
+
+/// Defensive cap on how many channels a peer may offer in one announce.
+const MAX_OFFERED_CHANNELS: usize = 64;
 
 /// A queued outgoing packet, processed by the single `send_loop` task. Routing
 /// everything through one task means the per-interface broadcast can set/clear
@@ -379,6 +383,60 @@ async fn handle_event(
                     .await;
             }
             state.publish(AppEvent::ChannelFlash(f)).await;
+        }
+        PatchEvent::ChannelsRequest { peer_id } => {
+            if peer_id == client_id {
+                return; // don't answer our own request
+            }
+            // Reply with our current channel layout, unicast back to the requester.
+            let config = state.config().await;
+            let channels = state.get_channels().await;
+            match serde_json::to_string(&channels) {
+                Ok(json) => {
+                    match encode_channels_announce(config.client_id, &config.client_name, &json) {
+                        Ok(bytes) => {
+                            debug!("Replying to channels request from {} ({})", peer_id, from);
+                            let _ = send_tx.send(Outgoing::To(bytes, from)).await;
+                        }
+                        Err(e) => warn!("Failed to encode channels announce: {}", e),
+                    }
+                }
+                Err(e) => warn!("Failed to serialise channels for announce: {}", e),
+            }
+        }
+        PatchEvent::ChannelsAnnounce {
+            peer_id,
+            peer_name,
+            channels_json,
+        } => {
+            if peer_id == client_id {
+                return;
+            }
+            match serde_json::from_str::<Vec<Channel>>(&channels_json) {
+                Ok(channels) => {
+                    if channels.len() > MAX_OFFERED_CHANNELS {
+                        warn!(
+                            "Channels announce from {} has {} channels (> {}), dropping",
+                            peer_name,
+                            channels.len(),
+                            MAX_OFFERED_CHANNELS
+                        );
+                        return;
+                    }
+                    // Surface for a UI preview/merge prompt — never auto-applied.
+                    state
+                        .publish(AppEvent::ChannelsOffered {
+                            from_peer_id: peer_id,
+                            from_name: peer_name,
+                            channels,
+                        })
+                        .await;
+                }
+                Err(e) => warn!(
+                    "Failed to parse channels announce from {}: {}",
+                    peer_name, e
+                ),
+            }
         }
         PatchEvent::Unknown(msg) => {
             debug!("Unknown OSC: {}", msg.addr);

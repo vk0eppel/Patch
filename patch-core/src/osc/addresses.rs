@@ -7,6 +7,10 @@ pub const ACK: &str = "/patch/ack";
 pub const PRESENCE: &str = "/patch/presence";
 /// Departure announcement broadcast on graceful shutdown so peers drop us promptly.
 pub const BYE: &str = "/patch/bye";
+/// Request a peer's full channel layout (unicast). Arg: requester peer_id.
+pub const CHANNELS_REQUEST: &str = "/patch/channels/request";
+/// Reply to a channels request (unicast). Args: peer_id, peer_name, channels JSON.
+pub const CHANNELS_ANNOUNCE: &str = "/patch/channels/announce";
 
 // Flash / page (per-channel suffix appended at runtime)
 pub const CHANNEL_FLASH_PREFIX: &str = "/patch/channel";

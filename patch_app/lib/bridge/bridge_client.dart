@@ -88,6 +88,16 @@ class BridgeClient {
       rust.PatchAppEvent_ChannelListUpdated() => {
         'event': 'channel_list_updated',
       },
+      rust.PatchAppEvent_ChannelsOffered(
+        :final fromPeerId,
+        :final fromName,
+        :final channels,
+      ) => {
+        'event': 'channels_offered',
+        'from_peer_id': fromPeerId,
+        'from_name': fromName,
+        'channels': channels.map(_channelToMap).toList(),
+      },
       rust.PatchAppEvent_ClientNameChanged(:final name) => {
         'event': 'client_name_changed',
         'name': name,
@@ -396,6 +406,29 @@ class BridgeClient {
     }
   }
 
+  /// Ask a peer (by id) for its channel layout. The reply arrives asynchronously
+  /// as a `channels_offered` event (not auto-applied — the UI previews + merges).
+  Future<void> requestChannels(String peerId) async {
+    try {
+      await rust.requestChannels(peerId: peerId);
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
+  /// Adopt offered channels — merge (adds only ids not already present). Takes
+  /// the legacy channel-map shape (as delivered in `channels_offered`) and
+  /// rebuilds the typed FRB `Channel`s. Emits `channels_adopted` with the count.
+  Future<void> adoptChannels(List<Map<String, dynamic>> channels) async {
+    try {
+      final rebuilt = channels.map(_channelFromMap).toList();
+      final added = await rust.adoptChannels(channels: rebuilt);
+      _emit({'event': 'channels_adopted', 'added': added});
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
   /// Reset all channels to factory defaults (AUDIO · RF · LIGHTING · VIDEO · STAGE).
   Future<void> resetChannels() async {
     try {
@@ -584,6 +617,28 @@ Map<String, dynamic> _macroToMap(rust_channel.MacroMessage s) => {
       'key_binding': s.keyBinding,
       'priority': s.priority,
     };
+
+// Inverse of `_channelToMap`/`_macroToMap` — rebuilds the typed FRB structs from
+// the legacy map shape so offered channels (delivered as maps) can be passed back
+// into `adopt_channels`.
+rust_channel.Channel _channelFromMap(Map<String, dynamic> m) => rust_channel.Channel(
+      id: m['id'] as String,
+      displayName: m['display_name'] as String,
+      color: m['color'] as String,
+      macros: ((m['macros'] as List<dynamic>?) ?? const [])
+          .map((e) => _macroFromMap(e as Map<String, dynamic>))
+          .toList(),
+      flashOnCritical: m['flash_on_critical'] as bool? ?? true,
+      flashOnMessage: m['flash_on_message'] as bool? ?? false,
+      flashCount: m['flash_count'] as int?,
+    );
+
+rust_channel.MacroMessage _macroFromMap(Map<String, dynamic> m) => rust_channel.MacroMessage(
+      label: m['label'] as String,
+      payload: m['payload'] as String,
+      keyBinding: m['key_binding'] as String?,
+      priority: (m['priority'] as num).toInt(),
+    );
 
 Map<String, dynamic> _messageToMap(rust_osc.PatchMessage m) => {
       'message_id': m.messageId.toString(),

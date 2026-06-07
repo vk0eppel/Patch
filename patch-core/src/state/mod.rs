@@ -37,6 +37,13 @@ pub enum AppEvent {
     PeerExpired(Uuid),
     ChannelFlash(ChannelFlash),
     ChannelListUpdated,
+    /// A peer offered its channel layout in reply to our request. Surfaced to the
+    /// UI for a preview/merge prompt — never auto-applied.
+    ChannelsOffered {
+        from_peer_id: Uuid,
+        from_name: String,
+        channels: Vec<channel::Channel>,
+    },
     ClientNameChanged(String),
     /// Emitted when the OS denies network access (iOS/macOS Local Network permission).
     PermissionDenied {
@@ -578,6 +585,51 @@ impl AppState {
         Ok(())
     }
 
+    /// Merge incoming channels into the registry, **adding only ids we don't
+    /// already have** — never overwrites an existing channel's colour/macros and
+    /// never deletes. Each id is validated against the OSC slug rule and the
+    /// reserved `__all__` id is skipped (this is untrusted network input).
+    /// Returns the number of channels actually added; persists + emits
+    /// `ChannelListUpdated` only when something changed.
+    ///
+    /// Adopts **structure only** (id, display name, colour, macros). The
+    /// per-channel flash/behavioural flags are LOCAL preferences, so they're
+    /// reset to this machine's defaults (`config.flash_on_critical` /
+    /// `flash_on_message`, and `flash_count = None`) rather than inheriting the
+    /// source peer's — mirroring how `api::upsert_channel` creates a new channel.
+    /// Without this, importing a layout could silently impose "flash on every
+    /// message" from whoever you imported from.
+    pub async fn merge_channels(&self, channels: Vec<channel::Channel>) -> anyhow::Result<usize> {
+        let (flash_on_critical, flash_on_message) = {
+            let cfg = self.0.config.read().await;
+            (cfg.flash_on_critical, cfg.flash_on_message)
+        };
+        let mut added = 0usize;
+        {
+            let mut map = self.0.channels.write().await;
+            for mut ch in channels {
+                if ch.id == "__all__" || !crate::osc::codec::valid_channel_id(&ch.id) {
+                    tracing::warn!("merge_channels: skipping invalid/reserved id {:?}", ch.id);
+                    continue;
+                }
+                if map.contains_key(&ch.id) {
+                    continue; // keep the existing channel untouched
+                }
+                // Reset behavioural flags to local defaults (structure-only adopt).
+                ch.flash_on_critical = flash_on_critical;
+                ch.flash_on_message = flash_on_message;
+                ch.flash_count = None;
+                map.insert(ch.id.clone(), ch);
+                added += 1;
+            }
+        }
+        if added > 0 {
+            self.persist_channels().await?;
+            self.publish(AppEvent::ChannelListUpdated).await;
+        }
+        Ok(added)
+    }
+
     /// Replace all channels with those from a loaded session.
     pub async fn apply_session(&self, channels: Vec<channel::Channel>) -> anyhow::Result<()> {
         // A session file is untrusted input (shared between machines, possibly
@@ -1076,6 +1128,88 @@ mod tests {
         assert_eq!(loaded.static_peers.len(), 1);
         assert_eq!(loaded.default_channels.len(), 1);
         assert_eq!(loaded.default_channels[0].id, "rf");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn merge_channels_adds_missing_keeps_existing_skips_invalid() {
+        use channel::Channel;
+        let _guard = config::test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        config::set_data_dir(dir.clone());
+
+        let st = test_state();
+        // Pre-existing channel with a distinctive colour we must NOT overwrite.
+        let mut existing = Channel::new("rf", "RF", "#000000");
+        existing.macros = vec![channel::MacroMessage {
+            label: "KEEP".into(),
+            payload: "keep".into(),
+            key_binding: None,
+            priority: 1,
+        }];
+        st.upsert_channel(existing).await;
+
+        // An incoming channel that carries the source's behavioural flags — these
+        // must NOT be inherited (reset to this machine's defaults on adopt).
+        let mut hot = Channel::new("audio", "AUDIO", "#E53935");
+        hot.flash_on_message = true; // source had "flash on every message"
+        hot.flash_on_critical = false;
+        hot.flash_count = Some(7);
+
+        let added = st
+            .merge_channels(vec![
+                // Same id as existing — must be skipped (colour/macros preserved).
+                Channel::new("rf", "RF NEW", "#FFFFFF"),
+                // New — added (but with flash flags normalised, see below).
+                hot,
+                // Reserved id — skipped.
+                Channel::new("__all__", "ALL", "#fff"),
+                // OSC-unsafe id — skipped.
+                Channel::new("BAD/../x", "BAD", "#fff"),
+            ])
+            .await
+            .unwrap();
+        assert_eq!(added, 1); // only "audio"
+
+        // Adopted "audio" keeps structure but NOT the source's flash prefs:
+        // test_state's config defaults are flash_on_critical=true / flash_on_message=false.
+        let audio = st
+            .get_channels()
+            .await
+            .into_iter()
+            .find(|c| c.id == "audio")
+            .unwrap();
+        assert!(
+            !audio.flash_on_message,
+            "must not inherit flash-on-every-message"
+        );
+        assert!(audio.flash_on_critical, "reset to local default (true)");
+        assert_eq!(
+            audio.flash_count, None,
+            "per-channel pulse override cleared"
+        );
+
+        let chans = st.get_channels().await;
+        let ids: Vec<_> = chans.iter().map(|c| c.id.as_str()).collect();
+        assert!(ids.contains(&"rf"));
+        assert!(ids.contains(&"audio"));
+        assert!(!ids.contains(&"__all__"));
+        assert!(!ids.contains(&"BAD/../x"));
+        // Existing "rf" untouched.
+        let rf = chans.iter().find(|c| c.id == "rf").unwrap();
+        assert_eq!(rf.color, "#000000");
+        assert_eq!(rf.display_name, "RF");
+        assert_eq!(rf.macros.len(), 1);
+        assert_eq!(rf.macros[0].label, "KEEP");
+
+        // Merging the same set again adds nothing.
+        let again = st
+            .merge_channels(vec![Channel::new("audio", "AUDIO", "#E53935")])
+            .await
+            .unwrap();
+        assert_eq!(again, 0);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

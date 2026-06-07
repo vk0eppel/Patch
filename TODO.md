@@ -435,7 +435,7 @@ the reserved `__all__` id (test `upsert_channel_rejects_reserved_all_id`); 📢-
 Backfill of full cross-channel history on first open is out of scope (the event stream carries the
 session's traffic; a `get_all_messages` FFI fn would be needed for persisted history).
 
-### Peer identification: channel dots + free-text role
+### ~~Peer identification: channel dots + free-text role~~ ✅ Done (2026-06-07)
 **Files:** `patch_app/lib/widgets/peers_panel.dart`, `patch_app/lib/screens/home_screen.dart`, `patch_app/lib/models/message.dart` (1a); plus `patch-core/src/{osc/{types,codec}.rs, state/{peer,config,mod}.rs, api.rs}`, `patch_app/lib/{bridge/bridge_client,screens/settings_screen}.dart` (1b) · **Effort:** 1a small (Dart-only), 1b small–medium (FRB regen)
 
 Tell peers apart at a glance — who's online and what they cover. Two complementary, independently-shippable
@@ -467,13 +467,27 @@ broadcast so the whole crew sees a consistent label next to each name (e.g. "FOH
 - Tests: presence role round-trip + a 4-arg-presence-decodes-as-None case (`codec.rs`); a peers-panel
   widget test that the badge shows when set and is omitted when unset. 46 engine / 23 Flutter tests pass.
 
-### Pull a peer's channel layout over the network (merge-adopt)
-**Files:** `patch-core/src/osc/{addresses,codec}.rs`, `patch-core/src/transport/mod.rs`, `patch-core/src/state/mod.rs`, `patch-core/src/api.rs`, `patch_app/lib/bridge/bridge_client.dart`, `patch_app/lib/screens/settings_screen.dart` · **Effort:** medium–large (new OSC exchange + FRB regen)
+### ~~Pull a peer's channel layout over the network (merge-adopt)~~ ✅ Done (2026-06-07)
+**Files:** `patch-core/src/osc/{addresses,codec}.rs`, `patch-core/src/transport/mod.rs`, `patch-core/src/state/mod.rs`, `patch-core/src/api.rs`, `patch_app/lib/bridge/bridge_client.dart`, `patch_app/lib/screens/settings_screen.dart`
 
-Get a new machine onto the right channels fast: let a newcomer adopt an existing crew member's channels
-(names, colours, macros) in one tap — "sessions over the network" instead of by `.toml` file. Decided with
-the user: **pull from a chosen peer**, **merge** (add only the channels you're missing; never overwrite your
-own). Reuses the `SessionConfig`/`Channel` serialization shape; only the transport (file → OSC) is new.
+Get a new machine onto the right channels fast: a newcomer adopts an existing crew member's channels
+(names, colours, macros) in one tap — "sessions over the network" instead of by `.toml` file. **Pull from a
+chosen peer**, **merge** (adds only the channels you're missing; never overwrites your own). Reuses the
+`Channel` serialization shape; only the transport (file → OSC) is new.
+
+Shipped: `/patch/channels/request` (unicast, arg = requester peer_id) + `/patch/channels/announce` (unicast
+reply, args = peer_id, peer_name, channels JSON). `api::request_channels` resolves the peer's `SocketAddr`
+and sends the request; the responder's `ChannelsRequest` arm replies with its channels as JSON; the
+requester's `ChannelsAnnounce` arm parses to `Vec<Channel>` (caps: codec `MAX_CHANNELS_JSON = 64 KiB`,
+transport `MAX_OFFERED_CHANNELS = 64`) and emits `ChannelsOffered` — **never auto-applied**.
+`api::adopt_channels` → `AppState::merge_channels` adds only ids not already present (validates each via
+`valid_channel_id`, skips reserved `__all__`, never overwrites/deletes, returns count). UI: "Import channels
+from a peer" (cloud-download icon) in **Settings → Channels & Macros** → peer picker → preview dialog
+("new"/"have" per channel) → **Add N**; an `_awaitingOffer` flag (6 s timeout) ignores unsolicited
+announces. The codec stays decoupled (carries raw `channels_json`; transport/state serialise+parse). Tests:
+codec request/announce round-trip + oversized-payload reject; `merge_channels` add-missing/keep-existing/
+skip-invalid. 50 engine / 23 Flutter tests pass. **Synergy delivered:** shared ids+colours make the peer
+channel dots (Entry 1a) consistent across machines.
 
 **Wire — two new addresses (request/announce):**
 - `/patch/channels/request` — arg: requester `peer_id`. **Unicast** to the chosen peer's resolved address.

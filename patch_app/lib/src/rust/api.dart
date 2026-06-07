@@ -155,6 +155,17 @@ Future<void> exportMessages({String? channelId, required String path}) =>
 
 Future<void> resetChannels() => RustLib.instance.api.crateApiResetChannels();
 
+/// Ask a peer (by id) for its channel layout. The peer replies with a
+/// `/patch/channels/announce`, surfaced to the UI as a `ChannelsOffered` event —
+/// it is **not** auto-applied; the UI previews and calls `adopt_channels`.
+Future<void> requestChannels({required String peerId}) =>
+    RustLib.instance.api.crateApiRequestChannels(peerId: peerId);
+
+/// Adopt channels offered by a peer — **merge** (adds only ids we don't already
+/// have; never overwrites or deletes). Returns the number actually added.
+Future<int> adoptChannels({required List<Channel> channels}) =>
+    RustLib.instance.api.crateApiAdoptChannels(channels: channels);
+
 Future<void> upsertMacro({
   required String channelId,
   required String label,
@@ -333,6 +344,14 @@ sealed class PatchAppEvent with _$PatchAppEvent {
       PatchAppEvent_ChannelFlash;
   const factory PatchAppEvent.channelListUpdated() =
       PatchAppEvent_ChannelListUpdated;
+
+  /// A peer offered its channel layout (reply to our `request_channels`).
+  /// Surfaced for a UI preview/merge prompt — not auto-applied.
+  const factory PatchAppEvent.channelsOffered({
+    required String fromPeerId,
+    required String fromName,
+    required List<Channel> channels,
+  }) = PatchAppEvent_ChannelsOffered;
   const factory PatchAppEvent.clientNameChanged({required String name}) =
       PatchAppEvent_ClientNameChanged;
 
