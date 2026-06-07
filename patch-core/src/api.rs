@@ -72,6 +72,15 @@ pub async fn init(config_dir: Option<String>) -> Result<()> {
             let discovery =
                 Arc::new(Discovery::new(&config, state.clone(), Arc::clone(&transport)).await?);
 
+            // MIDI input listener (desktop only; no-op on iOS/Android). Fires
+            // per-channel macros bound to a Note On / CC. It owns its own OS
+            // thread + tokio task, so nothing needs storing on EngineHandle.
+            crate::midi::start(
+                state.clone(),
+                Arc::clone(&transport),
+                Arc::clone(&reliability),
+            );
+
             // Retransmit poller for unacked critical messages. It ticks every
             // POLL_INTERVAL_MS; each in-flight entry retransmits on its own
             // exponential backoff (drain_retransmits) until acked or it exceeds
@@ -179,11 +188,20 @@ async fn resolve_peer_names(state: &AppState, addrs: &[SocketAddr]) -> Vec<Strin
 
 // ── Messaging ────────────────────────────────────────────────────────────────
 
-/// Sends a message on a channel. Returns the message_id.
-pub async fn send_message(channel_id: String, payload: String, priority: i32) -> Result<String> {
-    let h = engine();
-    let prio = Priority::try_from(priority).unwrap_or(Priority::Info);
-    let config = h.state.config().await;
+/// Core send path, shared by the FFI `send_message` and the engine-internal MIDI
+/// trigger (`crate::midi`). Encodes the message, unicasts to peers, tracks
+/// criticals for ACK/retransmit, stores it locally, and reports an immediate
+/// failure for a critical sent with no peers online. Returns the message_id.
+#[frb(ignore)]
+pub(crate) async fn dispatch_message(
+    state: &AppState,
+    transport: &Arc<Transport>,
+    reliability: &Arc<Mutex<ReliabilityManager>>,
+    channel_id: String,
+    payload: String,
+    prio: Priority,
+) -> Result<uuid::Uuid> {
+    let config = state.config().await;
     let msg = PatchMessage::new(
         config.client_id,
         &config.client_name,
@@ -192,24 +210,22 @@ pub async fn send_message(channel_id: String, payload: String, priority: i32) ->
         payload,
     );
     let bytes = encode_message(&msg)?;
-    let targets = h
-        .transport
-        .send_to_peers(bytes.clone(), &h.state, &config)
+    let targets = transport
+        .send_to_peers(bytes.clone(), state, &config)
         .await?;
-    let id = msg.message_id.to_string();
     let message_id = msg.message_id;
     let is_critical = msg.is_critical();
     let target_count = targets.len();
     // Critical messages require ACKs — register for retransmit until every
     // contacted peer acknowledges (or MAX_RETRIES is exceeded).
     if is_critical && target_count > 0 {
-        h.reliability.lock().await.track(message_id, bytes, targets);
+        reliability.lock().await.track(message_id, bytes, targets);
     }
-    h.state.store_message(msg).await;
+    state.store_message(msg).await;
     // A critical with no peers to send to can never be delivered — surface that
     // immediately (the retransmit poller only knows about *tracked* messages).
     if is_critical && target_count == 0 {
-        h.state
+        state
             .publish(AppEvent::MessageDelivery {
                 message_id,
                 delivered: 0,
@@ -219,7 +235,23 @@ pub async fn send_message(channel_id: String, payload: String, priority: i32) ->
             })
             .await;
     }
-    Ok(id)
+    Ok(message_id)
+}
+
+/// Sends a message on a channel. Returns the message_id.
+pub async fn send_message(channel_id: String, payload: String, priority: i32) -> Result<String> {
+    let h = engine();
+    let prio = Priority::try_from(priority).unwrap_or(Priority::Info);
+    let id = dispatch_message(
+        &h.state,
+        &h.transport,
+        &h.reliability,
+        channel_id,
+        payload,
+        prio,
+    )
+    .await?;
+    Ok(id.to_string())
 }
 
 /// Flashes a channel (sends to peers + fires local event).
@@ -286,6 +318,12 @@ pub async fn get_messages(channel_id: String, limit: u32) -> Vec<PatchMessage> {
 
 pub fn get_interfaces() -> Result<Vec<InterfaceInfo>> {
     list_interfaces()
+}
+
+/// Names of available MIDI input ports (for a future port-selector UI). Empty on
+/// platforms without a MIDI backend (iOS/Android) or when no devices are present.
+pub fn get_midi_ports() -> Vec<String> {
+    crate::midi::list_ports()
 }
 
 /// Lightweight snapshot of the runtime-mutable parts of the config.
@@ -575,6 +613,8 @@ pub async fn upsert_macro(
     payload: String,
     priority: i32,
     key_binding: Option<String>,
+    midi_note: Option<u8>,
+    midi_cc: Option<u8>,
 ) -> Result<()> {
     let label = label.trim().to_string();
     if label.is_empty() {
@@ -589,6 +629,8 @@ pub async fn upsert_macro(
                 payload,
                 key_binding,
                 priority,
+                midi_note,
+                midi_cc,
             },
         )
         .await
@@ -628,6 +670,11 @@ pub async fn upsert_global_macro(
             payload,
             key_binding,
             priority,
+            // Global macros fire on the UI's selected channel(s), which the
+            // engine-side MIDI listener can't resolve — so they carry no MIDI
+            // binding (MIDI triggers are per-channel macros only).
+            midi_note: None,
+            midi_cc: None,
         })
         .await
 }

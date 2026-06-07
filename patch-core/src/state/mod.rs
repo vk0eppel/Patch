@@ -972,6 +972,8 @@ mod tests {
                 payload: l.to_string(),
                 key_binding: None,
                 priority: 1,
+                midi_note: None,
+                midi_cc: None,
             })
             .collect();
         st.upsert_channel(ch).await;
@@ -1015,6 +1017,8 @@ mod tests {
             payload: l.into(),
             key_binding: None,
             priority: 1,
+            midi_note: None,
+            midi_cc: None,
         };
         let labels = |c: &Config| {
             c.global_macros
@@ -1032,6 +1036,8 @@ mod tests {
             payload: "B2".into(),
             key_binding: None,
             priority: 2,
+            midi_note: None,
+            midi_cc: None,
         })
         .await
         .unwrap();
@@ -1148,6 +1154,8 @@ mod tests {
             payload: "keep".into(),
             key_binding: None,
             priority: 1,
+            midi_note: None,
+            midi_cc: None,
         }];
         st.upsert_channel(existing).await;
 

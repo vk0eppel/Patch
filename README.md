@@ -27,7 +27,7 @@ Inspired by [Wavetool](https://wavetool.fi/) chat and [SideChain's TheaterChat](
 - **ALL channel** — a pinned tab showing every channel's traffic combined, plus a one-tap **crew-wide broadcast** (📢) that reaches every peer in every feed regardless of which channels they have — for "HOLD ALL", "LUNCH", show-stop calls
 - **Flash / page** — one-button high-priority alert per channel; channel tab pulses + message box border lights up in the channel colour; auto-flash configurable globally (Settings → Behavior) and per-channel (Settings → channel editor)
 - **Configurable flash count** — set how many times the channel pulses per flash event (3–7 in Settings → Behavior; per-channel override in channel editor; default 4)
-- **Macros** — per-channel one-tap buttons for common callouts (HOLD, CLEAR, BATTERY LOW…), optionally bound to F-keys; drag to reorder in Settings; shown in a vertical side panel (keyboard icon toggle) with 1–3 columns (set in Settings → Behavior); all macros always visible — no scroll, no accidental fires on touch
+- **Macros** — per-channel one-tap buttons for common callouts (HOLD, CLEAR, BATTERY LOW…), optionally bound to F-keys **or a MIDI note/CC** (fire from a footswitch, pad, or keyboard, hands-free); drag to reorder in Settings; shown in a vertical side panel (keyboard icon toggle) with 1–3 columns (set in Settings → Behavior); all macros always visible — no scroll, no accidental fires on touch
 - **Session presets** — save and restore named channel layouts; accessible from the folder icon in the sidebar; import/export `.toml` files to share layouts across machines
 - **Hybrid discovery** — mDNS/Bonjour auto-discovery + OSC beacon broadcast every 7s + manual static IP for AP-isolated or VLAN-segmented show networks
 - **Static peer management** — add/remove known peers by IP from the Settings screen; static peers are always contacted regardless of discovery state, bypassing AP isolation
@@ -72,6 +72,7 @@ The Rust engine compiles into a static/dynamic library and is linked directly in
   ```
 - **Flutter 3.x**
 - **CocoaPods** for macOS/iOS builds: `brew install cocoapods`
+- **Linux only:** ALSA dev headers for MIDI input — `sudo apt-get install libasound2-dev` (macOS/Windows use CoreMIDI/WinMM, no extra packages)
 
 ### Run
 
@@ -205,6 +206,7 @@ label = "Monitor World"
 - [x] Per-channel flash settings — override "flash on message", "flash on critical", and pulse count per channel
 - [x] Configurable flash pulse count — 3–7 globally (default 4), per-channel override
 - [x] F-key bindings for macros (F1–F12, fires from any focus state)
+- [x] MIDI-triggered macros — bind a per-channel macro to a Note/CC (footswitch/pad), fired engine-side hands-free (desktop)
 - [x] Platform data directory (`~/Library/Application Support/Patch/`, `%APPDATA%\Patch\`, etc.) with legacy `./patch.toml` migration
 - [x] iOS / macOS Local Network permission strings in Info.plist (`NSLocalNetworkUsageDescription` + `NSBonjourServices`)
 - [x] Settings screen — static peer management via UI (add/remove peers by address + port + label)

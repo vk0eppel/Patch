@@ -588,18 +588,29 @@ A lightweight relay process (separate binary) that bridges two or more Patch
 instances across the internet — useful for remote production or multi-venue shows.
 Must not compromise the local-first, single-binary design for LAN deployments.
 
-### MIDI-triggered macros
-**Effort:** medium
+### ~~MIDI-triggered macros~~ ✅ Done (2026-06-07)
+Bind a per-channel macro to a MIDI Note On or CC so a pad, keyboard, or footswitch
+fires it hands-free, even when the app isn't focused.
 
-Bind a shortcut to a MIDI Note On or CC event so a pad, keyboard, or MIDI
-footswitch can fire it without touching the screen or keyboard.
-
-- Add `midi_note: Option<u8>` and `midi_cc: Option<u8>` to `MacroMessage` in
-  `patch-core/src/state/channel.rs` (both `#[serde(default)]` — no migration needed)
-- Add `midir` crate to `patch-core/Cargo.toml` (CoreMIDI on macOS/iOS, WinMM on Windows, ALSA on Linux)
-- New `patch-core/src/midi/mod.rs`: `spawn_blocking` listener; on Note On or CC, iterate all channel shortcuts and fire matches via the existing `send_message` path
-- Wire into `api.rs::init()`, optionally add `get_midi_ports() -> Vec<String>` for a future port-selector UI
-- Extend the shortcut dialog in `settings_screen.dart` with MIDI note / CC number fields
+Shipped: `midi_note`/`midi_cc` (`Option<u8>`, `#[serde(default)]`) on `MacroMessage`
+(`state/channel.rs`). `midir` is a **desktop-only** dependency (`[target.'cfg(any(macos,
+windows, linux))']` in `patch-core/Cargo.toml`) — CoreMIDI / WinMM / ALSA; iOS/Android
+have no backend so the `midi` module compiles to no-ops (no dep pulled in). New
+`patch-core/src/midi/mod.rs`: opens **every** input port at startup, parses Note On
+(velocity > 0) and CC (value ≥ 64 = "press"), and forwards a trigger over a tokio mpsc
+to a task that fires **every per-channel macro whose binding matches, each on its own
+channel** — engine-side and absolute (unlike F-keys, which fire on the *selected* channel
+via Flutter), so a footswitch works without focus. The OS MIDI connections are kept alive
+by a dedicated parked thread (like the mDNS daemon). Firing reuses the extracted
+`api::dispatch_message` (shared with `send_message`), so criticals are ACK-tracked and the
+sender flashes normally. Wired in `api::init` (`midi::start`); `api::get_midi_ports() ->
+Vec<String>` added for a future port-selector UI. Global macros don't take a MIDI binding
+(they fire on the UI's selected channel, which the engine can't resolve). UI: MIDI note /
+CC number fields in the per-channel macro editor (`allowMidi` gate; hidden for global), a
+`♪ N` / `CC N` badge on `_MacroRow`. CI installs `libasound2-dev` for the Linux build.
+**FRB regen** (upsert_macro signature + MacroMessage fields + get_midi_ports). Limitation:
+ports are enumerated at startup — hot-plugging a device needs an app restart (a rescan is a
+possible follow-up).
 
 Note: OSC-triggered shortcuts are not a separate feature — users can already send `/patch/channel/{id}/message` directly from QLab, Companion, or scripts. Mapping *foreign* OSC addresses (e.g. `/rf/battery_low` from a proprietary device) is covered by the existing "OSC macro shortcuts + inbound trigger mapping" item above.
 

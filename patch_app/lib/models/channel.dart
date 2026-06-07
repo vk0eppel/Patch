@@ -6,11 +6,19 @@ class MacroMessage {
   final String? keyBinding;
   final int priority;
 
+  /// Optional MIDI Note number (0–127) that fires this macro.
+  final int? midiNote;
+
+  /// Optional MIDI Control Change number (0–127) that fires this macro.
+  final int? midiCc;
+
   const MacroMessage({
     required this.label,
     required this.payload,
     this.keyBinding,
     this.priority = 1,
+    this.midiNote,
+    this.midiCc,
   });
 
   factory MacroMessage.fromJson(Map<String, dynamic> j) => MacroMessage(
@@ -18,6 +26,8 @@ class MacroMessage {
         payload: j['payload'] as String,
         keyBinding: j['key_binding'] as String?,
         priority: (j['priority'] as num).toInt(),
+        midiNote: (j['midi_note'] as num?)?.toInt(),
+        midiCc: (j['midi_cc'] as num?)?.toInt(),
       );
 }
 

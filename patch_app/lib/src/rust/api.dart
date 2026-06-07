@@ -15,7 +15,7 @@ import 'state/session.dart';
 import 'transport.dart';
 part 'api.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `csv_escape`, `init_tracing`, `resolve_peer_names`
+// These functions are ignored because they are not marked as `pub`: `csv_escape`, `dispatch_message`, `init_tracing`, `resolve_peer_names`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `EngineHandle`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `engine`
@@ -64,6 +64,11 @@ Future<List<PatchMessage>> getMessages({
 
 Future<List<InterfaceInfo>> getInterfaces() =>
     RustLib.instance.api.crateApiGetInterfaces();
+
+/// Names of available MIDI input ports (for a future port-selector UI). Empty on
+/// platforms without a MIDI backend (iOS/Android) or when no devices are present.
+Future<List<String>> getMidiPorts() =>
+    RustLib.instance.api.crateApiGetMidiPorts();
 
 Future<ConfigSnapshot> getConfig() => RustLib.instance.api.crateApiGetConfig();
 
@@ -172,12 +177,16 @@ Future<void> upsertMacro({
   required String payload,
   required int priority,
   String? keyBinding,
+  int? midiNote,
+  int? midiCc,
 }) => RustLib.instance.api.crateApiUpsertMacro(
   channelId: channelId,
   label: label,
   payload: payload,
   priority: priority,
   keyBinding: keyBinding,
+  midiNote: midiNote,
+  midiCc: midiCc,
 );
 
 Future<void> deleteMacro({required String channelId, required String label}) =>

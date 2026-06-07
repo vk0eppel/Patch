@@ -304,6 +304,8 @@ class BridgeClient {
     required String payload,
     String? keyBinding,
     int priority = 1,
+    int? midiNote,
+    int? midiCc,
   }) async {
     try {
       await rust.upsertMacro(
@@ -312,9 +314,21 @@ class BridgeClient {
         payload: payload,
         priority: priority,
         keyBinding: keyBinding,
+        midiNote: midiNote,
+        midiCc: midiCc,
       );
     } catch (e) {
       _emitError(e);
+    }
+  }
+
+  /// Names of available MIDI input ports (for a future port-selector UI).
+  Future<List<String>> getMidiPorts() async {
+    try {
+      return await rust.getMidiPorts();
+    } catch (e) {
+      _emitError(e);
+      return const [];
     }
   }
 
@@ -616,6 +630,8 @@ Map<String, dynamic> _macroToMap(rust_channel.MacroMessage s) => {
       'payload': s.payload,
       'key_binding': s.keyBinding,
       'priority': s.priority,
+      'midi_note': s.midiNote,
+      'midi_cc': s.midiCc,
     };
 
 // Inverse of `_channelToMap`/`_macroToMap` — rebuilds the typed FRB structs from
@@ -638,6 +654,8 @@ rust_channel.MacroMessage _macroFromMap(Map<String, dynamic> m) => rust_channel.
       payload: m['payload'] as String,
       keyBinding: m['key_binding'] as String?,
       priority: (m['priority'] as num).toInt(),
+      midiNote: (m['midi_note'] as num?)?.toInt(),
+      midiCc: (m['midi_cc'] as num?)?.toInt(),
     );
 
 Map<String, dynamic> _messageToMap(rust_osc.PatchMessage m) => {

@@ -85,6 +85,10 @@ In **Settings → Channels & Macros**, each macro row has a drag handle (**≡**
 
 On desktop, F1–F12 fire the first matching macro across all currently selected channels — no need to click the button. Key bindings are shown as a small badge on the macro button.
 
+### MIDI triggers
+
+On desktop you can also bind a per-channel macro to a **MIDI note or CC number** (0–127) in the macro editor — connect a footswitch, pad, or keyboard and the macro fires hands-free. Unlike F-keys, a MIDI binding fires the macro **on its own channel regardless of which channel you're viewing** (or whether Patch is even focused), so a pedal can fire "RF: LOW BATT" while you're looking at AUDIO. A note fires on press (any velocity); a CC fires on a value of 64 or more (a footswitch "down"). Patch listens on all MIDI input ports detected at launch — plug your controller in before starting Patch (or restart after connecting it). Bindings show as a `♪`/`CC` badge next to the macro in Settings. Global macros don't take a MIDI binding (they fire on whatever channel you have selected, which a hardware trigger can't know).
+
 ---
 
 ## Flash settings

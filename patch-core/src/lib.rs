@@ -6,6 +6,7 @@
 //! `crate::api`; the rest of the crate is internal.
 
 pub mod discovery;
+pub mod midi;
 pub mod osc;
 pub mod reliability;
 pub mod state;

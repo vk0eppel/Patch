@@ -996,12 +996,14 @@ class _ChannelMacroEditor extends StatelessWidget {
                   style: TextButton.styleFrom(foregroundColor: PatchTheme.accent),
                   onPressed: () => _showMacroEditDialog(
                     context,
-                    onSave: (l, p, k, pr) => bridge.upsertMacro(
+                    onSave: (l, p, k, pr, mn, mc) => bridge.upsertMacro(
                       channelId: channel.id,
                       label: l,
                       payload: p,
                       keyBinding: k,
                       priority: pr,
+                      midiNote: mn,
+                      midiCc: mc,
                     ),
                   ),
                 ),
@@ -1046,12 +1048,14 @@ class _ChannelMacroEditor extends StatelessWidget {
                   onEdit: () => _showMacroEditDialog(
                     context,
                     existing: s,
-                    onSave: (l, p, k, pr) => bridge.upsertMacro(
+                    onSave: (l, p, k, pr, mn, mc) => bridge.upsertMacro(
                       channelId: channel.id,
                       label: l,
                       payload: p,
                       keyBinding: k,
                       priority: pr,
+                      midiNote: mn,
+                      midiCc: mc,
                     ),
                   ),
                   onDelete: () =>
@@ -1150,18 +1154,25 @@ class _ChannelMacroEditor extends StatelessWidget {
   }
 
   /// Shared macro create/edit dialog. `onSave(label, payload, keyBinding,
-  /// priority)` receives the trimmed/validated values; the channel and global
-  /// editors pass their own persistence call.
+  /// priority, midiNote, midiCc)` receives the trimmed/validated values; the
+  /// channel and global editors pass their own persistence call. MIDI fields are
+  /// shown only when [allowMidi] (per-channel macros) — global macros fire on the
+  /// selected channel, which the engine-side MIDI listener can't resolve.
   static void _showMacroEditDialog(
     BuildContext context, {
     MacroMessage? existing,
-    required void Function(
-            String label, String payload, String? keyBinding, int priority)
+    bool allowMidi = true,
+    required void Function(String label, String payload, String? keyBinding,
+            int priority, int? midiNote, int? midiCc)
         onSave,
   }) {
     final labelCtrl = TextEditingController(text: existing?.label ?? '');
     final payloadCtrl = TextEditingController(text: existing?.payload ?? '');
     final keyCtrl = TextEditingController(text: existing?.keyBinding ?? '');
+    final noteCtrl =
+        TextEditingController(text: existing?.midiNote?.toString() ?? '');
+    final ccCtrl =
+        TextEditingController(text: existing?.midiCc?.toString() ?? '');
     int priority = existing?.priority ?? 1;
     // For a new macro, mirror the label into the message text (capitalized-first)
     // until the user edits the message themselves. Off when editing an existing
@@ -1210,6 +1221,43 @@ class _ChannelMacroEditor extends StatelessWidget {
                     hintText: 'e.g. F1',
                   ),
                 ),
+                if (allowMidi) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: noteCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'MIDI note',
+                            hintText: '0–127',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: ccCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'MIDI CC',
+                            hintText: '0–127',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Fire this macro from a footswitch/pad (its own channel). '
+                    'Leave blank for none.',
+                    style: TextStyle(
+                      color: PatchTheme.textMuted,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 const Text(
                   'Priority',
@@ -1250,11 +1298,21 @@ class _ChannelMacroEditor extends StatelessWidget {
                 final label = labelCtrl.text.trim();
                 final payload = payloadCtrl.text.trim();
                 if (label.isEmpty || payload.isEmpty) return;
+                // Parse a MIDI field: empty or out-of-range (0–127) → null.
+                int? midi(TextEditingController c) {
+                  final t = c.text.trim();
+                  if (t.isEmpty) return null;
+                  final v = int.tryParse(t);
+                  return (v != null && v >= 0 && v <= 127) ? v : null;
+                }
+
                 onSave(
                   label,
                   payload,
                   keyCtrl.text.trim().isEmpty ? null : keyCtrl.text.trim(),
                   priority,
+                  allowMidi ? midi(noteCtrl) : null,
+                  allowMidi ? midi(ccCtrl) : null,
                 );
                 Navigator.pop(ctx);
               },
@@ -1324,7 +1382,8 @@ class _GlobalMacrosEditor extends StatelessWidget {
                   style: TextButton.styleFrom(foregroundColor: PatchTheme.accent),
                   onPressed: () => _ChannelMacroEditor._showMacroEditDialog(
                     context,
-                    onSave: (l, p, k, pr) => bridge.upsertGlobalMacro(
+                    allowMidi: false,
+                    onSave: (l, p, k, pr, _, _) => bridge.upsertGlobalMacro(
                       label: l,
                       payload: p,
                       keyBinding: k,
@@ -1361,7 +1420,8 @@ class _GlobalMacrosEditor extends StatelessWidget {
                   onEdit: () => _ChannelMacroEditor._showMacroEditDialog(
                     context,
                     existing: s,
-                    onSave: (l, p, k, pr) => bridge.upsertGlobalMacro(
+                    allowMidi: false,
+                    onSave: (l, p, k, pr, _, _) => bridge.upsertGlobalMacro(
                       label: l,
                       payload: p,
                       keyBinding: k,
@@ -1465,6 +1525,23 @@ class _MacroRow extends StatelessWidget {
               ),
               child: Text(
                 shortcut.keyBinding!,
+                style: const TextStyle(color: PatchTheme.textMuted, fontSize: 10),
+              ),
+            ),
+          // MIDI binding badge (♪ note / CC)
+          if (shortcut.midiNote != null || shortcut.midiCc != null)
+            Container(
+              margin: const EdgeInsets.only(left: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: PatchTheme.surfaceHigh,
+                borderRadius: BorderRadius.circular(3),
+                border: Border.all(color: PatchTheme.border),
+              ),
+              child: Text(
+                shortcut.midiNote != null
+                    ? '♪ ${shortcut.midiNote}'
+                    : 'CC ${shortcut.midiCc}',
                 style: const TextStyle(color: PatchTheme.textMuted, fontSize: 10),
               ),
             ),

@@ -17,6 +17,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # midir (MIDI input) links ALSA on Linux — its -sys crate needs the dev
+      # headers to build. macOS/Windows use CoreMIDI/WinMM (no extra packages).
+      - name: Install ALSA dev headers (midir)
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
       # Pinned to match the validated local toolchain so rustfmt/clippy output
       # is reproducible (a newer rustfmt/clippy can reformat or add lints and
       # turn `--check` / `-D warnings` red on unrelated changes).

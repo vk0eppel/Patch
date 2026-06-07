@@ -193,129 +193,49 @@ pub fn default_channels() -> Vec<Channel> {
         ("stage", "STAGE", "#43A047"),
     ];
 
+    // Compact builder for a seeded macro (F-key bound, no MIDI binding).
+    let m = |label: &str, payload: &str, fkey: &str, priority: i32| MacroMessage {
+        label: label.into(),
+        payload: payload.into(),
+        key_binding: Some(fkey.into()),
+        priority,
+        midi_note: None,
+        midi_cc: None,
+    };
+
     specs
         .iter()
         .map(|(id, name, color)| {
             let mut ch = Channel::new(*id, *name, *color);
-            match *id {
-                "audio" => {
-                    ch.macros = vec![
-                        MacroMessage {
-                            label: "ONE".into(),
-                            payload: "One".into(),
-                            key_binding: Some("F1".into()),
-                            priority: 1,
-                        },
-                        MacroMessage {
-                            label: "TWO".into(),
-                            payload: "Two".into(),
-                            key_binding: Some("F2".into()),
-                            priority: 1,
-                        },
-                        MacroMessage {
-                            label: "CHECK".into(),
-                            payload: "Check".into(),
-                            key_binding: Some("F3".into()),
-                            priority: 2,
-                        },
-                        MacroMessage {
-                            label: "PROBLEM W/".into(),
-                            payload: "Problem with:".into(),
-                            key_binding: Some("F4".into()),
-                            priority: 3,
-                        },
-                    ];
-                }
-                "rf" => {
-                    ch.macros = vec![
-                        MacroMessage {
-                            label: "CLEAR".into(),
-                            payload: "Channel clear".into(),
-                            key_binding: Some("F1".into()),
-                            priority: 1,
-                        },
-                        MacroMessage {
-                            label: "HOLD".into(),
-                            payload: "HOLD — do not transmit".into(),
-                            key_binding: Some("F2".into()),
-                            priority: 2,
-                        },
-                        MacroMessage {
-                            label: "LOW BATT".into(),
-                            payload: "Battery low — swap now".into(),
-                            key_binding: Some("F3".into()),
-                            priority: 3,
-                        },
-                    ];
-                }
-                "lighting" => {
-                    ch.macros = vec![
-                        MacroMessage {
-                            label: "READY".into(),
-                            payload: "Lighting ready".into(),
-                            key_binding: Some("F1".into()),
-                            priority: 1,
-                        },
-                        MacroMessage {
-                            label: "FIXTURE DOWN".into(),
-                            payload: "Fixture down".into(),
-                            key_binding: Some("F2".into()),
-                            priority: 2,
-                        },
-                        MacroMessage {
-                            label: "DMX FAULT".into(),
-                            payload: "DMX fault — no output".into(),
-                            key_binding: Some("F3".into()),
-                            priority: 3,
-                        },
-                    ];
-                }
-                "video" => {
-                    ch.macros = vec![
-                        MacroMessage {
-                            label: "READY".into(),
-                            payload: "Video ready".into(),
-                            key_binding: Some("F1".into()),
-                            priority: 1,
-                        },
-                        MacroMessage {
-                            label: "GLITCH".into(),
-                            payload: "Video glitch".into(),
-                            key_binding: Some("F2".into()),
-                            priority: 2,
-                        },
-                        MacroMessage {
-                            label: "NO SIGNAL".into(),
-                            payload: "No signal — feed lost".into(),
-                            key_binding: Some("F3".into()),
-                            priority: 3,
-                        },
-                    ];
-                }
-                "stage" => {
-                    ch.macros = vec![
-                        MacroMessage {
-                            label: "CLEAR".into(),
-                            payload: "Stage clear".into(),
-                            key_binding: Some("F1".into()),
-                            priority: 1,
-                        },
-                        MacroMessage {
-                            label: "HAZARD".into(),
-                            payload: "Hazard on deck".into(),
-                            key_binding: Some("F2".into()),
-                            priority: 2,
-                        },
-                        MacroMessage {
-                            label: "MEDICAL".into(),
-                            payload: "Medical — need help on stage".into(),
-                            key_binding: Some("F3".into()),
-                            priority: 3,
-                        },
-                    ];
-                }
-                _ => {}
-            }
+            ch.macros = match *id {
+                "audio" => vec![
+                    m("ONE", "One", "F1", 1),
+                    m("TWO", "Two", "F2", 1),
+                    m("CHECK", "Check", "F3", 2),
+                    m("PROBLEM W/", "Problem with:", "F4", 3),
+                ],
+                "rf" => vec![
+                    m("CLEAR", "Channel clear", "F1", 1),
+                    m("HOLD", "HOLD — do not transmit", "F2", 2),
+                    m("LOW BATT", "Battery low — swap now", "F3", 3),
+                ],
+                "lighting" => vec![
+                    m("READY", "Lighting ready", "F1", 1),
+                    m("FIXTURE DOWN", "Fixture down", "F2", 2),
+                    m("DMX FAULT", "DMX fault — no output", "F3", 3),
+                ],
+                "video" => vec![
+                    m("READY", "Video ready", "F1", 1),
+                    m("GLITCH", "Video glitch", "F2", 2),
+                    m("NO SIGNAL", "No signal — feed lost", "F3", 3),
+                ],
+                "stage" => vec![
+                    m("CLEAR", "Stage clear", "F1", 1),
+                    m("HAZARD", "Hazard on deck", "F2", 2),
+                    m("MEDICAL", "Medical — need help on stage", "F3", 3),
+                ],
+                _ => Vec::new(),
+            };
             ch
         })
         .collect()

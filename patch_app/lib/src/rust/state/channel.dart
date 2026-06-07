@@ -77,11 +77,22 @@ class MacroMessage {
   /// Priority override — defaults to Info.
   final int priority;
 
+  /// Optional MIDI Note number (0–127) that fires this macro. The engine's MIDI
+  /// listener fires the macro on its own channel when a Note On for this number
+  /// arrives (per-channel macros only).
+  final int? midiNote;
+
+  /// Optional MIDI Control Change number (0–127) that fires this macro (on a CC
+  /// value ≥ 64, i.e. a footswitch "press").
+  final int? midiCc;
+
   const MacroMessage({
     required this.label,
     required this.payload,
     this.keyBinding,
     required this.priority,
+    this.midiNote,
+    this.midiCc,
   });
 
   @override
@@ -89,7 +100,9 @@ class MacroMessage {
       label.hashCode ^
       payload.hashCode ^
       keyBinding.hashCode ^
-      priority.hashCode;
+      priority.hashCode ^
+      midiNote.hashCode ^
+      midiCc.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -99,5 +112,7 @@ class MacroMessage {
           label == other.label &&
           payload == other.payload &&
           keyBinding == other.keyBinding &&
-          priority == other.priority;
+          priority == other.priority &&
+          midiNote == other.midiNote &&
+          midiCc == other.midiCc;
 }

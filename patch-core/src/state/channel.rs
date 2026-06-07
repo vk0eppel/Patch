@@ -55,4 +55,13 @@ pub struct MacroMessage {
     pub key_binding: Option<String>,
     /// Priority override — defaults to Info.
     pub priority: i32,
+    /// Optional MIDI Note number (0–127) that fires this macro. The engine's MIDI
+    /// listener fires the macro on its own channel when a Note On for this number
+    /// arrives (per-channel macros only).
+    #[serde(default)]
+    pub midi_note: Option<u8>,
+    /// Optional MIDI Control Change number (0–127) that fires this macro (on a CC
+    /// value ≥ 64, i.e. a footswitch "press").
+    #[serde(default)]
+    pub midi_cc: Option<u8>,
 }

@@ -39,6 +39,10 @@ A new Flutter FFI plugin project.
     'DEFINES_MODULE' => 'YES',
     # Flutter.framework does not contain a i386 slice.
     'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',
-    'OTHER_LDFLAGS' => '-force_load ${BUILT_PRODUCTS_DIR}/libpatch_core.a',
+    # CoreMIDI / CoreAudio: the Rust `midir` crate (MIDI input) references these
+    # frameworks, but its `cargo:rustc-link-lib=framework=...` directives don't
+    # propagate through the cargokit *static* library to Xcode's final link — so
+    # declare them here. (iOS excludes midir via cfg, so its podspec needs nothing.)
+    'OTHER_LDFLAGS' => '-force_load ${BUILT_PRODUCTS_DIR}/libpatch_core.a -framework CoreMIDI -framework CoreAudio',
   }
 end

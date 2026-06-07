@@ -64,6 +64,13 @@ thiserror = "2"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# MIDI input — bind macros to a Note On / Control Change (footswitch, pad,
+# keyboard). Desktop only: midir uses CoreMIDI (macOS), WinMM (Windows), and
+# ALSA (Linux — CI installs libasound2-dev). iOS/Android have no midir backend,
+# so the `midi` module compiles to no-ops there (no dependency pulled in).
+[target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
+midir = "0.10"
+
 [dev-dependencies]
 tokio-test = "0.4"
 
