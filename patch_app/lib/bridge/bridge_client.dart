@@ -188,6 +188,7 @@ class BridgeClient {
         'event': 'config',
         'data': {
           'client_name': cfg.clientName,
+          'role': cfg.role,
           'osc_port': cfg.oscPort,
           'network_interface': cfg.networkInterface,
           'static_peers': cfg.staticPeers.map(_staticPeerToMap).toList(),
@@ -225,6 +226,19 @@ class BridgeClient {
     try {
       await rust.setClientName(name: name);
       // `client_name_changed` is also emitted by the engine event bus.
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
+  /// Set (or clear) the self-assigned role. Pass null/empty to clear it.
+  Future<void> setRole(String? role) async {
+    try {
+      final trimmed = role?.trim();
+      await rust.setRole(
+        role: (trimmed == null || trimmed.isEmpty) ? null : trimmed,
+      );
+      await getConfig();
     } catch (e) {
       _emitError(e);
     }
@@ -584,6 +598,7 @@ Map<String, dynamic> _messageToMap(rust_osc.PatchMessage m) => {
 Map<String, dynamic> _peerToMap(rust_peer.Peer p) => {
       'peer_id': p.peerId.toString(),
       'peer_name': p.peerName,
+      'role': p.role,
       'channels': p.channels,
       'address': p.address,
       'osc_port': p.oscPort,
@@ -602,6 +617,7 @@ Map<String, dynamic> _peerToMap(rust_peer.Peer p) => {
 Map<String, dynamic> _presenceToPeerMap(rust_osc.PeerPresence p) => {
       'peer_id': p.peerId.toString(),
       'peer_name': p.peerName,
+      'role': p.role,
       'channels': p.channels,
       'address': '',
       'osc_port': 0,

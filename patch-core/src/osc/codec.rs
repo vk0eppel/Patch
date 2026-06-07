@@ -42,6 +42,10 @@ pub fn encode_presence(p: &PeerPresence) -> Result<Vec<u8>> {
             OscType::String(p.peer_name.clone()),
             OscType::String(channels_json),
             OscType::Long(p.timestamp.timestamp_millis()),
+            // arg 4 (optional): self-assigned role, empty string when unset.
+            // Appended last so older 4-arg receivers ignore it and we can decode
+            // older 4-arg packets (role = None) — see decode_presence.
+            OscType::String(p.role.clone().unwrap_or_default()),
         ],
     };
     rosc::encoder::encode(&OscPacket::Message(osc)).context("Failed to encode /patch/presence")
@@ -195,10 +199,21 @@ fn decode_presence(msg: OscMessage) -> Result<PatchEvent> {
     let peer_name = parse_string(&args[1])?;
     let channels: Vec<String> = serde_json::from_str(&parse_string(&args[2])?)?;
     let ts_ms = parse_long(&args[3])?;
+    // arg 4 (optional): role. Absent from older 4-arg peers → None; an empty
+    // string (role explicitly cleared) also normalises to None.
+    let role = if args.len() >= 5 {
+        match parse_string(&args[4]) {
+            Ok(s) if !s.is_empty() => Some(s),
+            _ => None,
+        }
+    } else {
+        None
+    };
     Ok(PatchEvent::Presence(PeerPresence {
         peer_id,
         peer_name,
         channels,
+        role,
         timestamp: Utc
             .timestamp_millis_opt(ts_ms)
             .single()
@@ -312,6 +327,7 @@ mod tests {
             peer_id: Uuid::new_v4(),
             peer_name: "MON".into(),
             channels: vec!["rf".into(), "audio".into()],
+            role: Some("FOH".into()),
             timestamp: Utc::now(),
         };
         let bytes = encode_presence(&p).unwrap();
@@ -320,7 +336,39 @@ mod tests {
                 assert_eq!(d.peer_id, p.peer_id);
                 assert_eq!(d.peer_name, p.peer_name);
                 assert_eq!(d.channels, p.channels);
+                assert_eq!(d.role, Some("FOH".to_string())); // role round-trips
             }
+            other => panic!("expected Presence, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn presence_without_role_arg_decodes_as_none() {
+        // An older peer sends only 4 args (no role) — must still decode, role None.
+        let legacy = OscMessage {
+            addr: addresses::PRESENCE.to_string(),
+            args: vec![
+                OscType::String(Uuid::new_v4().to_string()),
+                OscType::String("MON".into()),
+                OscType::String("[]".into()),
+                OscType::Long(Utc::now().timestamp_millis()),
+            ],
+        };
+        match decode_message(legacy).unwrap() {
+            PatchEvent::Presence(d) => assert_eq!(d.role, None),
+            other => panic!("expected Presence, got {:?}", other),
+        }
+        // An explicitly-empty role string also normalises to None.
+        let empty_role = PeerPresence {
+            peer_id: Uuid::new_v4(),
+            peer_name: "MON".into(),
+            channels: vec![],
+            role: None,
+            timestamp: Utc::now(),
+        };
+        let bytes = encode_presence(&empty_role).unwrap();
+        match decode_packet(&bytes).unwrap() {
+            PatchEvent::Presence(d) => assert_eq!(d.role, None),
             other => panic!("expected Presence, got {:?}", other),
         }
     }

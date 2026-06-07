@@ -87,6 +87,9 @@ class SessionMeta {
 class PeerInfo {
   final String peerId;
   final String peerName;
+
+  /// Self-assigned production role (free text, e.g. "FOH", "PM"); null if unset.
+  final String? role;
   final List<String> channels;
   final String address;
   final int oscPort;
@@ -96,6 +99,7 @@ class PeerInfo {
   const PeerInfo({
     required this.peerId,
     required this.peerName,
+    this.role,
     required this.channels,
     required this.address,
     required this.oscPort,
@@ -106,6 +110,7 @@ class PeerInfo {
   factory PeerInfo.fromJson(Map<String, dynamic> j) => PeerInfo(
         peerId: j['peer_id'] as String,
         peerName: j['peer_name'] as String,
+        role: j['role'] as String?,
         channels: List<String>.from(j['channels'] as List),
         address: j['address'] as String? ?? '',
         oscPort: (j['osc_port'] as num).toInt(),

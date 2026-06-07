@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 874304143;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1630261029;
 
 // Section: executor
 
@@ -1289,6 +1289,42 @@ fn wire__crate__api__set_macros_columns_impl(
         },
     )
 }
+fn wire__crate__api__set_role_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "set_role",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_role = <Option<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || async move {
+                        let output_ok = crate::api::set_role(api_role).await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__shutdown_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1591,6 +1627,7 @@ impl SseDecode for crate::api::ConfigSnapshot {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_clientName = <String>::sse_decode(deserializer);
+        let mut var_role = <Option<String>>::sse_decode(deserializer);
         let mut var_oscPort = <u16>::sse_decode(deserializer);
         let mut var_networkInterface = <Option<String>>::sse_decode(deserializer);
         let mut var_staticPeers = <Vec<crate::state::config::StaticPeer>>::sse_decode(deserializer);
@@ -1605,6 +1642,7 @@ impl SseDecode for crate::api::ConfigSnapshot {
         let mut var_heartbeatIntervalSecs = <u32>::sse_decode(deserializer);
         return crate::api::ConfigSnapshot {
             client_name: var_clientName,
+            role: var_role,
             osc_port: var_oscPort,
             network_interface: var_networkInterface,
             static_peers: var_staticPeers,
@@ -1913,6 +1951,7 @@ impl SseDecode for crate::state::peer::Peer {
         let mut var_peerId = <uuid::Uuid>::sse_decode(deserializer);
         let mut var_peerName = <String>::sse_decode(deserializer);
         let mut var_channels = <Vec<String>>::sse_decode(deserializer);
+        let mut var_role = <Option<String>>::sse_decode(deserializer);
         let mut var_discoveryMode = <crate::state::peer::DiscoveryMode>::sse_decode(deserializer);
         let mut var_address = <String>::sse_decode(deserializer);
         let mut var_oscPort = <u16>::sse_decode(deserializer);
@@ -1921,6 +1960,7 @@ impl SseDecode for crate::state::peer::Peer {
             peer_id: var_peerId,
             peer_name: var_peerName,
             channels: var_channels,
+            role: var_role,
             discovery_mode: var_discoveryMode,
             address: var_address,
             osc_port: var_oscPort,
@@ -1935,11 +1975,13 @@ impl SseDecode for crate::osc::types::PeerPresence {
         let mut var_peerId = <uuid::Uuid>::sse_decode(deserializer);
         let mut var_peerName = <String>::sse_decode(deserializer);
         let mut var_channels = <Vec<String>>::sse_decode(deserializer);
+        let mut var_role = <Option<String>>::sse_decode(deserializer);
         let mut var_timestamp = <chrono::DateTime<chrono::Utc>>::sse_decode(deserializer);
         return crate::osc::types::PeerPresence {
             peer_id: var_peerId,
             peer_name: var_peerName,
             channels: var_channels,
+            role: var_role,
             timestamp: var_timestamp,
         };
     }
@@ -2098,11 +2140,12 @@ fn pde_ffi_dispatcher_primary_impl(
         32 => wire__crate__api__set_hide_keyboard_impl(port, ptr, rust_vec_len, data_len),
         33 => wire__crate__api__set_interface_impl(port, ptr, rust_vec_len, data_len),
         34 => wire__crate__api__set_macros_columns_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__shutdown_impl(port, ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__upsert_channel_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__upsert_global_macro_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__upsert_macro_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__set_role_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__shutdown_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__upsert_channel_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__upsert_global_macro_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__upsert_macro_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2174,6 +2217,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::ConfigSnapshot {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.client_name.into_into_dart().into_dart(),
+            self.role.into_into_dart().into_dart(),
             self.osc_port.into_into_dart().into_dart(),
             self.network_interface.into_into_dart().into_dart(),
             self.static_peers.into_into_dart().into_dart(),
@@ -2353,6 +2397,7 @@ impl flutter_rust_bridge::IntoDart for crate::state::peer::Peer {
             self.peer_id.into_into_dart().into_dart(),
             self.peer_name.into_into_dart().into_dart(),
             self.channels.into_into_dart().into_dart(),
+            self.role.into_into_dart().into_dart(),
             self.discovery_mode.into_into_dart().into_dart(),
             self.address.into_into_dart().into_dart(),
             self.osc_port.into_into_dart().into_dart(),
@@ -2374,6 +2419,7 @@ impl flutter_rust_bridge::IntoDart for crate::osc::types::PeerPresence {
             self.peer_id.into_into_dart().into_dart(),
             self.peer_name.into_into_dart().into_dart(),
             self.channels.into_into_dart().into_dart(),
+            self.role.into_into_dart().into_dart(),
             self.timestamp.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -2559,6 +2605,7 @@ impl SseEncode for crate::api::ConfigSnapshot {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.client_name, serializer);
+        <Option<String>>::sse_encode(self.role, serializer);
         <u16>::sse_encode(self.osc_port, serializer);
         <Option<String>>::sse_encode(self.network_interface, serializer);
         <Vec<crate::state::config::StaticPeer>>::sse_encode(self.static_peers, serializer);
@@ -2821,6 +2868,7 @@ impl SseEncode for crate::state::peer::Peer {
         <uuid::Uuid>::sse_encode(self.peer_id, serializer);
         <String>::sse_encode(self.peer_name, serializer);
         <Vec<String>>::sse_encode(self.channels, serializer);
+        <Option<String>>::sse_encode(self.role, serializer);
         <crate::state::peer::DiscoveryMode>::sse_encode(self.discovery_mode, serializer);
         <String>::sse_encode(self.address, serializer);
         <u16>::sse_encode(self.osc_port, serializer);
@@ -2834,6 +2882,7 @@ impl SseEncode for crate::osc::types::PeerPresence {
         <uuid::Uuid>::sse_encode(self.peer_id, serializer);
         <String>::sse_encode(self.peer_name, serializer);
         <Vec<String>>::sse_encode(self.channels, serializer);
+        <Option<String>>::sse_encode(self.role, serializer);
         <chrono::DateTime<chrono::Utc>>::sse_encode(self.timestamp, serializer);
     }
 }

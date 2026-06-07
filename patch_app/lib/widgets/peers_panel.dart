@@ -15,12 +15,18 @@ class PeersPanel extends StatefulWidget {
   /// Presence heartbeat interval (s) — the dot thresholds derive from it
   /// (healthy ≤ 2×, amber ≤ 5×) so they track the configured interval.
   final int heartbeatSecs;
+
+  /// The viewer's own channel id → colour map. Each peer announces the channel
+  /// ids it's on (`PeerInfo.channels`); we render a colour dot per channel using
+  /// this map, so a channel the viewer doesn't have falls back to a grey dot.
+  final Map<String, Color> channelColors;
   final VoidCallback? onClearStale;
   final VoidCallback? onClose;
   const PeersPanel({
     super.key,
     required this.peers,
     this.heartbeatSecs = 7,
+    this.channelColors = const {},
     this.onClearStale,
     this.onClose,
   });
@@ -102,6 +108,7 @@ class _PeersPanelState extends State<PeersPanel> {
                     itemBuilder: (ctx, i) => _PeerTile(
                       peer: widget.peers[i],
                       heartbeatSecs: widget.heartbeatSecs,
+                      channelColors: widget.channelColors,
                     ),
                   ),
           ),
@@ -120,7 +127,18 @@ class _PeerTile extends StatelessWidget {
   /// 7 s heartbeat that's the previous 14 s / 35 s, now tracking the interval.
   final int heartbeatSecs;
 
-  const _PeerTile({required this.peer, required this.heartbeatSecs});
+  /// Viewer's channel id → colour map (see [PeersPanel.channelColors]).
+  final Map<String, Color> channelColors;
+
+  const _PeerTile({
+    required this.peer,
+    required this.heartbeatSecs,
+    this.channelColors = const {},
+  });
+
+  /// Max channel dots rendered before collapsing the rest into a "+N" label,
+  /// so a peer on many channels can't overflow the narrow (160 px) panel.
+  static const int _kMaxChannelDots = 5;
 
   int get _healthySecs => heartbeatSecs * 2;
   int get _staleSecs => heartbeatSecs * 5;
@@ -154,6 +172,43 @@ class _PeerTile extends StatelessWidget {
     return _isManual ? addr : '${_relativeLastSeen(peer.lastSeen)} · $addr';
   }
 
+  /// A row of small colour dots, one per channel the peer announces, coloured
+  /// from the viewer's [channelColors] (grey for a channel the viewer doesn't
+  /// have). Collapses to "+N" past [_kMaxChannelDots]. Empty (a zero-height box)
+  /// for peers with no announced channels — e.g. configured-only static peers.
+  Widget _channelDots() {
+    if (peer.channels.isEmpty) return const SizedBox.shrink();
+    final shown = peer.channels.take(_kMaxChannelDots);
+    final extra = peer.channels.length - shown.length;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        children: [
+          for (final id in shown)
+            Padding(
+              padding: const EdgeInsets.only(right: 3),
+              child: Tooltip(
+                message: id,
+                child: Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: channelColors[id] ?? PatchTheme.textMuted,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ),
+          if (extra > 0)
+            Text(
+              '+$extra',
+              style: const TextStyle(color: PatchTheme.textMuted, fontSize: 9),
+            ),
+        ],
+      ),
+    );
+  }
+
   static String _relativeLastSeen(DateTime t) {
     final d = DateTime.now().difference(t);
     if (d.isNegative || d.inSeconds < 5) return 'now';
@@ -175,14 +230,24 @@ class _PeerTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  peer.peerName,
-                  style: const TextStyle(
-                    color: PatchTheme.textPrimary,
-                    fontSize: PatchTheme.fontSizeSmall,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        peer.peerName,
+                        style: const TextStyle(
+                          color: PatchTheme.textPrimary,
+                          fontSize: PatchTheme.fontSizeSmall,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (peer.role != null && peer.role!.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      _RoleBadge(peer.role!),
+                    ],
+                  ],
                 ),
                 Text(
                   _subtitle,
@@ -192,6 +257,7 @@ class _PeerTile extends StatelessWidget {
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
+                _channelDots(),
               ],
             ),
           ),
@@ -206,6 +272,35 @@ class _PeerTile extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A peer's self-assigned role, rendered as a small **neutral** chip (no
+/// role-specific colour — channel dots are the only colour cue in this panel).
+class _RoleBadge extends StatelessWidget {
+  final String role;
+  const _RoleBadge(this.role);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: PatchTheme.surfaceHigh,
+        borderRadius: BorderRadius.circular(3),
+        border: Border.all(color: PatchTheme.border),
+      ),
+      child: Text(
+        role,
+        style: const TextStyle(
+          color: PatchTheme.textSecondary,
+          fontSize: 9,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.3,
+        ),
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }

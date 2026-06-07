@@ -103,6 +103,7 @@ impl Discovery {
                                 peer_id,
                                 peer_name,
                                 channels: Vec::new(),
+                                role: None, // not in the mDNS TXT; set by OSC presence
                                 timestamp: Utc::now(),
                             };
                             resolved_ids.insert(info.get_fullname().to_string(), peer_id);
@@ -165,6 +166,7 @@ impl Discovery {
                     peer_id: client_id,
                     peer_name: cfg.client_name.clone(),
                     channels,
+                    role: cfg.role.clone(), // re-read each tick → role changes propagate ≤1 interval
                     timestamp: Utc::now(),
                 };
                 match encode_presence(&presence) {

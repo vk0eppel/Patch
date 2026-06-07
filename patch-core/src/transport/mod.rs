@@ -293,6 +293,7 @@ async fn handle_event(
                     peer_id: msg.sender_id,
                     peer_name: msg.sender_name.clone(),
                     channels: Vec::new(),
+                    role: None, // unknown until their presence heartbeat arrives
                     timestamp: Utc::now(),
                 };
                 state.upsert_peer(presence).await;
@@ -369,6 +370,7 @@ async fn handle_event(
                     peer_id: f.sender_id,
                     peer_name: f.sender_name.clone(),
                     channels: Vec::new(),
+                    role: None, // unknown until their presence heartbeat arrives
                     timestamp: Utc::now(),
                 };
                 state.upsert_peer(presence).await;

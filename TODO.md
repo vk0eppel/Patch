@@ -435,6 +435,83 @@ the reserved `__all__` id (test `upsert_channel_rejects_reserved_all_id`); 📢-
 Backfill of full cross-channel history on first open is out of scope (the event stream carries the
 session's traffic; a `get_all_messages` FFI fn would be needed for persisted history).
 
+### Peer identification: channel dots + free-text role
+**Files:** `patch_app/lib/widgets/peers_panel.dart`, `patch_app/lib/screens/home_screen.dart`, `patch_app/lib/models/message.dart` (1a); plus `patch-core/src/{osc/{types,codec}.rs, state/{peer,config,mod}.rs, api.rs}`, `patch_app/lib/{bridge/bridge_client,screens/settings_screen}.dart` (1b) · **Effort:** 1a small (Dart-only), 1b small–medium (FRB regen)
+
+Tell peers apart at a glance — who's online and what they cover. Two complementary, independently-shippable
+parts. Decided with the user: colour comes from **channel membership only** (reusing the existing channel
+colours — no new colour taxonomy); a role is **plain text, no colour** (avoids competing colour codes).
+
+**~~1a. Channel-membership dots (no protocol change).~~ ✅ Done (2026-06-07).** `_PeerTile` now renders a row
+of small colour dots — one per channel the peer announces (`PeerInfo.channels`) — coloured from the viewer's
+own channel map, which `home_screen` passes into `PeersPanel.channelColors` (`{for (final c in _channels)
+c.id: c.color}`). A channel the viewer doesn't have falls back to a grey dot (gains colour once Entry 2
+shares definitions); each dot has a tooltip of its channel id; the list collapses to "+N" past 5 dots
+(`_kMaxChannelDots`) so a peer on many channels can't overflow the 160 px panel; peers with no announced
+channels (e.g. configured-only static peers) show nothing. Pure UI — no engine/FRB change. Covered by a new
+`peers_panel_test.dart` case (per-channel dots, grey fallback, and the "+N" overflow).
+
+**~~1b. Optional free-text role label (text only, no colour).~~ ✅ Done (2026-06-07).** Self-assigned and
+broadcast so the whole crew sees a consistent label next to each name (e.g. "FOH", "Monitors", "PM").
+- Engine: `role: Option<String>` added to `Config` (`#[serde(default)]`), `ConfigSnapshot`, `PeerPresence`,
+  and `Peer` (carried through `Peer::from_presence`). `encode_presence` appends role as **OSC arg #4**;
+  `decode_presence` reads it only when `args.len() >= 5` (older 4-arg peers → `None`; an empty role string
+  also normalises to `None`) — keeps the `< 4` minimum, so it's backward-compatible. The heartbeat re-reads
+  `cfg.role` each tick (like `client_name`), so a change propagates within one interval. Authoritative
+  per-peer: presence carries the current value; auto-register/mDNS paths set `None` until a presence lands.
+- API: `set_role(role: Option<String>)` (trims; empty → `None`) + `ConfigSnapshot.role`; FRB regenerated.
+- Dart: `getConfig` map + `BridgeClient.setRole`; an optional field in **Settings → Identity** (reuses the
+  generalised `_UsernameField` with a badge icon/hint); `_PeerTile` renders the role as a small **neutral
+  chip** after the peer name (`_RoleBadge` — explicitly *no* role colour; channel dots are the only colour
+  cue). `PeerInfo.role` + `_peerToMap`/`_presenceToPeerMap` keys added.
+- Tests: presence role round-trip + a 4-arg-presence-decodes-as-None case (`codec.rs`); a peers-panel
+  widget test that the badge shows when set and is omitted when unset. 46 engine / 23 Flutter tests pass.
+
+### Pull a peer's channel layout over the network (merge-adopt)
+**Files:** `patch-core/src/osc/{addresses,codec}.rs`, `patch-core/src/transport/mod.rs`, `patch-core/src/state/mod.rs`, `patch-core/src/api.rs`, `patch_app/lib/bridge/bridge_client.dart`, `patch_app/lib/screens/settings_screen.dart` · **Effort:** medium–large (new OSC exchange + FRB regen)
+
+Get a new machine onto the right channels fast: let a newcomer adopt an existing crew member's channels
+(names, colours, macros) in one tap — "sessions over the network" instead of by `.toml` file. Decided with
+the user: **pull from a chosen peer**, **merge** (add only the channels you're missing; never overwrite your
+own). Reuses the `SessionConfig`/`Channel` serialization shape; only the transport (file → OSC) is new.
+
+**Wire — two new addresses (request/announce):**
+- `/patch/channels/request` — arg: requester `peer_id`. **Unicast** to the chosen peer's resolved address.
+- `/patch/channels/announce` — args: responder `peer_id`, responder `peer_name`, `channels_json` (the
+  responder's `Vec<Channel>` serialized with `serde_json`, exactly like presence's `channels` field).
+  Unicast back to the requester's `from` address.
+
+**Engine:**
+- `addresses.rs`: two consts. `codec.rs`: `encode_channels_request`/`encode_channels_announce` + `decode_*`,
+  two new `PatchEvent` variants, and `decode_message` arms. Bound `channels_json` length defensively
+  (network input) and reject on parse failure.
+- `transport::handle_event`: on `ChannelsRequest`, reply with our current channels via
+  `/patch/channels/announce` to `from`. On `ChannelsAnnounce`, **do not auto-apply** — emit a new
+  `AppEvent`/`PatchAppEvent::ChannelsOffered { from_peer_id, from_name, channels: Vec<Channel> }` so the UI
+  previews first.
+- `state/mod.rs`: `merge_channels(Vec<Channel>) -> usize` — for each incoming channel, **validate the id
+  with `valid_channel_id`** and insert only if the id isn't already present (keep existing untouched);
+  reject the reserved `__all__` id; persist via `persist_channels`; emit `ChannelListUpdated`; return the
+  count added. Never deletes, never overwrites colours/macros.
+- `api.rs`: `request_channels(peer_id: String)` (resolve the peer's `SocketAddr`, send the request) and
+  `adopt_channels(channels: Vec<Channel>)` (calls `merge_channels`). **FRB regen** (+ freezed for the new
+  event variant).
+
+**Flutter:**
+- `bridge_client.dart`: `requestChannels(peerId)`, `adoptChannels(...)`, and a `channels_offered` mapping in
+  `_forwardEngineEvent`.
+- `settings_screen.dart` (**Channels & Macros**): an "Import channels from a peer" button → peer picker
+  (peers with a resolved address) → on `channels_offered`, a preview dialog ("N new / M already have") with
+  an **Import** action that adopts only the new ones (merge) + a result toast.
+
+**Security/robustness:** every adopted id goes through `valid_channel_id`; merge is non-destructive; cap the
+announced channel count + payload size; ignore announces the user didn't request (match an in-flight request
+or gate it in the UI).
+
+**Synergy with the entry above:** once channel ids+colours are shared this way, the peer channel dots (1a)
+become consistent across machines (same colour for "rf" everywhere) and dots for previously-unknown channels
+gain colour.
+
 ### Direct messages (peer-to-peer, outside channels)
 **Effort:** medium
 

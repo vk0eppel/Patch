@@ -578,6 +578,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: PeersPanel(
                 peers: _peers,
                 heartbeatSecs: _heartbeatSecs,
+                channelColors: {for (final c in _channels) c.id: c.color},
                 onClearStale: () => widget.bridge.clearStalePeers(),
                 onClose: () => setState(() => _showPeers = false),
               ),

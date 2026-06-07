@@ -17,6 +17,9 @@ class Peer {
   /// Channels this peer is currently subscribed to.
   final List<String> channels;
 
+  /// Optional self-assigned production role (free text, e.g. "FOH", "PM").
+  final String? role;
+
   /// How we found this peer.
   final DiscoveryMode discoveryMode;
 
@@ -31,6 +34,7 @@ class Peer {
     required this.peerId,
     required this.peerName,
     required this.channels,
+    this.role,
     required this.discoveryMode,
     required this.address,
     required this.oscPort,
@@ -42,6 +46,7 @@ class Peer {
       peerId.hashCode ^
       peerName.hashCode ^
       channels.hashCode ^
+      role.hashCode ^
       discoveryMode.hashCode ^
       address.hashCode ^
       oscPort.hashCode ^
@@ -55,6 +60,7 @@ class Peer {
           peerId == other.peerId &&
           peerName == other.peerName &&
           channels == other.channels &&
+          role == other.role &&
           discoveryMode == other.discoveryMode &&
           address == other.address &&
           oscPort == other.oscPort &&

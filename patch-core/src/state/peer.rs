@@ -11,6 +11,8 @@ pub struct Peer {
     pub peer_name: String,
     /// Channels this peer is currently subscribed to.
     pub channels: Vec<String>,
+    /// Optional self-assigned production role (free text, e.g. "FOH", "PM").
+    pub role: Option<String>,
     /// How we found this peer.
     pub discovery_mode: DiscoveryMode,
     /// IP address (v4 or v6).
@@ -33,6 +35,7 @@ impl Peer {
             peer_id: p.peer_id,
             peer_name: p.peer_name,
             channels: p.channels,
+            role: p.role,
             discovery_mode: DiscoveryMode::OscBeacon,
             address: String::new(), // filled in by transport layer
             osc_port: 0,

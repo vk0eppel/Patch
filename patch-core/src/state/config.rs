@@ -59,6 +59,10 @@ pub struct Config {
     pub client_id: Uuid,
     /// Display name shown to other peers.
     pub client_name: String,
+    /// Optional self-assigned production role (free text, e.g. "FOH", "PM"),
+    /// broadcast in presence and shown next to this peer's name on other devices.
+    #[serde(default)]
+    pub role: Option<String>,
     /// UDP port for OSC transport.
     pub osc_port: u16,
     /// Interface to scope the discovery beacon to (e.g. "en0", "eth0"). The OSC
@@ -110,6 +114,7 @@ impl Default for Config {
         Self {
             client_id: Uuid::new_v4(),
             client_name: whoami(),
+            role: None,
             osc_port: 9000,
             network_interface: None,
             static_peers: Vec::new(),

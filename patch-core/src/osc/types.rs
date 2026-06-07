@@ -93,6 +93,9 @@ pub struct PeerPresence {
     pub peer_name: String,
     /// Which channels this peer is currently subscribed to.
     pub channels: Vec<String>,
+    /// Optional self-assigned production role (free text, e.g. "FOH", "PM").
+    /// `None` when unset or when received from an older peer (4-arg presence).
+    pub role: Option<String>,
     pub timestamp: DateTime<Utc>,
 }
 

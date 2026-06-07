@@ -292,6 +292,7 @@ pub fn get_interfaces() -> Result<Vec<InterfaceInfo>> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigSnapshot {
     pub client_name: String,
+    pub role: Option<String>,
     pub osc_port: u16,
     pub network_interface: Option<String>,
     pub static_peers: Vec<StaticPeer>,
@@ -311,6 +312,7 @@ pub async fn get_config() -> ConfigSnapshot {
     let cfg = engine().state.config().await;
     ConfigSnapshot {
         client_name: cfg.client_name,
+        role: cfg.role,
         osc_port: cfg.osc_port,
         network_interface: cfg.network_interface,
         static_peers: cfg.static_peers,
@@ -333,6 +335,20 @@ pub async fn set_client_name(name: String) -> Result<()> {
         anyhow::bail!("name must be a non-empty string");
     }
     engine().state.set_client_name(trimmed.to_string()).await
+}
+
+/// Set (or clear) the self-assigned role. An empty/whitespace-only string clears
+/// it (`None`); otherwise the trimmed value is stored and broadcast in presence.
+pub async fn set_role(role: Option<String>) -> Result<()> {
+    let role = role.and_then(|s| {
+        let t = s.trim().to_string();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
+    });
+    engine().state.set_role(role).await
 }
 
 /// Pass `None` (or an empty string at the caller) to bind all interfaces.

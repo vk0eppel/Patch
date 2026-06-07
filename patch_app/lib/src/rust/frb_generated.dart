@@ -71,7 +71,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 874304143;
+  int get rustContentHash => 1630261029;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -183,6 +183,8 @@ abstract class RustLibApi extends BaseApi {
   Future<void> crateApiSetInterface({String? name});
 
   Future<void> crateApiSetMacrosColumns({required int columns});
+
+  Future<void> crateApiSetRole({String? role});
 
   Future<void> crateApiShutdown();
 
@@ -1246,6 +1248,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  Future<void> crateApiSetRole({String? role}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_opt_String(role, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 35,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiSetRoleConstMeta,
+        argValues: [role],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSetRoleConstMeta =>
+      const TaskConstMeta(debugName: "set_role", argNames: ["role"]);
+
+  @override
   Future<void> crateApiShutdown() {
     return handler.executeNormal(
       NormalTask(
@@ -1254,7 +1284,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 35,
+            funcId: 36,
             port: port_,
           );
         },
@@ -1284,7 +1314,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 36,
+              funcId: 37,
               port: port_,
             );
           },
@@ -1320,7 +1350,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 37,
+            funcId: 38,
             port: port_,
           );
         },
@@ -1358,7 +1388,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 38,
+            funcId: 39,
             port: port_,
           );
         },
@@ -1398,7 +1428,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 39,
+            funcId: 40,
             port: port_,
           );
         },
@@ -1520,21 +1550,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ConfigSnapshot dco_decode_config_snapshot(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 12)
-      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
+    if (arr.length != 13)
+      throw Exception('unexpected arr length: expect 13 but see ${arr.length}');
     return ConfigSnapshot(
       clientName: dco_decode_String(arr[0]),
-      oscPort: dco_decode_u_16(arr[1]),
-      networkInterface: dco_decode_opt_String(arr[2]),
-      staticPeers: dco_decode_list_static_peer(arr[3]),
-      flashOnCritical: dco_decode_bool(arr[4]),
-      flashOnMessage: dco_decode_bool(arr[5]),
-      flashCount: dco_decode_u_8(arr[6]),
-      macrosColumns: dco_decode_u_8(arr[7]),
-      hideKeyboard: dco_decode_bool(arr[8]),
-      audibleAlert: dco_decode_bool(arr[9]),
-      globalMacros: dco_decode_list_macro_message(arr[10]),
-      heartbeatIntervalSecs: dco_decode_u_32(arr[11]),
+      role: dco_decode_opt_String(arr[1]),
+      oscPort: dco_decode_u_16(arr[2]),
+      networkInterface: dco_decode_opt_String(arr[3]),
+      staticPeers: dco_decode_list_static_peer(arr[4]),
+      flashOnCritical: dco_decode_bool(arr[5]),
+      flashOnMessage: dco_decode_bool(arr[6]),
+      flashCount: dco_decode_u_8(arr[7]),
+      macrosColumns: dco_decode_u_8(arr[8]),
+      hideKeyboard: dco_decode_bool(arr[9]),
+      audibleAlert: dco_decode_bool(arr[10]),
+      globalMacros: dco_decode_list_macro_message(arr[11]),
+      heartbeatIntervalSecs: dco_decode_u_32(arr[12]),
     );
   }
 
@@ -1719,16 +1750,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Peer dco_decode_peer(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 8)
+      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
     return Peer(
       peerId: dco_decode_Uuid(arr[0]),
       peerName: dco_decode_String(arr[1]),
       channels: dco_decode_list_String(arr[2]),
-      discoveryMode: dco_decode_discovery_mode(arr[3]),
-      address: dco_decode_String(arr[4]),
-      oscPort: dco_decode_u_16(arr[5]),
-      lastSeen: dco_decode_Chrono_Utc(arr[6]),
+      role: dco_decode_opt_String(arr[3]),
+      discoveryMode: dco_decode_discovery_mode(arr[4]),
+      address: dco_decode_String(arr[5]),
+      oscPort: dco_decode_u_16(arr[6]),
+      lastSeen: dco_decode_Chrono_Utc(arr[7]),
     );
   }
 
@@ -1736,13 +1768,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PeerPresence dco_decode_peer_presence(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return PeerPresence(
       peerId: dco_decode_Uuid(arr[0]),
       peerName: dco_decode_String(arr[1]),
       channels: dco_decode_list_String(arr[2]),
-      timestamp: dco_decode_Chrono_Utc(arr[3]),
+      role: dco_decode_opt_String(arr[3]),
+      timestamp: dco_decode_Chrono_Utc(arr[4]),
     );
   }
 
@@ -1956,6 +1989,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ConfigSnapshot sse_decode_config_snapshot(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_clientName = sse_decode_String(deserializer);
+    var var_role = sse_decode_opt_String(deserializer);
     var var_oscPort = sse_decode_u_16(deserializer);
     var var_networkInterface = sse_decode_opt_String(deserializer);
     var var_staticPeers = sse_decode_list_static_peer(deserializer);
@@ -1969,6 +2003,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_heartbeatIntervalSecs = sse_decode_u_32(deserializer);
     return ConfigSnapshot(
       clientName: var_clientName,
+      role: var_role,
       oscPort: var_oscPort,
       networkInterface: var_networkInterface,
       staticPeers: var_staticPeers,
@@ -2245,6 +2280,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_peerId = sse_decode_Uuid(deserializer);
     var var_peerName = sse_decode_String(deserializer);
     var var_channels = sse_decode_list_String(deserializer);
+    var var_role = sse_decode_opt_String(deserializer);
     var var_discoveryMode = sse_decode_discovery_mode(deserializer);
     var var_address = sse_decode_String(deserializer);
     var var_oscPort = sse_decode_u_16(deserializer);
@@ -2253,6 +2289,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       peerId: var_peerId,
       peerName: var_peerName,
       channels: var_channels,
+      role: var_role,
       discoveryMode: var_discoveryMode,
       address: var_address,
       oscPort: var_oscPort,
@@ -2266,11 +2303,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_peerId = sse_decode_Uuid(deserializer);
     var var_peerName = sse_decode_String(deserializer);
     var var_channels = sse_decode_list_String(deserializer);
+    var var_role = sse_decode_opt_String(deserializer);
     var var_timestamp = sse_decode_Chrono_Utc(deserializer);
     return PeerPresence(
       peerId: var_peerId,
       peerName: var_peerName,
       channels: var_channels,
+      role: var_role,
       timestamp: var_timestamp,
     );
   }
@@ -2481,6 +2520,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.clientName, serializer);
+    sse_encode_opt_String(self.role, serializer);
     sse_encode_u_16(self.oscPort, serializer);
     sse_encode_opt_String(self.networkInterface, serializer);
     sse_encode_list_static_peer(self.staticPeers, serializer);
@@ -2723,6 +2763,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_Uuid(self.peerId, serializer);
     sse_encode_String(self.peerName, serializer);
     sse_encode_list_String(self.channels, serializer);
+    sse_encode_opt_String(self.role, serializer);
     sse_encode_discovery_mode(self.discoveryMode, serializer);
     sse_encode_String(self.address, serializer);
     sse_encode_u_16(self.oscPort, serializer);
@@ -2735,6 +2776,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_Uuid(self.peerId, serializer);
     sse_encode_String(self.peerName, serializer);
     sse_encode_list_String(self.channels, serializer);
+    sse_encode_opt_String(self.role, serializer);
     sse_encode_Chrono_Utc(self.timestamp, serializer);
   }
 

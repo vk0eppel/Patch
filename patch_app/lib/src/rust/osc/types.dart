@@ -95,12 +95,17 @@ class PeerPresence {
 
   /// Which channels this peer is currently subscribed to.
   final List<String> channels;
+
+  /// Optional self-assigned production role (free text, e.g. "FOH", "PM").
+  /// `None` when unset or when received from an older peer (4-arg presence).
+  final String? role;
   final DateTime timestamp;
 
   const PeerPresence({
     required this.peerId,
     required this.peerName,
     required this.channels,
+    this.role,
     required this.timestamp,
   });
 
@@ -109,6 +114,7 @@ class PeerPresence {
       peerId.hashCode ^
       peerName.hashCode ^
       channels.hashCode ^
+      role.hashCode ^
       timestamp.hashCode;
 
   @override
@@ -119,6 +125,7 @@ class PeerPresence {
           peerId == other.peerId &&
           peerName == other.peerName &&
           channels == other.channels &&
+          role == other.role &&
           timestamp == other.timestamp;
 }
 

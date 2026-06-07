@@ -122,6 +122,14 @@ impl AppState {
         Ok(())
     }
 
+    /// Persist the self-assigned role (None = unset). Broadcast in the next
+    /// presence heartbeat (the loop re-reads config each tick, like client_name),
+    /// so it propagates to other peers within one interval without a restart.
+    pub async fn set_role(&self, role: Option<String>) -> anyhow::Result<()> {
+        self.0.config.write().await.role = role;
+        self.save_config().await
+    }
+
     /// Persist the discovery-beacon interface scope (None = announce on all).
     /// Applies live — the heartbeat re-reads it each tick; the socket always
     /// binds 0.0.0.0, so there's nothing to rebind.
@@ -342,6 +350,7 @@ impl AppState {
                 peer_id: peer.peer_id,
                 peer_name: peer.peer_name.clone(),
                 channels: peer.channels.clone(),
+                role: peer.role.clone(),
                 timestamp: peer.last_seen,
             }
         };
@@ -435,6 +444,7 @@ impl AppState {
                 peer_id: peer.peer_id,
                 peer_name: peer.peer_name.clone(),
                 channels: peer.channels.clone(),
+                role: peer.role.clone(),
                 timestamp: peer.last_seen,
             }
         };
@@ -465,6 +475,7 @@ impl AppState {
                 peer_id: synthetic_id,
                 peer_name: sp.label.clone().unwrap_or_else(|| sp.address.clone()),
                 channels: Vec::new(),
+                role: None,
                 discovery_mode: peer::DiscoveryMode::ManualIp,
                 address: sp.address.clone(),
                 osc_port: sp.port,
@@ -769,6 +780,7 @@ mod tests {
             peer_id: id,
             peer_name: "p".into(),
             channels: Vec::new(),
+            role: None,
             timestamp: when,
         }
     }

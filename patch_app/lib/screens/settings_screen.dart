@@ -24,8 +24,10 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final _nameCtrl = TextEditingController();
+  final _roleCtrl = TextEditingController();
   StreamSubscription<Map<String, dynamic>>? _sub;
   bool _nameSaved = false;
+  bool _roleSaved = false;
   late List<PatchChannel> _channels;
 
   // Behavior
@@ -59,6 +61,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void dispose() {
     _nameCtrl.dispose();
+    _roleCtrl.dispose();
     _sub?.cancel();
     super.dispose();
   }
@@ -70,6 +73,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final data = event['data'] as Map<String, dynamic>;
         setState(() {
           _nameCtrl.text = data['client_name'] as String? ?? '';
+          _roleCtrl.text = data['role'] as String? ?? '';
           _selectedInterface = data['network_interface'] as String?;
           _flashOnCritical = (data['flash_on_critical'] as bool?) ?? true;
           _flashOnMessage = (data['flash_on_message'] as bool?) ?? false;
@@ -123,6 +127,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) return;
     widget.bridge.setClientName(name);
+  }
+
+  /// Save the role (empty string clears it). No engine event echoes back, so
+  /// show the "saved" tick optimistically for a moment.
+  void _saveRole() {
+    widget.bridge.setRole(_roleCtrl.text);
+    setState(() => _roleSaved = true);
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _roleSaved = false);
+    });
   }
 
   void _confirmDeleteChannel(PatchChannel channel) {
@@ -214,6 +228,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   'crew';
               _nameCtrl.text = name;
               widget.bridge.setClientName(name);
+              _roleCtrl.clear();
+              widget.bridge.setRole(null);
             }),
           ]),
           const SizedBox(height: 4),
@@ -226,6 +242,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
             controller: _nameCtrl,
             saved: _nameSaved,
             onSave: _saveName,
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Optional role (e.g. "FOH", "Monitors", "PM") — shown next to your name '
+            'in other crew\'s peers panel. Leave blank for none.',
+            style: TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeSmall),
+          ),
+          const SizedBox(height: 10),
+          _UsernameField(
+            controller: _roleCtrl,
+            saved: _roleSaved,
+            onSave: _saveRole,
+            hintText: 'Your role (optional)',
+            icon: Icons.badge_outlined,
           ),
 
           const SizedBox(height: 32),
@@ -575,11 +605,15 @@ class _UsernameField extends StatelessWidget {
   final TextEditingController controller;
   final bool saved;
   final VoidCallback onSave;
+  final String hintText;
+  final IconData icon;
 
   const _UsernameField({
     required this.controller,
     required this.saved,
     required this.onSave,
+    this.hintText = 'Your name (shown to other crew)',
+    this.icon = Icons.person_outline,
   });
 
   @override
@@ -593,9 +627,9 @@ class _UsernameField extends StatelessWidget {
               color: PatchTheme.textPrimary,
               fontSize: PatchTheme.fontSizeMedium,
             ),
-            decoration: const InputDecoration(
-              hintText: 'Your name (shown to other crew)',
-              prefixIcon: Icon(Icons.person_outline, color: PatchTheme.textSecondary, size: 18),
+            decoration: InputDecoration(
+              hintText: hintText,
+              prefixIcon: Icon(icon, color: PatchTheme.textSecondary, size: 18),
             ),
             onSubmitted: (_) => onSave(),
             textInputAction: TextInputAction.done,

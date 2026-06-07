@@ -70,6 +70,11 @@ Future<ConfigSnapshot> getConfig() => RustLib.instance.api.crateApiGetConfig();
 Future<void> setClientName({required String name}) =>
     RustLib.instance.api.crateApiSetClientName(name: name);
 
+/// Set (or clear) the self-assigned role. An empty/whitespace-only string clears
+/// it (`None`); otherwise the trimmed value is stored and broadcast in presence.
+Future<void> setRole({String? role}) =>
+    RustLib.instance.api.crateApiSetRole(role: role);
+
 /// Pass `None` (or an empty string at the caller) to bind all interfaces.
 Future<void> setInterface({String? name}) =>
     RustLib.instance.api.crateApiSetInterface(name: name);
@@ -233,6 +238,7 @@ Stream<PatchAppEvent> subscribeEvents() =>
 /// Mirrors the JSON payload the legacy `get_config` command returned.
 class ConfigSnapshot {
   final String clientName;
+  final String? role;
   final int oscPort;
   final String? networkInterface;
   final List<StaticPeer> staticPeers;
@@ -250,6 +256,7 @@ class ConfigSnapshot {
 
   const ConfigSnapshot({
     required this.clientName,
+    this.role,
     required this.oscPort,
     this.networkInterface,
     required this.staticPeers,
@@ -266,6 +273,7 @@ class ConfigSnapshot {
   @override
   int get hashCode =>
       clientName.hashCode ^
+      role.hashCode ^
       oscPort.hashCode ^
       networkInterface.hashCode ^
       staticPeers.hashCode ^
@@ -284,6 +292,7 @@ class ConfigSnapshot {
       other is ConfigSnapshot &&
           runtimeType == other.runtimeType &&
           clientName == other.clientName &&
+          role == other.role &&
           oscPort == other.oscPort &&
           networkInterface == other.networkInterface &&
           staticPeers == other.staticPeers &&
