@@ -481,7 +481,10 @@ and sends the request; the responder's `ChannelsRequest` arm replies with its ch
 requester's `ChannelsAnnounce` arm parses to `Vec<Channel>` (caps: codec `MAX_CHANNELS_JSON = 64 KiB`,
 transport `MAX_OFFERED_CHANNELS = 64`) and emits `ChannelsOffered` — **never auto-applied**.
 `api::adopt_channels` → `AppState::merge_channels` adds only ids not already present (validates each via
-`valid_channel_id`, skips reserved `__all__`, never overwrites/deletes, returns count). UI: "Import channels
+`valid_channel_id`, skips reserved `__all__`, never overwrites/deletes, returns count). **Structure-only
+adopt** (fix 2026-06-07): a merged channel keeps id/name/colour/macros but its per-channel flash flags are
+reset to the importer's defaults (`config.flash_on_critical`/`flash_on_message`, `flash_count = None`),
+mirroring `upsert_channel` — so an imported layout can't impose the source's "flash on every message". UI: "Import channels
 from a peer" (cloud-download icon) in **Settings → Channels & Macros** → peer picker → preview dialog
 ("new"/"have" per channel) → **Add N**; an `_awaitingOffer` flag (6 s timeout) ignores unsolicited
 announces. The codec stays decoupled (carries raw `channels_json`; transport/state serialise+parse). Tests:
