@@ -764,7 +764,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 32),
 
           // ── Global macros ─────────────────────────────────────────────
-          const _SectionHeader('Global Macros'),
+          Row(children: [
+            Expanded(child: _SectionHeader('Global Macros')),
+            _resetButton('Global Macros', () => widget.bridge.resetGlobalMacros()),
+          ]),
           const SizedBox(height: 4),
           const Text(
             'Macros shown on every channel\'s panel. Firing one sends on the '

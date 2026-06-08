@@ -373,7 +373,31 @@ fine. If overflow persists:
 
 ## 🔵 Future Features (from Roadmap)
 
-### Simpler default macros — generic globals, clean channels
+### ~~Simpler default macros — generic globals, clean channels~~ ✅ Done (2026-06-08)
+**Files:** `patch-core/src/state/config.rs` (`default_channels` now macro-less + new `default_global_macros`, `Config::default` seeds it), config tests, `state/mod.rs` (`test_state` clean slate)
+
+**Shipped:** `default_channels()` creates the 5 channels with **no** macros; new `default_global_macros()`
+seeds COPY (F1), STANDBY (F2/warn), YES (F3), NO (F4), HOLD (F5/warn), PROBLEM W/ (F6/critical, payload
+"Problem with:"), CH1–CH4 (info, unbound). `Config::default()` applies the global seed; the `global_macros`
+serde field default stays empty so existing configs are never retro-seeded (locked by
+`representative_config_deserializes`). Seed locks: `default_channels_have_no_macros` +
+`default_global_macros_seed` + `fresh_config_seeds_globals`. No Dart change (global-macro rendering already
+exists). 54 engine / 23 Flutter tests pass.
+
+**Decisions on the two flagged points (adjust if wanted):**
+- **CH1–CH4** seeded as info, **payloads "Channel 1"…"Channel 4"**, **no F-key** (the user's `F1–F6` covered
+  only the six action macros). If `CH1–4` meant something else (comms-group select, literal "CH1", or they
+  want F7–F10), it's a one-line change in `default_global_macros`.
+- **Reset:** `reset_channels` stays channels-only; global macros get their **own** reset (done 2026-06-08):
+  `api::reset_global_macros` → `AppState::reset_global_macros` restores `default_global_macros()`, surfaced as
+  a ↺ button on the **Settings → Global Macros** header (confirm dialog via `_resetButton`, refreshes through
+  `config_updated`). Covered by `reset_global_macros_restores_defaults`. So the global defaults are now
+  recoverable in-app, not only from a fresh `patch.toml`.
+
+**Note:** only affects **new** installs — an existing `patch.toml` keeps its current channels+macros. To see
+the new defaults on this machine, delete/rename `patch.toml` (see docs for its location) and relaunch.
+
+### Original spec (for reference)
 **Files:** `patch-core/src/state/config.rs` (`default_channels` + a new `default_global_macros`, `Config::default`), `patch-core/src/state/config.rs` tests; possibly `state/mod.rs` (reset behaviour) · **Effort:** small
 
 **Rationale (start simple, go complex if needed):** today every default channel is pre-seeded with

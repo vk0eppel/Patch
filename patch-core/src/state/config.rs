@@ -126,7 +126,10 @@ impl Default for Config {
             macros_columns: 1,
             hide_keyboard: true,
             audible_alert: false,
-            global_macros: Vec::new(),
+            // Fresh installs get the generic global macro set. NB this is the
+            // *first-run* seed; the serde field default stays empty so loading an
+            // existing patch.toml never injects these over a user's own setup.
+            global_macros: default_global_macros(),
         }
     }
 }
@@ -193,93 +196,97 @@ pub fn default_channels() -> Vec<Channel> {
         ("stage", "STAGE", "#43A047"),
     ];
 
-    // Compact builder for a seeded macro (F-key bound, no MIDI binding).
-    let m = |label: &str, payload: &str, fkey: &str, priority: i32| MacroMessage {
+    // Channels start with **no** per-channel macros — the common cross-channel
+    // callouts ship as global macros instead (see `default_global_macros`). Users
+    // add channel-specific macros in Settings when their show needs them.
+    specs
+        .iter()
+        .map(|(id, name, color)| Channel::new(*id, *name, *color))
+        .collect()
+}
+
+/// Generic, cross-channel macros seeded on a **fresh** install. Global macros are
+/// shown on every channel's panel and fire on the currently-selected channel(s),
+/// so these are the out-of-the-box quick-sends now that channels start macro-less
+/// ("start simple, customise if needed"). Only applied via `Config::default()`
+/// (first run) — an existing `patch.toml` keeps whatever it has, since the serde
+/// field default for `global_macros` is empty.
+pub fn default_global_macros() -> Vec<MacroMessage> {
+    // Compact builder (F-key optional, no MIDI binding).
+    let g = |label: &str, payload: &str, priority: i32, fkey: Option<&str>| MacroMessage {
         label: label.into(),
         payload: payload.into(),
-        key_binding: Some(fkey.into()),
+        key_binding: fkey.map(String::from),
         priority,
         midi_note: None,
         midi_cc: None,
     };
-
-    specs
-        .iter()
-        .map(|(id, name, color)| {
-            let mut ch = Channel::new(*id, *name, *color);
-            ch.macros = match *id {
-                "audio" => vec![
-                    m("ONE", "One", "F1", 1),
-                    m("TWO", "Two", "F2", 1),
-                    m("CHECK", "Check", "F3", 2),
-                    m("PROBLEM W/", "Problem with:", "F4", 3),
-                ],
-                "rf" => vec![
-                    m("CLEAR", "Channel clear", "F1", 1),
-                    m("HOLD", "HOLD — do not transmit", "F2", 2),
-                    m("LOW BATT", "Battery low — swap now", "F3", 3),
-                ],
-                "lighting" => vec![
-                    m("READY", "Lighting ready", "F1", 1),
-                    m("FIXTURE DOWN", "Fixture down", "F2", 2),
-                    m("DMX FAULT", "DMX fault — no output", "F3", 3),
-                ],
-                "video" => vec![
-                    m("READY", "Video ready", "F1", 1),
-                    m("GLITCH", "Video glitch", "F2", 2),
-                    m("NO SIGNAL", "No signal — feed lost", "F3", 3),
-                ],
-                "stage" => vec![
-                    m("CLEAR", "Stage clear", "F1", 1),
-                    m("HAZARD", "Hazard on deck", "F2", 2),
-                    m("MEDICAL", "Medical — need help on stage", "F3", 3),
-                ],
-                _ => Vec::new(),
-            };
-            ch
-        })
-        .collect()
+    vec![
+        g("COPY", "Copy", 1, Some("F1")),
+        g("STANDBY", "Standby", 2, Some("F2")),
+        g("YES", "Yes", 1, Some("F3")),
+        g("NO", "No", 1, Some("F4")),
+        g("HOLD", "Hold", 2, Some("F5")),
+        g("PROBLEM W/", "Problem with:", 3, Some("F6")),
+        g("CH1", "Channel 1", 1, None),
+        g("CH2", "Channel 2", 1, None),
+        g("CH3", "Channel 3", 1, None),
+        g("CH4", "Channel 4", 1, None),
+    ]
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Locks the seeded default macros so an accidental edit to `default_channels`
-    /// doesn't silently change what new installs ship with.
+    /// Default channels now ship **macro-less** — the common callouts live in the
+    /// global set (`default_global_macros`). Locks that so a regression can't
+    /// silently reintroduce per-channel seeds.
     #[test]
-    fn default_channels_seed_macros() {
+    fn default_channels_have_no_macros() {
         let channels = default_channels();
-        assert_eq!(channels.len(), 5);
-        let by_id = |id: &str| channels.iter().find(|c| c.id == id).unwrap();
+        let ids: Vec<&str> = channels.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(ids, vec!["audio", "rf", "lighting", "video", "stage"]);
+        for ch in &channels {
+            assert!(
+                ch.macros.is_empty(),
+                "channel {} should ship with no macros",
+                ch.id
+            );
+        }
+    }
 
-        // AUDIO: mic-check vocabulary (ONE/TWO/CHECK/PROBLEM W/).
-        let audio: Vec<(&str, i32)> = by_id("audio")
-            .macros
+    /// Locks the seeded global macros so an accidental edit doesn't silently
+    /// change what a fresh install ships with. Tuples: (label, priority, F-key).
+    #[test]
+    fn default_global_macros_seed() {
+        let macros = default_global_macros();
+        let got: Vec<(&str, i32, Option<&str>)> = macros
             .iter()
-            .map(|m| (m.label.as_str(), m.priority))
+            .map(|m| (m.label.as_str(), m.priority, m.key_binding.as_deref()))
             .collect();
         assert_eq!(
-            audio,
-            vec![("ONE", 1), ("TWO", 1), ("CHECK", 2), ("PROBLEM W/", 3)]
+            got,
+            vec![
+                ("COPY", 1, Some("F1")),
+                ("STANDBY", 2, Some("F2")),
+                ("YES", 1, Some("F3")),
+                ("NO", 1, Some("F4")),
+                ("HOLD", 2, Some("F5")),
+                ("PROBLEM W/", 3, Some("F6")),
+                ("CH1", 1, None),
+                ("CH2", 1, None),
+                ("CH3", 1, None),
+                ("CH4", 1, None),
+            ]
         );
+    }
 
-        // The three previously-empty channels now each ship 3 info/warning/critical macros.
-        for (id, expected) in [
-            (
-                "lighting",
-                [("READY", 1), ("FIXTURE DOWN", 2), ("DMX FAULT", 3)],
-            ),
-            ("video", [("READY", 1), ("GLITCH", 2), ("NO SIGNAL", 3)]),
-            ("stage", [("CLEAR", 1), ("HAZARD", 2), ("MEDICAL", 3)]),
-        ] {
-            let got: Vec<(&str, i32)> = by_id(id)
-                .macros
-                .iter()
-                .map(|m| (m.label.as_str(), m.priority))
-                .collect();
-            assert_eq!(got, expected.to_vec(), "macros for channel {id}");
-        }
+    /// A fresh `Config` seeds the globals (the serde-default-is-empty half is
+    /// covered by `representative_config_deserializes`, whose TOML omits the field).
+    #[test]
+    fn fresh_config_seeds_globals() {
+        assert_eq!(Config::default().global_macros.len(), 10);
     }
 
     /// A config in the documented `patch.toml` format must stay deserialisable
@@ -337,5 +344,8 @@ flash_on_message = false
         let rf = cfg.default_channels.iter().find(|c| c.id == "rf").unwrap();
         assert_eq!(rf.macros.len(), 1);
         assert_eq!(rf.macros[0].label, "CLEAR");
+        // The TOML omits `global_macros`, so serde fills it empty — an existing
+        // config is never retro-seeded with the new defaults.
+        assert!(cfg.global_macros.is_empty());
     }
 }

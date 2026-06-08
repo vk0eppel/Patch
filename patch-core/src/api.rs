@@ -693,6 +693,11 @@ pub async fn delete_global_macro(label: String) -> Result<()> {
     engine().state.delete_global_macro(&label).await
 }
 
+/// Restore the factory default global macros (replaces the current set).
+pub async fn reset_global_macros() -> Result<()> {
+    engine().state.reset_global_macros().await
+}
+
 /// Reorder global macros to match `ordered_labels` (drag-to-reorder).
 pub async fn reorder_global_macros(ordered_labels: Vec<String>) -> Result<()> {
     engine().state.reorder_global_macros(ordered_labels).await

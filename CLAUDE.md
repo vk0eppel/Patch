@@ -146,6 +146,7 @@ upsert_macro(channel_id, label, payload, priority, key_binding, midi_note: Optio
 reorder_macros(channel_id, ordered_labels)                       // drag-to-reorder; unlisted labels kept, unknown ignored
 upsert_global_macro(label, payload, priority, key_binding, midi_note: Option<u8>, midi_cc: Option<u8>) / delete_global_macro(label)  // shown on every channel
 reorder_global_macros(ordered_labels)                            // drag-to-reorder global macros
+reset_global_macros()                                            // restore the factory default global macro set
 set_selected_channels(ids: Vec<String>)                          // push UI selection to engine (MIDI global-macro target)
 save_session(name) -> SessionSaved
 load_session(slug) -> SessionLoaded
@@ -240,18 +241,21 @@ Channels are dynamic and identified by a stable slug (e.g. `"rf"`, `"foh"`).
 Default channels seeded on first run:
 `AUDIO` · `RF` · `LIGHTING` · `VIDEO` · `STAGE`
 
-Each default channel is seeded with macros (in `state/config.rs::default_channels`) — channel-specific
-status/problem callouts (info → warning → critical), **not** show-calling cues. Generic cross-channel acks
-(YES/NO/COPY) are intentionally **not** duplicated per channel — they're reserved for the future "global
-shortcuts" feature. Seeded sets (all on F1–F…):
+**Default channels ship macro-less** (`state/config.rs::default_channels` creates them with no macros). The
+common cross-channel callouts are seeded as **global macros** instead (`default_global_macros`), shown on
+every channel and fired on the currently-selected channel(s) — "start simple, customise if needed". Seeded
+global set (F1–F6 on the action macros; `CH1–4` unbound):
 
-- `AUDIO`: **ONE** (info, F1), **TWO** (info, F2), **CHECK** (warning, F3), **PROBLEM W/** (critical, F4)
-- `RF`: **CLEAR** (info, F1), **HOLD** (warning, F2), **LOW BATT** (critical, F3)
-- `LIGHTING`: **READY** (info, F1), **FIXTURE DOWN** (warning, F2), **DMX FAULT** (critical, F3)
-- `VIDEO`: **READY** (info, F1), **GLITCH** (warning, F2), **NO SIGNAL** (critical, F3)
-- `STAGE`: **CLEAR** (info, F1), **HAZARD** (warning, F2), **MEDICAL** (critical, F3)
+- **COPY** (info, F1), **STANDBY** (warning, F2), **YES** (info, F3), **NO** (info, F4), **HOLD** (warning, F5),
+  **PROBLEM W/** (critical, F6 — payload `"Problem with:"`), **CH1**/**CH2**/**CH3**/**CH4** (info)
 
-The seed is locked by `state::config::tests::default_channels_seed_macros`.
+The seeds are locked by `state::config::tests::{default_channels_have_no_macros, default_global_macros_seed}`.
+The global seed is applied only by **`Config::default()`** (first run); the `global_macros` serde field
+default stays empty, so loading an existing `patch.toml` never injects the defaults over a user's own setup
+(verified by `representative_config_deserializes`). Note: the Settings "Channels & Macros" reset
+(`reset_channels`) restores the (now macro-less) default channels; **global macros have their own reset**
+(`reset_global_macros` → `default_global_macros()`, the ↺ button on Settings → Global Macros), so the global
+defaults are recoverable in-app without a fresh config.
 
 Each channel has:
 - stable `id` (slug used in OSC addresses)
@@ -478,7 +482,7 @@ Patch UI is designed for live environments:
 - **NIC picker**: Settings → Network Interface; dropdown shows only real NICs (loopback, virtual/tunnel, and link-local IPv6 interfaces filtered out). Patch **always listens on all interfaces** (`0.0.0.0`); the picker only chooses which network the discovery beacon is **announced** on. Change persists to `patch.toml` and applies **within a few seconds — no restart** (shows an "Applied" confirmation, not a restart banner)
 - **Behavior settings**: Settings → Behavior — global flash defaults ("Flash on every message", "Flash on critical messages", "Flash pulses" 3–7 picker), **"Audible alert"** toggle; Settings → channel editor footer — per-channel overrides for the same flash flags (either global or channel flag being on is sufficient to trigger; "–" in the pulse picker = use global)
 - **audible alert**: when `audible_alert` (config, default off — opt-in) is set, `_playAlert()` plays the bundled `assets/sounds/alert.wav` via **`audioplayers`** (a single reusable `AudioPlayer` on `_HomeScreenState`, disposed in `dispose`; **preloaded in `initState` via `setSource` + `ReleaseMode.stop`** and replayed with `seek(0)`+`resume` in `_emitAlert`, so even the first alert after launch is instant — a fresh `play` is only the fallback), called from inside `_triggerFlash`/`_triggerBroadcastFlash` — so it fires on exactly the same events as the visual flash (critical message / page / broadcast, per the flash flags), even on a channel you're not viewing. Bypassable via Settings → Behavior → "Audible alert". **`SystemSound.play(SystemSoundType.alert)` was tried first but is a no-op on macOS *and* iOS** — hence the bundled asset (a short two-tone WAV generated with a Python script; regenerate by editing the asset). `audioplayers` is in `pubspec.yaml` deps; the asset is declared under `flutter: assets:`
-- **reset to defaults**: each Settings section has a `↺` icon button that shows a confirm dialog then restores factory defaults for that section only — Identity resets name to system username (`Platform.environment['USER']`); Behavior resets flash flags to `flash_on_critical=true / flash_on_message=false / flash_count=4`; Static Peers removes all entries; Channels & Macros calls `reset_channels()` which replaces all channels with the seeded defaults. `reset_channels()` in `state/mod.rs` delegates to `apply_session(default_channels())` and emits `ChannelListUpdated`. `state/config.rs::default_channels()` is `pub` so it can be called from `mod.rs`.
+- **reset to defaults**: each Settings section has a `↺` icon button that shows a confirm dialog then restores factory defaults for that section only — Identity resets name to system username (`Platform.environment['USER']`); Behavior resets flash flags to `flash_on_critical=true / flash_on_message=false / flash_count=4`; Static Peers removes all entries; Channels & Macros calls `reset_channels()` which replaces all channels with the (now macro-less) seeded defaults; **Global Macros** calls `reset_global_macros()` which restores `default_global_macros()`. `reset_channels()` in `state/mod.rs` delegates to `apply_session(default_channels())` and emits `ChannelListUpdated`; `reset_global_macros()` rewrites `config.global_macros` and persists (UI refreshes via `config_updated`). `state/config.rs::default_channels()` and `default_global_macros()` are `pub` so they can be called from `mod.rs`.
 - **sessions**: folder icon in the left sidebar opens `SessionsDialog` — load/save named presets or import/export `.toml` files; Settings screen no longer contains a Sessions section
 - **macros panel**: `macros_panel.dart` — toggleable via keyboard icon (`Icons.keyboard_outlined`) in `_ChannelView` header (button moves into the panel's own header when panel is open, aligned above its column); vertical layout, all macros always visible, no scroll; 1, 2, or 3 columns (`_kMacroColumnWidth = 160.0` per column, so panel is 160/320/480 px); column count set in **Settings → Behavior → Macros panel columns** (SegmentedButton 1/2/3), persisted to `patch.toml` as `macros_columns`; multi-channel mode groups macros by channel with a colored divider; when single channel, no channel bar on buttons; `Material(clipBehavior: Clip.hardEdge)` prevents overflow errors when many macros are squeezed into a small window; `ConstrainedBox(minHeight: 40)` sets a floor on row height
 - **header alignment**: `PatchTheme.headerHeight = 80.0` is applied to all four top-section headers (channel strip image, `_ChannelView` header container, `MacrosPanel` header, `PeersPanel` header) so their dividers land on the same horizontal line

@@ -754,6 +754,12 @@ impl AppState {
         self.save_config().await
     }
 
+    /// Replace all global macros with the factory defaults.
+    pub async fn reset_global_macros(&self) -> anyhow::Result<()> {
+        self.0.config.write().await.global_macros = config::default_global_macros();
+        self.save_config().await
+    }
+
     /// Remove a global macro by label.
     pub async fn delete_global_macro(&self, label: &str) -> anyhow::Result<()> {
         self.0
@@ -830,12 +836,15 @@ mod tests {
     use super::*;
     use crate::osc::types::Priority;
 
-    /// An in-memory state with no channels and no static peers. None of the
+    /// An in-memory state with no channels, no static peers, and no global macros
+    /// (a clean slate — `Config::default()` now seeds global macros on a fresh
+    /// install, which the global-macro tests must start without). None of the
     /// methods exercised here touch disk, so no `set_data_dir` is needed.
     fn test_state() -> AppState {
         AppState::new(Config {
             default_channels: Vec::new(),
             static_peers: Vec::new(),
+            global_macros: Vec::new(),
             ..Config::default()
         })
     }
@@ -1087,6 +1096,49 @@ mod tests {
                 .map(|m| m.label.clone())
                 .collect::<Vec<_>>(),
             vec!["C", "B"]
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn reset_global_macros_restores_defaults() {
+        let _guard = config::test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        config::set_data_dir(dir.clone());
+
+        let st = test_state(); // starts with no global macros
+        st.upsert_global_macro(channel::MacroMessage {
+            label: "CUSTOM".into(),
+            payload: "x".into(),
+            key_binding: None,
+            priority: 1,
+            midi_note: None,
+            midi_cc: None,
+        })
+        .await
+        .unwrap();
+        assert_eq!(st.config().await.global_macros.len(), 1);
+
+        st.reset_global_macros().await.unwrap();
+
+        let want: Vec<String> = config::default_global_macros()
+            .iter()
+            .map(|m| m.label.clone())
+            .collect();
+        let got: Vec<String> = st
+            .config()
+            .await
+            .global_macros
+            .iter()
+            .map(|m| m.label.clone())
+            .collect();
+        assert_eq!(got, want); // custom replaced by the factory set
+                               // Persisted to disk.
+        assert_eq!(
+            Config::load_or_default().unwrap().global_macros.len(),
+            want.len()
         );
 
         let _ = std::fs::remove_dir_all(&dir);

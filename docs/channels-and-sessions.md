@@ -18,17 +18,19 @@ On first run Patch seeds five channels:
 | `video` | VIDEO |
 | `stage` | STAGE |
 
-Every default channel ships with a few macros — quick status/problem callouts bound to F-keys:
+The channels start **without** per-channel macros. Instead, a set of generic, cross-channel **global macros** is seeded — they show on every channel and send on whichever channel(s) you have selected:
 
-| Channel | F1 | F2 | F3 | F4 |
-|---|---|---|---|---|
-| `AUDIO` | ONE (info) | TWO (info) | CHECK (warning) | PROBLEM W/ (critical) |
-| `RF` | CLEAR (info) | HOLD (warning) | LOW BATT (critical) | — |
-| `LIGHTING` | READY (info) | FIXTURE DOWN (warning) | DMX FAULT (critical) | — |
-| `VIDEO` | READY (info) | GLITCH (warning) | NO SIGNAL (critical) | — |
-| `STAGE` | CLEAR (info) | HAZARD (warning) | MEDICAL (critical) | — |
+| Macro | Priority | F-key |
+|---|---|---|
+| COPY | info | F1 |
+| STANDBY | warning | F2 |
+| YES | info | F3 |
+| NO | info | F4 |
+| HOLD | warning | F5 |
+| PROBLEM W/ | critical | F6 |
+| CH1 · CH2 · CH3 · CH4 | info | — |
 
-These are starting points — edit, reorder, add, or delete them per channel in **Settings → Channels & Macros**.
+This keeps a fresh install simple. Add **channel-specific** macros (e.g. RF "LOW BATT", STAGE "MEDICAL") per channel in **Settings → Channels & Macros** when your show needs them, and edit the global set in **Settings → Global Macros**.
 
 ### Creating a channel
 

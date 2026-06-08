@@ -229,6 +229,10 @@ Future<void> setSelectedChannels({required List<String> ids}) =>
 Future<void> deleteGlobalMacro({required String label}) =>
     RustLib.instance.api.crateApiDeleteGlobalMacro(label: label);
 
+/// Restore the factory default global macros (replaces the current set).
+Future<void> resetGlobalMacros() =>
+    RustLib.instance.api.crateApiResetGlobalMacros();
+
 /// Reorder global macros to match `ordered_labels` (drag-to-reorder).
 Future<void> reorderGlobalMacros({required List<String> orderedLabels}) =>
     RustLib.instance.api.crateApiReorderGlobalMacros(

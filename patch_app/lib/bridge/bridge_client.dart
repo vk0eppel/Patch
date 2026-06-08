@@ -396,6 +396,16 @@ class BridgeClient {
     }
   }
 
+  /// Restore the factory default global macros (replaces the current set).
+  Future<void> resetGlobalMacros() async {
+    try {
+      await rust.resetGlobalMacros();
+      _emit({'event': 'config_updated'});
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
   /// Reorder global macros to match [labels] (drag-to-reorder).
   Future<void> reorderGlobalMacros(List<String> labels) async {
     try {
