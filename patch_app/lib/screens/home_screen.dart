@@ -277,6 +277,8 @@ class _HomeScreenState extends State<HomeScreen> {
             }
           }
         });
+        // Keep the engine's view of the selection current (for MIDI global macros).
+        _syncSelection();
 
       case 'messages':
         final chId = event['channel_id'] as String;
@@ -519,7 +521,16 @@ class _HomeScreenState extends State<HomeScreen> {
         if (!_messages.containsKey(id)) widget.bridge.getMessages(id);
       }
     });
+    _syncSelection();
     if (_hideKeyboard) FocusScope.of(context).unfocus();
+  }
+
+  /// Push the current selection to the engine so a MIDI-triggered global macro
+  /// fires on the same channel(s) as a tap/F-key (the engine has no other view
+  /// of UI selection). Cheap fire-and-forget; called whenever `_selectedIds`
+  /// changes.
+  void _syncSelection() {
+    widget.bridge.setSelectedChannels(_selectedIds.toList());
   }
 
   // ── Build ───────────────────────────────────────────────────────────────────

@@ -658,6 +658,8 @@ pub async fn upsert_global_macro(
     payload: String,
     priority: i32,
     key_binding: Option<String>,
+    midi_note: Option<u8>,
+    midi_cc: Option<u8>,
 ) -> Result<()> {
     let label = label.trim().to_string();
     if label.is_empty() {
@@ -670,13 +672,21 @@ pub async fn upsert_global_macro(
             payload,
             key_binding,
             priority,
-            // Global macros fire on the UI's selected channel(s), which the
-            // engine-side MIDI listener can't resolve — so they carry no MIDI
-            // binding (MIDI triggers are per-channel macros only).
-            midi_note: None,
-            midi_cc: None,
+            // A MIDI-triggered global macro fires on the UI's currently-selected
+            // channel(s) — the engine learns that selection via
+            // `set_selected_channels` (pushed from Flutter).
+            midi_note,
+            midi_cc,
         })
         .await
+}
+
+/// Tell the engine which channels the UI currently has selected, so a
+/// MIDI-triggered *global* macro fires on the same channel(s) a tap/F-key would.
+/// Includes the reserved `__all__` id when the UI is in ALL/broadcast mode.
+pub async fn set_selected_channels(ids: Vec<String>) -> Result<()> {
+    engine().state.set_selected_channels(ids).await;
+    Ok(())
 }
 
 pub async fn delete_global_macro(label: String) -> Result<()> {

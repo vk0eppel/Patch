@@ -1250,8 +1250,8 @@ class _ChannelMacroEditor extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   const Text(
-                    'Fire this macro from a footswitch/pad (its own channel). '
-                    'Leave blank for none.',
+                    'Fire this macro hands-free from a footswitch, pad, or '
+                    'keyboard. Leave blank for none.',
                     style: TextStyle(
                       color: PatchTheme.textMuted,
                       fontSize: 11,
@@ -1382,12 +1382,13 @@ class _GlobalMacrosEditor extends StatelessWidget {
                   style: TextButton.styleFrom(foregroundColor: PatchTheme.accent),
                   onPressed: () => _ChannelMacroEditor._showMacroEditDialog(
                     context,
-                    allowMidi: false,
-                    onSave: (l, p, k, pr, _, _) => bridge.upsertGlobalMacro(
+                    onSave: (l, p, k, pr, mn, mc) => bridge.upsertGlobalMacro(
                       label: l,
                       payload: p,
                       keyBinding: k,
                       priority: pr,
+                      midiNote: mn,
+                      midiCc: mc,
                     ),
                   ),
                 ),
@@ -1420,12 +1421,13 @@ class _GlobalMacrosEditor extends StatelessWidget {
                   onEdit: () => _ChannelMacroEditor._showMacroEditDialog(
                     context,
                     existing: s,
-                    allowMidi: false,
-                    onSave: (l, p, k, pr, _, _) => bridge.upsertGlobalMacro(
+                    onSave: (l, p, k, pr, mn, mc) => bridge.upsertGlobalMacro(
                       label: l,
                       payload: p,
                       keyBinding: k,
                       priority: pr,
+                      midiNote: mn,
+                      midiCc: mc,
                     ),
                   ),
                   onDelete: () => bridge.deleteGlobalMacro(s.label),

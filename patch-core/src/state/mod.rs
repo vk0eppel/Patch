@@ -65,6 +65,11 @@ struct Inner {
     pub peers: RwLock<HashMap<Uuid, peer::Peer>>,
     /// Recent messages (ring buffer — capped at MAX_BUFFER)
     pub messages: RwLock<MessageBuffer>,
+    /// Channel ids the UI currently has selected (incl. `__all__` in ALL mode).
+    /// Pushed from Flutter via `set_selected_channels`; read by the MIDI listener
+    /// so a MIDI-triggered *global* macro fires on the same channel(s) a tap/F-key
+    /// would. The engine has no other view of UI selection.
+    pub selected: RwLock<Vec<String>>,
     /// Event bus — clone a receiver to subscribe
     pub events: broadcast::Sender<AppEvent>,
     /// Serializes config persistence so concurrent mutators can't write the
@@ -102,6 +107,7 @@ impl AppState {
             channels: RwLock::new(channels),
             peers: RwLock::new(HashMap::new()),
             messages: RwLock::new(MessageBuffer::default()),
+            selected: RwLock::new(Vec::new()),
             events: tx,
             save_lock: Mutex::new(()),
         }))
@@ -127,6 +133,17 @@ impl AppState {
         self.save_config().await?;
         self.publish(AppEvent::ClientNameChanged(name)).await;
         Ok(())
+    }
+
+    /// Replace the UI's current channel selection (runtime only — not persisted).
+    /// Read by the MIDI listener for global-macro firing.
+    pub async fn set_selected_channels(&self, ids: Vec<String>) {
+        *self.0.selected.write().await = ids;
+    }
+
+    /// The UI's currently-selected channel ids (empty until Flutter first syncs).
+    pub async fn selected_channels(&self) -> Vec<String> {
+        self.0.selected.read().await.clone()
     }
 
     /// Persist the self-assigned role (None = unset). Broadcast in the next

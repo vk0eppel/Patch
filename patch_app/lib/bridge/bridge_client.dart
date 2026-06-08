@@ -359,6 +359,8 @@ class BridgeClient {
     required String payload,
     String? keyBinding,
     int priority = 1,
+    int? midiNote,
+    int? midiCc,
   }) async {
     try {
       await rust.upsertGlobalMacro(
@@ -366,8 +368,20 @@ class BridgeClient {
         payload: payload,
         priority: priority,
         keyBinding: keyBinding,
+        midiNote: midiNote,
+        midiCc: midiCc,
       );
       _emit({'event': 'config_updated'});
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
+  /// Push the UI's current channel selection to the engine so a MIDI-triggered
+  /// global macro fires on the same channel(s) as a tap/F-key. Fire-and-forget.
+  Future<void> setSelectedChannels(List<String> ids) async {
+    try {
+      await rust.setSelectedChannels(ids: ids);
     } catch (e) {
       _emitError(e);
     }

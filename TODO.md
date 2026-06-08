@@ -598,19 +598,22 @@ windows, linux))']` in `patch-core/Cargo.toml`) — CoreMIDI / WinMM / ALSA; iOS
 have no backend so the `midi` module compiles to no-ops (no dep pulled in). New
 `patch-core/src/midi/mod.rs`: opens **every** input port at startup, parses Note On
 (velocity > 0) and CC (value ≥ 64 = "press"), and forwards a trigger over a tokio mpsc
-to a task that fires **every per-channel macro whose binding matches, each on its own
-channel** — engine-side and absolute (unlike F-keys, which fire on the *selected* channel
-via Flutter), so a footswitch works without focus. The OS MIDI connections are kept alive
-by a dedicated parked thread (like the mDNS daemon). Firing reuses the extracted
-`api::dispatch_message` (shared with `send_message`), so criticals are ACK-tracked and the
-sender flashes normally. Wired in `api::init` (`midi::start`); `api::get_midi_ports() ->
-Vec<String>` added for a future port-selector UI. Global macros don't take a MIDI binding
-(they fire on the UI's selected channel, which the engine can't resolve). UI: MIDI note /
-CC number fields in the per-channel macro editor (`allowMidi` gate; hidden for global), a
-`♪ N` / `CC N` badge on `_MacroRow`. CI installs `libasound2-dev` for the Linux build.
-**FRB regen** (upsert_macro signature + MacroMessage fields + get_midi_ports). Limitation:
-ports are enumerated at startup — hot-plugging a device needs an app restart (a rescan is a
-possible follow-up).
+to a task that runs the pure `resolve_targets` routing: **per-channel** macros fire on
+**their own channel** (absolute, engine-side — unlike F-keys, so a footswitch works without
+focus); **global** macros fire on the **currently-selected channel(s)**. The engine learns
+the selection because Flutter pushes it via `api::set_selected_channels` on every selection
+change (`__all__` included in ALL mode, so a global macro fired then broadcasts — mirrors the
+UI's `_fireMacro` exactly). The OS MIDI connections are kept alive by a dedicated parked
+thread (like the mDNS daemon). Firing reuses the extracted `api::dispatch_message` (shared
+with `send_message`), so criticals are ACK-tracked and the sender flashes normally. Wired in
+`api::init` (`midi::start`); `api::get_midi_ports() -> Vec<String>` added for a future
+port-selector UI. UI: MIDI note / CC number fields in the macro editor (per-channel **and**
+global), a `♪ N` / `CC N` badge on `_MacroRow`. **macOS:** the podspec links CoreMIDI +
+CoreAudio (`OTHER_LDFLAGS`) — `midir`'s framework link directives are lost through the
+cargokit static lib; **CI** installs `libasound2-dev` for the Linux build. **FRB regen**
+(upsert_macro/upsert_global_macro signatures + MacroMessage fields + get_midi_ports +
+set_selected_channels). Limitation: ports are enumerated at startup — hot-plugging a device
+needs an app restart (a rescan is a possible follow-up).
 
 Note: OSC-triggered shortcuts are not a separate feature — users can already send `/patch/channel/{id}/message` directly from QLab, Companion, or scripts. Mapping *foreign* OSC addresses (e.g. `/rf/battery_low` from a proprietary device) is covered by the existing "OSC macro shortcuts + inbound trigger mapping" item above.
 

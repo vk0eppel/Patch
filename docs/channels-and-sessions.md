@@ -87,7 +87,12 @@ On desktop, F1–F12 fire the first matching macro across all currently selected
 
 ### MIDI triggers
 
-On desktop you can also bind a per-channel macro to a **MIDI note or CC number** (0–127) in the macro editor — connect a footswitch, pad, or keyboard and the macro fires hands-free. Unlike F-keys, a MIDI binding fires the macro **on its own channel regardless of which channel you're viewing** (or whether Patch is even focused), so a pedal can fire "RF: LOW BATT" while you're looking at AUDIO. A note fires on press (any velocity); a CC fires on a value of 64 or more (a footswitch "down"). Patch listens on all MIDI input ports detected at launch — plug your controller in before starting Patch (or restart after connecting it). Bindings show as a `♪`/`CC` badge next to the macro in Settings. Global macros don't take a MIDI binding (they fire on whatever channel you have selected, which a hardware trigger can't know).
+On desktop you can also bind a macro to a **MIDI note or CC number** (0–127) in the macro editor — connect a footswitch, pad, or keyboard and the macro fires hands-free. A note fires on press (any velocity); a CC fires on a value of 64 or more (a footswitch "down"). Patch listens on all MIDI input ports detected at launch — plug your controller in before starting Patch (or restart after connecting it). Bindings show as a `♪`/`CC` badge next to the macro in Settings.
+
+Where a MIDI-fired macro sends matches what tapping it would do:
+
+- A **per-channel** macro fires **on its own channel, regardless of which channel you're viewing** (or whether Patch is even focused) — so a pedal can fire "RF: LOW BATT" while you're looking at AUDIO.
+- A **global** macro fires **on the channel(s) you currently have selected** — exactly like tapping it. If you're in the **ALL** view, it goes out as a crew-wide broadcast.
 
 ---
 

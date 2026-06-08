@@ -209,12 +209,22 @@ Future<void> upsertGlobalMacro({
   required String payload,
   required int priority,
   String? keyBinding,
+  int? midiNote,
+  int? midiCc,
 }) => RustLib.instance.api.crateApiUpsertGlobalMacro(
   label: label,
   payload: payload,
   priority: priority,
   keyBinding: keyBinding,
+  midiNote: midiNote,
+  midiCc: midiCc,
 );
+
+/// Tell the engine which channels the UI currently has selected, so a
+/// MIDI-triggered *global* macro fires on the same channel(s) a tap/F-key would.
+/// Includes the reserved `__all__` id when the UI is in ALL/broadcast mode.
+Future<void> setSelectedChannels({required List<String> ids}) =>
+    RustLib.instance.api.crateApiSetSelectedChannels(ids: ids);
 
 Future<void> deleteGlobalMacro({required String label}) =>
     RustLib.instance.api.crateApiDeleteGlobalMacro(label: label);

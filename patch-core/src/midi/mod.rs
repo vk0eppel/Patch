@@ -1,13 +1,14 @@
 //! MIDI input — fire macros from a Note On / Control Change.
 //!
-//! A per-channel macro can carry a `midi_note` and/or `midi_cc` (0–127). When a
-//! matching MIDI message arrives, the engine fires that macro **on its own
-//! channel**, regardless of what the UI has selected — so a footswitch or pad
-//! triggers a callout hands-free, even on a channel you aren't viewing. (This is
-//! deliberately different from F-keys, which fire on the *selected* channel via
-//! the Flutter layer; MIDI bindings are absolute and handled engine-side so they
-//! work without focus.) If the same note/CC is bound on several channels, each
-//! fires on its own channel.
+//! A macro can carry a `midi_note` and/or `midi_cc` (0–127). When a matching MIDI
+//! message arrives, the engine fires hands-free — so a footswitch or pad triggers
+//! a callout without touching the screen, even when Patch isn't focused. Routing
+//! mirrors the UI's `_fireMacro`: a **per-channel** macro fires on **its own
+//! channel** (absolute — regardless of selection; if bound on several channels,
+//! each fires); a **global** macro fires on the **currently-selected channel(s)**.
+//! The engine can't see UI selection on its own, so Flutter pushes it via
+//! `set_selected_channels` (it includes `__all__` in ALL/broadcast mode, so a
+//! global macro fired then broadcasts — same as a tap). See `resolve_targets`.
 //!
 //! Desktop only: `midir` provides CoreMIDI (macOS), WinMM (Windows), and ALSA
 //! (Linux) backends. On iOS/Android there's no backend, so [`start`] and
@@ -128,7 +129,40 @@ mod backend {
         }
     }
 
-    /// Fire every per-channel macro whose binding matches, each on its own channel.
+    /// Pure routing: which `(channel_id, payload, priority)` to send for a
+    /// trigger. **Per-channel** macros fire on their own channel (absolute);
+    /// **global** macros fire on each currently-selected channel — exactly
+    /// mirroring the UI's `_fireMacro` (a tap/F-key). Kept side-effect-free so the
+    /// routing is unit-testable without a running engine.
+    fn resolve_targets(
+        channels: &[crate::state::channel::Channel],
+        globals: &[crate::state::channel::MacroMessage],
+        selected: &[String],
+        trigger: MidiTrigger,
+    ) -> Vec<(String, String, i32)> {
+        let hit = |m: &crate::state::channel::MacroMessage| match trigger {
+            MidiTrigger::Note(n) => m.midi_note == Some(n),
+            MidiTrigger::Cc(c) => m.midi_cc == Some(c),
+        };
+        let mut out = Vec::new();
+        for ch in channels {
+            for m in &ch.macros {
+                if hit(m) {
+                    out.push((ch.id.clone(), m.payload.clone(), m.priority));
+                }
+            }
+        }
+        for m in globals {
+            if hit(m) {
+                for ch_id in selected {
+                    out.push((ch_id.clone(), m.payload.clone(), m.priority));
+                }
+            }
+        }
+        out
+    }
+
+    /// Fire every macro bound to this trigger (see `resolve_targets`).
     async fn fire(
         state: &AppState,
         transport: &Arc<Transport>,
@@ -136,28 +170,74 @@ mod backend {
         trigger: MidiTrigger,
     ) {
         use crate::osc::types::Priority;
-        for ch in &state.get_channels().await {
-            for m in &ch.macros {
-                let hit = match trigger {
-                    MidiTrigger::Note(n) => m.midi_note == Some(n),
-                    MidiTrigger::Cc(c) => m.midi_cc == Some(c),
-                };
-                if hit {
-                    let prio = Priority::try_from(m.priority).unwrap_or(Priority::Info);
-                    if let Err(e) = crate::api::dispatch_message(
-                        state,
-                        transport,
-                        reliability,
-                        ch.id.clone(),
-                        m.payload.clone(),
-                        prio,
-                    )
-                    .await
-                    {
-                        tracing::warn!("MIDI macro send failed on {}: {}", ch.id, e);
-                    }
-                }
+        let channels = state.get_channels().await;
+        let globals = state.config().await.global_macros;
+        let selected = state.selected_channels().await;
+        for (ch_id, payload, priority) in resolve_targets(&channels, &globals, &selected, trigger) {
+            let prio = Priority::try_from(priority).unwrap_or(Priority::Info);
+            if let Err(e) = crate::api::dispatch_message(
+                state,
+                transport,
+                reliability,
+                ch_id.clone(),
+                payload,
+                prio,
+            )
+            .await
+            {
+                tracing::warn!("MIDI macro send failed on {}: {}", ch_id, e);
             }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use crate::state::channel::{Channel, MacroMessage};
+
+        fn mac(label: &str, note: Option<u8>, cc: Option<u8>) -> MacroMessage {
+            MacroMessage {
+                label: label.into(),
+                payload: format!("p-{label}"),
+                key_binding: None,
+                priority: 2,
+                midi_note: note,
+                midi_cc: cc,
+            }
+        }
+
+        #[test]
+        fn per_channel_fires_on_own_channel_global_on_selected() {
+            let mut rf = Channel::new("rf", "RF", "#fff");
+            rf.macros = vec![mac("A", Some(60), None)];
+            let mut audio = Channel::new("audio", "AUDIO", "#fff");
+            audio.macros = vec![mac("B", Some(61), None)];
+            let globals = vec![mac("G", Some(60), None)];
+            let selected = vec!["rf".to_string(), "audio".to_string()];
+            let chans = [rf, audio];
+
+            // Note 60: rf's "A" (own channel) + global "G" on each selected channel.
+            let t = resolve_targets(&chans, &globals, &selected, MidiTrigger::Note(60));
+            assert_eq!(t.len(), 3);
+            assert!(t.contains(&("rf".into(), "p-A".into(), 2)));
+            assert!(t.contains(&("rf".into(), "p-G".into(), 2)));
+            assert!(t.contains(&("audio".into(), "p-G".into(), 2)));
+
+            // Note 61: only audio's "B"; no global matches.
+            let t2 = resolve_targets(&chans, &globals, &selected, MidiTrigger::Note(61));
+            assert_eq!(t2, vec![("audio".into(), "p-B".into(), 2)]);
+        }
+
+        #[test]
+        fn cc_matches_and_empty_selection_skips_globals() {
+            let globals = vec![mac("G", None, Some(64))];
+            // No selection → a global macro has nowhere to fire.
+            assert!(resolve_targets(&[], &globals, &[], MidiTrigger::Cc(64)).is_empty());
+            // With a selection → fires there.
+            assert_eq!(
+                resolve_targets(&[], &globals, &["rf".into()], MidiTrigger::Cc(64)),
+                vec![("rf".into(), "p-G".into(), 2)]
+            );
         }
     }
 }

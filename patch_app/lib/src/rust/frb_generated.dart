@@ -71,7 +71,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 466295519;
+  int get rustContentHash => -180587345;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -192,6 +192,8 @@ abstract class RustLibApi extends BaseApi {
 
   Future<void> crateApiSetRole({String? role});
 
+  Future<void> crateApiSetSelectedChannels({required List<String> ids});
+
   Future<void> crateApiShutdown();
 
   Stream<PatchAppEvent> crateApiSubscribeEvents();
@@ -207,6 +209,8 @@ abstract class RustLibApi extends BaseApi {
     required String payload,
     required int priority,
     String? keyBinding,
+    int? midiNote,
+    int? midiCc,
   });
 
   Future<void> crateApiUpsertMacro({
@@ -1367,6 +1371,37 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "set_role", argNames: ["role"]);
 
   @override
+  Future<void> crateApiSetSelectedChannels({required List<String> ids}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_list_String(ids, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 39,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiSetSelectedChannelsConstMeta,
+        argValues: [ids],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSetSelectedChannelsConstMeta =>
+      const TaskConstMeta(
+        debugName: "set_selected_channels",
+        argNames: ["ids"],
+      );
+
+  @override
   Future<void> crateApiShutdown() {
     return handler.executeNormal(
       NormalTask(
@@ -1375,7 +1410,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 39,
+            funcId: 40,
             port: port_,
           );
         },
@@ -1405,7 +1440,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 40,
+              funcId: 41,
               port: port_,
             );
           },
@@ -1441,7 +1476,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 41,
+            funcId: 42,
             port: port_,
           );
         },
@@ -1467,6 +1502,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String payload,
     required int priority,
     String? keyBinding,
+    int? midiNote,
+    int? midiCc,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1476,10 +1513,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(payload, serializer);
           sse_encode_i_32(priority, serializer);
           sse_encode_opt_String(keyBinding, serializer);
+          sse_encode_opt_box_autoadd_u_8(midiNote, serializer);
+          sse_encode_opt_box_autoadd_u_8(midiCc, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 42,
+            funcId: 43,
             port: port_,
           );
         },
@@ -1488,7 +1527,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiUpsertGlobalMacroConstMeta,
-        argValues: [label, payload, priority, keyBinding],
+        argValues: [label, payload, priority, keyBinding, midiNote, midiCc],
         apiImpl: this,
       ),
     );
@@ -1496,7 +1535,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiUpsertGlobalMacroConstMeta => const TaskConstMeta(
     debugName: "upsert_global_macro",
-    argNames: ["label", "payload", "priority", "keyBinding"],
+    argNames: [
+      "label",
+      "payload",
+      "priority",
+      "keyBinding",
+      "midiNote",
+      "midiCc",
+    ],
   );
 
   @override
@@ -1523,7 +1569,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 43,
+            funcId: 44,
             port: port_,
           );
         },

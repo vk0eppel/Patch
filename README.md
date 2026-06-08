@@ -206,7 +206,7 @@ label = "Monitor World"
 - [x] Per-channel flash settings — override "flash on message", "flash on critical", and pulse count per channel
 - [x] Configurable flash pulse count — 3–7 globally (default 4), per-channel override
 - [x] F-key bindings for macros (F1–F12, fires from any focus state)
-- [x] MIDI-triggered macros — bind a per-channel macro to a Note/CC (footswitch/pad), fired engine-side hands-free (desktop)
+- [x] MIDI-triggered macros — bind a macro to a Note/CC (footswitch/pad), fired hands-free; per-channel macros fire on their own channel, global on the selected channel (desktop)
 - [x] Platform data directory (`~/Library/Application Support/Patch/`, `%APPDATA%\Patch\`, etc.) with legacy `./patch.toml` migration
 - [x] iOS / macOS Local Network permission strings in Info.plist (`NSLocalNetworkUsageDescription` + `NSBonjourServices`)
 - [x] Settings screen — static peer management via UI (add/remove peers by address + port + label)
