@@ -718,6 +718,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 32),
 
+          // ── Global macros ─────────────────────────────────────────────
+          // Shown before "Channels & Macros": global macros are the everyday
+          // default quick-sends; per-channel customisation is the next step.
+          Row(children: [
+            Expanded(child: _SectionHeader('Global Macros')),
+            _resetButton('Global Macros', () => widget.bridge.resetGlobalMacros()),
+          ]),
+          const SizedBox(height: 4),
+          const Text(
+            'Macros shown on every channel\'s panel. Firing one sends on the '
+            'channel(s) you currently have selected — for common callouts you '
+            'don\'t want to recreate on each channel.',
+            style: TextStyle(
+              color: PatchTheme.textSecondary,
+              fontSize: PatchTheme.fontSizeSmall,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _GlobalMacrosEditor(macros: _globalMacros, bridge: widget.bridge),
+
+          const SizedBox(height: 32),
+
           // ── Channels & macros ─────────────────────────────────────────
           Row(
             children: [
@@ -760,26 +782,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   existingIds: _channels.map((c) => c.id).toSet(),
                 ),
               )),
-
-          const SizedBox(height: 32),
-
-          // ── Global macros ─────────────────────────────────────────────
-          Row(children: [
-            Expanded(child: _SectionHeader('Global Macros')),
-            _resetButton('Global Macros', () => widget.bridge.resetGlobalMacros()),
-          ]),
-          const SizedBox(height: 4),
-          const Text(
-            'Macros shown on every channel\'s panel. Firing one sends on the '
-            'channel(s) you currently have selected — for common callouts you '
-            'don\'t want to recreate on each channel.',
-            style: TextStyle(
-              color: PatchTheme.textSecondary,
-              fontSize: PatchTheme.fontSizeSmall,
-            ),
-          ),
-          const SizedBox(height: 16),
-          _GlobalMacrosEditor(macros: _globalMacros, bridge: widget.bridge),
         ],
       ),
     );

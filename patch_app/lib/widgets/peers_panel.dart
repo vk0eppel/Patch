@@ -164,12 +164,13 @@ class _PeerTile extends StatelessWidget {
     };
   }
 
-  /// Secondary line. For dynamic peers this leads with *when* we last heard from
-  /// them (the whole point — see who's online and how recently); static/manual
-  /// peers have a synthetic `lastSeen`, so we just show their configured address.
+  /// Secondary line. The status dot already conveys liveness at a glance, so we
+  /// lead with the IP (the stable identifier) and trail the constantly-changing
+  /// "last seen" time. Static/manual peers have a synthetic `lastSeen`, so they
+  /// show just their configured address.
   String get _subtitle {
     final addr = peer.address.isNotEmpty ? peer.address : 'unknown IP';
-    return _isManual ? addr : '${_relativeLastSeen(peer.lastSeen)} · $addr';
+    return _isManual ? addr : '$addr · ${_relativeLastSeen(peer.lastSeen)}';
   }
 
   /// A row of small colour dots, one per channel the peer announces, coloured

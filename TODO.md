@@ -17,10 +17,10 @@ tuning, ordered by priority.
 
 ### ~~[High] Show a per-peer "last seen" relative time~~ ✅ Done
 **File:** `patch_app/lib/widgets/peers_panel.dart` (`_PeerTile`)
-`_PeerTile` now shows a relative-time subtitle ("now" / "30s ago" / "3m ago" / "2h ago" / "1d ago")
-for dynamic peers, leading the line ahead of the address; manual/static peers (synthetic `lastSeen`)
-show just their address. The panel `Timer.periodic` is tightened 10 s → 3 s so the counter stays
-current. Covered by `test/peers_panel_test.dart`. Pure UI, no engine change.
+`_PeerTile` shows a relative-time subtitle ("now" / "30s ago" / "3m ago" / "2h ago" / "1d ago")
+for dynamic peers (trailing the IP — "192.168.1.5 · 30s ago" — see the "IP first" item below); manual/static
+peers (synthetic `lastSeen`) show just their address. The panel `Timer.periodic` is tightened 10 s → 3 s so
+the counter stays current. Covered by `test/peers_panel_test.dart`. Pure UI, no engine change.
 
 ### ~~[Med] Throttle `PeerUpdated` / `getPeers()` churn~~ ✅ Done
 **File:** `patch_app/lib/screens/home_screen.dart`
@@ -443,8 +443,13 @@ are config-level and untouched by the reset, so a reset wouldn't bring them back
 - Tests: replace `default_channels_seed_macros` (now asserts each default channel has **no** macros) with a
   new `default_global_macros_seed` lock; check `representative_config_deserializes` still passes.
 
-### Move the peers panel to the left (toggle, beside the channel list)
-**Files:** `patch_app/lib/screens/home_screen.dart` (the `build` `Row` order) · **Effort:** trivial
+### ~~Move the peers panel to the left (toggle, beside the channel list)~~ ✅ Done (2026-06-08)
+**Files:** `patch_app/lib/screens/home_screen.dart` (the `build` `Row` order)
+
+Done: the peers panel now renders between `_ChannelStrip` and the `Expanded` message area (was after the
+macros panel on the right), wrapped in a `Container` with a left `Border(color: PatchTheme.border)` to
+separate it from the same-coloured strip. The `people` toggle and the panel's "hide" button are unchanged.
+Pure layout; no engine/FRB change.
 
 Decided with the user: keep peers a **toggleable 160px panel**, but move it from the far right (today it
 sits after the macros panel) to the **left, between the channel strip and the message area**. Rationale:
@@ -463,8 +468,8 @@ same divider line as the channel-strip image and the channel header. Visual chec
 borders/dividers where the peers panel now butts against the 80px channel strip (left) and the message area
 (right) — add a `VerticalDivider`/border if it reads as unseparated. Pure layout; no engine/FRB change.
 
-### Peer subtitle — IP first, "last seen" after
-**Files:** `patch_app/lib/widgets/peers_panel.dart` (`_PeerTile._subtitle`) · **Effort:** trivial
+### ~~Peer subtitle — IP first, "last seen" after~~ ✅ Done (2026-06-08)
+**Files:** `patch_app/lib/widgets/peers_panel.dart` (`_PeerTile._subtitle`)
 
 Decided with the user: put the relative "last seen" time **after** the IP, not before — `192.168.1.5 · 30s
 ago` instead of `30s ago · 192.168.1.5`. The status **dot** already conveys liveness at a glance, so the IP
@@ -475,8 +480,8 @@ part isn't at the start of the line). One-line swap:
 pass. **When building, also update** the now-stale "leading the line ahead of the address" wording in
 CLAUDE.md and in the ✅-done relative-time TODO item near the top of this file.
 
-### Move "Global Macros" above "Channels & Macros" in Settings
-**Files:** `patch_app/lib/screens/settings_screen.dart` (settings `ListView` child order) · **Effort:** trivial
+### ~~Move "Global Macros" above "Channels & Macros" in Settings~~ ✅ Done (2026-06-08)
+**Files:** `patch_app/lib/screens/settings_screen.dart` (settings `ListView` child order)
 
 Decided with the user, and coherent with the "simpler default macros" item above: once global macros are the
 **default** everyday quick-sends and channels start clean, the Global Macros section is what most users touch

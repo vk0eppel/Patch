@@ -548,6 +548,25 @@ class _HomeScreenState extends State<HomeScreen> {
             onTap: _toggleChannel,
             bridge: widget.bridge,
           ),
+          // Peers sit on the LEFT, beside the channel list — grouping "who/where"
+          // context together (channels + peers), leaving macros on the right.
+          // A left border separates it from the same-coloured channel strip.
+          if (_showPeers)
+            SizedBox(
+              width: _kPeersPanelWidth,
+              child: Container(
+                decoration: const BoxDecoration(
+                  border: Border(left: BorderSide(color: PatchTheme.border)),
+                ),
+                child: PeersPanel(
+                  peers: _peers,
+                  heartbeatSecs: _heartbeatSecs,
+                  channelColors: {for (final c in _channels) c.id: c.color},
+                  onClearStale: () => widget.bridge.clearStalePeers(),
+                  onClose: () => setState(() => _showPeers = false),
+                ),
+              ),
+            ),
           Expanded(
             child: _channels.isEmpty
                 ? const Center(child: Text('No channels'))
@@ -581,17 +600,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 columns: _macrosColumns,
                 onMacro: _fireMacro,
                 onClose: () => setState(() => _showMacros = false),
-              ),
-            ),
-          if (_showPeers)
-            SizedBox(
-              width: _kPeersPanelWidth,
-              child: PeersPanel(
-                peers: _peers,
-                heartbeatSecs: _heartbeatSecs,
-                channelColors: {for (final c in _channels) c.id: c.color},
-                onClearStale: () => widget.bridge.clearStalePeers(),
-                onClose: () => setState(() => _showPeers = false),
               ),
             ),
         ],
@@ -835,6 +843,15 @@ class _ChannelView extends StatelessWidget {
           alignment: Alignment.center,
           child: Row(
             children: [
+              // Peers toggle on the LEFT, mirroring the peers panel's position
+              // (it opens on the left). When the panel is open it carries its own
+              // hide button, so this only shows while the panel is hidden.
+              if (!showPeers)
+                IconButton(
+                  icon: const Icon(Icons.people, color: PatchTheme.textMuted, size: 20),
+                  tooltip: 'Show peers',
+                  onPressed: onTogglePeers,
+                ),
               // Channel dot(s) + name(s)
               if (isAllMode) ...[
                 const Text('📢', style: TextStyle(fontSize: 16)),
@@ -877,17 +894,12 @@ class _ChannelView extends StatelessWidget {
                 ),
               ],
               FlashButton(onFlash: _sendFlash),
+              // Macros toggle stays on the RIGHT, mirroring the macros panel.
               if (!showMacros)
                 IconButton(
                   icon: const Icon(Icons.keyboard_outlined, color: PatchTheme.textMuted, size: 20),
                   tooltip: 'Show macros',
                   onPressed: onToggleMacros,
-                ),
-              if (!showPeers)
-                IconButton(
-                  icon: const Icon(Icons.people, color: PatchTheme.textMuted, size: 20),
-                  tooltip: 'Show peers',
-                  onPressed: onTogglePeers,
                 ),
             ],
           ),
