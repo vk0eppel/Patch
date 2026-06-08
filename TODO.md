@@ -373,6 +373,127 @@ fine. If overflow persists:
 
 ## 🔵 Future Features (from Roadmap)
 
+### Simpler default macros — generic globals, clean channels
+**Files:** `patch-core/src/state/config.rs` (`default_channels` + a new `default_global_macros`, `Config::default`), `patch-core/src/state/config.rs` tests; possibly `state/mod.rs` (reset behaviour) · **Effort:** small
+
+**Rationale (start simple, go complex if needed):** today every default channel is pre-seeded with
+department-specific macros (AUDIO `ONE/TWO/CHECK/PROBLEM W/`, RF `CLEAR/HOLD/LOW BATT`, …) and there are
+**zero** global macros. That's heavy and presumptuous for a fresh install, and locks macros to a department
+taxonomy that may not match the show. Global macros (shown on every channel, fired on the *selected*
+channel) now exist — so the generic cross-channel calls should be the default, and channels should start
+clean. This realises the long-standing intent already noted in CLAUDE.md ("generic cross-channel acks
+(YES/NO/COPY) are intentionally not duplicated per channel — reserved for the future global-shortcuts
+feature"). Decided with the user: **keep the 5 default channels** (AUDIO · RF · LIGHTING · VIDEO · STAGE)
+but **drop their per-channel macro seeds**, and seed a generic **global** set instead (incl. at least one
+critical).
+
+**Default global macros to seed** (new `default_global_macros()` in `config.rs`; wire into the `Config`
+`Default` impl — currently `global_macros` is `#[serde(default)]` = empty):
+
+| Label | Priority | F-key |
+|---|---|---|
+| COPY | info | F1 |
+| STANDBY | warning | F2 |
+| YES | info | F3 |
+| NO | info | F4 |
+| HOLD | warning | F5 |
+| PROBLEM W/ | critical | F6 |
+| CH1 | info | — |
+| CH2 | info | — |
+| CH3 | info | — |
+| CH4 | info | — |
+
+Payloads: sentence-case of the label, except `PROBLEM W/` → `"Problem with:"`. **To confirm when building:**
+(a) the intended payloads/meaning of `CH1–CH4` (channel-check / comms-channel select?) and whether they want
+F-keys (e.g. F7–F10) or stay unbound; (b) whether a factory **"Channels & Macros" reset** (`reset_channels`,
+which today only replaces channels) should *also* restore these default globals — currently global macros
+are config-level and untouched by the reset, so a reset wouldn't bring them back.
+
+**Implementation notes:**
+- `default_channels()`: remove the per-channel macro seeding (the `m(...)` helper + per-id `vec![…]`); each
+  channel keeps id/display_name/colour with `macros = []`.
+- Add `default_global_macros()` and set it in `Config::default()` (keep `#[serde(default)]` so existing
+  configs without the field still load — only **new** installs get the seed).
+- **Migration:** existing `patch.toml` is untouched (serde ignores/defaults). Only fresh configs + (maybe)
+  factory reset get the new defaults.
+- Tests: replace `default_channels_seed_macros` (now asserts each default channel has **no** macros) with a
+  new `default_global_macros_seed` lock; check `representative_config_deserializes` still passes.
+
+### Move the peers panel to the left (toggle, beside the channel list)
+**Files:** `patch_app/lib/screens/home_screen.dart` (the `build` `Row` order) · **Effort:** trivial
+
+Decided with the user: keep peers a **toggleable 160px panel**, but move it from the far right (today it
+sits after the macros panel) to the **left, between the channel strip and the message area**. Rationale:
+groups the "who / where" *context* (channels + peers) on the left and leaves the *action* surface (macros)
+on the right; also balances the layout — the two panels open on opposite sides instead of stacking on the
+right and squeezing the message area from one side.
+
+Change: reorder the `build` `Row` children from
+`[_ChannelStrip, Expanded(_ChannelView), if(showMacros) MacrosPanel, if(showPeers) PeersPanel]`
+to
+`[_ChannelStrip, if(showPeers) PeersPanel, Expanded(_ChannelView), if(showMacros) MacrosPanel]`.
+
+Keep the `people` toggle in the `_ChannelView` header (still flips `_showPeers`); the panel's own header
+"hide" button still closes it. `PeersPanel`'s header is already `PatchTheme.headerHeight`, so it stays on the
+same divider line as the channel-strip image and the channel header. Visual check when building: the
+borders/dividers where the peers panel now butts against the 80px channel strip (left) and the message area
+(right) — add a `VerticalDivider`/border if it reads as unseparated. Pure layout; no engine/FRB change.
+
+### Peer subtitle — IP first, "last seen" after
+**Files:** `patch_app/lib/widgets/peers_panel.dart` (`_PeerTile._subtitle`) · **Effort:** trivial
+
+Decided with the user: put the relative "last seen" time **after** the IP, not before — `192.168.1.5 · 30s
+ago` instead of `30s ago · 192.168.1.5`. The status **dot** already conveys liveness at a glance, so the IP
+(the stable identifier) should lead and the constantly-changing timer should trail (calmer — the volatile
+part isn't at the start of the line). One-line swap:
+`'${_relativeLastSeen(peer.lastSeen)} · $addr'` → `'$addr · ${_relativeLastSeen(peer.lastSeen)}'`
+(manual/static peers still show just the address). Existing `peers_panel_test.dart` substring checks still
+pass. **When building, also update** the now-stale "leading the line ahead of the address" wording in
+CLAUDE.md and in the ✅-done relative-time TODO item near the top of this file.
+
+### Move "Global Macros" above "Channels & Macros" in Settings
+**Files:** `patch_app/lib/screens/settings_screen.dart` (settings `ListView` child order) · **Effort:** trivial
+
+Decided with the user, and coherent with the "simpler default macros" item above: once global macros are the
+**default** everyday quick-sends and channels start clean, the Global Macros section is what most users touch
+first — so it should come **before** the Channels & Macros section (which becomes the "customise / go
+advanced" step for channel structure + per-channel macros). New order:
+`Identity → Network Interface → Static Peers → Behavior → Global Macros → Channels & Macros`.
+
+Change: in the settings `build()` `ListView`, move the Global Macros block (its `_SectionHeader('Global
+Macros')` + description + `_GlobalMacrosEditor`) to just above the Channels & Macros block
+(`_SectionHeader('Channels & Macros')` row). The section description already reads "Macros shown on every
+channel's panel…", so it's self-explanatory even when it appears first. Pure reorder; no behaviour change.
+
+### Virtual MIDI input port ("Patch")
+**Files:** `patch-core/src/midi/mod.rs` (+ docs) · **Effort:** small (macOS/Linux)
+
+Decided with the user: expose a **virtual MIDI input port** named "Patch" so other software/gear on the
+machine can send MIDI **to** Patch directly — no physical controller needed (a DAW, Bitfocus Companion, a
+software MIDI controller, another app routing MIDI…). It feeds the **same** trigger pipeline as physical
+ports (`parse → MidiTrigger → fire`), so anything bound to a Note/CC fires from the virtual port too.
+**Input only for now** — a virtual *output* (Patch → other software) is the deferred "and from if needed"
+(user: "no midi output yet, just input").
+
+Implementation:
+- In `connect_all` (desktop backend), in addition to opening physical input ports, create a virtual input
+  via midir's Unix trait: `use midir::os::unix::VirtualInput;` then
+  `MidiInput::new("Patch")?.create_virtual("Patch", callback, ())?` with the **same** callback
+  (`parse` → `tx.send`). Push the returned `MidiInputConnection` into the same `conns` Vec the parked thread
+  keeps alive.
+- **Platform:** virtual ports exist only on **CoreMIDI (macOS) + ALSA (Linux)** — gate with
+  `#[cfg(any(target_os = "macos", target_os = "linux"))]` (narrower than the physical-port
+  `macos/windows/linux`). **Windows (WinMM) has no virtual-port concept** → skip there; document that Windows
+  users need a loopback driver (e.g. loopMIDI) and route through a physical/loopback port instead.
+- **Verify:** virtual-port creation works in the **sandboxed macOS build** (CoreMIDI client + virtual-source
+  creation under App Sandbox — should be fine, but confirm with the bundled `.app`, not just `flutter run`;
+  if blocked, check whether an entitlement is needed).
+- Docs: the "Patch" MIDI destination in `docs/channels-and-sessions.md` (MIDI section) + the CLAUDE.md midi
+  dev note + README, with the macOS/Linux-only + Windows-loopback caveat.
+
+**Future (deferred):** a virtual MIDI **output** port so Patch can *send* MIDI to other software — pairs with
+the eventual macro→MIDI-out / "OSC macro shortcuts" gear-trigger feature.
+
 ### Editable network settings in the UI (OSC port, heartbeat interval)
 **Files:** `patch-core/src/api.rs`, `patch-core/src/state/config.rs`, `patch_app/lib/screens/settings_screen.dart` · **Effort:** small
 `osc_port`, `heartbeat_interval_secs`, and `peer_timeout_secs` are config-file-only today. Surface them in
