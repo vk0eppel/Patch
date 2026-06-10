@@ -200,6 +200,16 @@ label = "Monitor World"
 
 ---
 
+## Direct messages
+
+Sometimes you need a quiet word with one person, not the whole channel. Open the **peers panel** (the people icon), find the peer, and tap the **💬** button next to their name. A private thread opens, and a **💬 tab** for that person appears under **DIRECT** at the bottom of the channel sidebar.
+
+- Messages are sent **only** to that peer — never broadcast or shown to anyone else.
+- New direct messages show a small **red dot** on the person's DM tab (DMs don't flash the screen). The dot clears when you open the thread.
+- A DM thread stays in the sidebar for the session. You can clear or export it with the same buttons as a channel.
+
+> DMs are best-effort and not stored to disk. There's no offline delivery — if the other person's Patch isn't running, they won't get it. The 💬 button only appears for live peers (not configured-only static peers).
+
 ## Message history
 
 ### Exporting messages

@@ -280,6 +280,7 @@ async fn handle_event(
         PatchEvent::Message(m) => Some(m.sender_id),
         PatchEvent::Presence(p) => Some(p.peer_id),
         PatchEvent::Flash(f) => Some(f.sender_id),
+        PatchEvent::DirectMessage { msg, .. } => Some(msg.sender_id),
         _ => None,
     };
     if let Some(id) = sender_id {
@@ -317,6 +318,29 @@ async fn handle_event(
                     Err(e) => warn!("Failed to encode ACK: {}", e),
                 }
             }
+            state.store_message(msg).await;
+        }
+        PatchEvent::DirectMessage { msg, target_id } => {
+            // Only accept DMs addressed to us (they're unicast, so this should
+            // always hold — defensive).
+            if target_id != client_id {
+                return;
+            }
+            // Auto-register the sender so the DM thread + peers panel show them.
+            if !state.has_peer(msg.sender_id).await {
+                let presence = PeerPresence {
+                    peer_id: msg.sender_id,
+                    peer_name: msg.sender_name.clone(),
+                    channels: Vec::new(),
+                    role: None,
+                    timestamp: Utc::now(),
+                };
+                state.upsert_peer(presence).await;
+                state
+                    .touch_peer_address(msg.sender_id, from.ip().to_string(), from.port())
+                    .await;
+            }
+            // msg.channel_id is already `dm:{sender_id}` (set by decode_dm).
             state.store_message(msg).await;
         }
         PatchEvent::Ack {

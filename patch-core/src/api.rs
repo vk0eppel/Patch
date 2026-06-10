@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 use crate::discovery::Discovery;
 use crate::osc::codec::{
-    encode_bye, encode_channels_request, encode_flash, encode_message, encode_osc,
+    encode_bye, encode_channels_request, encode_dm, encode_flash, encode_message, encode_osc,
 };
 use crate::osc::types::{ChannelFlash, PatchMessage, Priority};
 use crate::reliability::ReliabilityManager;
@@ -291,6 +291,50 @@ pub async fn send_message(channel_id: String, payload: String, priority: i32) ->
     )
     .await?;
     Ok(id.to_string())
+}
+
+/// Send a direct (peer-to-peer) message to one peer. Stored locally under a
+/// `dm:{peer_id}` key and unicast **only** to that peer (never broadcast/relayed).
+/// Returns the message_id. DMs are best-effort (no retransmit) in this version.
+pub async fn send_direct_message(
+    peer_id: String,
+    payload: String,
+    priority: i32,
+) -> Result<String> {
+    let h = engine();
+    let target = Uuid::parse_str(&peer_id).map_err(|_| anyhow::anyhow!("invalid peer id"))?;
+    let prio = Priority::try_from(priority).unwrap_or(Priority::Info);
+    let config = h.state.config().await;
+    let msg = PatchMessage::new(
+        config.client_id,
+        &config.client_name,
+        format!("dm:{}", target),
+        prio,
+        payload,
+    );
+    let peer = h
+        .state
+        .get_peers()
+        .await
+        .into_iter()
+        .find(|p| p.peer_id == target)
+        .ok_or_else(|| anyhow::anyhow!("peer not found"))?;
+    if peer.has_address() {
+        if let Ok(ip) = peer.address.parse::<IpAddr>() {
+            let bytes = encode_dm(&msg, target)?;
+            h.transport
+                .send_to(bytes, SocketAddr::new(ip, peer.osc_port))
+                .await?;
+        }
+    } else {
+        tracing::warn!(
+            "DM target {} has no address yet — stored locally only",
+            target
+        );
+    }
+    let id = msg.message_id.to_string();
+    h.state.store_message(msg).await;
+    Ok(id)
 }
 
 /// Flashes a channel (sends to peers + fires local event).

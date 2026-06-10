@@ -63,6 +63,25 @@ pub fn encode_flash(flash: &ChannelFlash) -> Result<Vec<u8>> {
     rosc::encoder::encode(&OscPacket::Message(osc)).context("Failed to encode flash")
 }
 
+/// Encode a direct (peer-to-peer) message. `target_id` is the recipient's peer
+/// id (so the receiver confirms it's for them); the message's `channel_id` is
+/// *not* sent — the receiver derives `dm:{sender_id}` locally.
+pub fn encode_dm(msg: &PatchMessage, target_id: Uuid) -> Result<Vec<u8>> {
+    let osc = OscMessage {
+        addr: addresses::DM.to_string(),
+        args: vec![
+            OscType::String(msg.sender_id.to_string()),
+            OscType::String(msg.sender_name.clone()),
+            OscType::String(target_id.to_string()),
+            OscType::String(msg.message_id.to_string()),
+            OscType::Long(msg.timestamp.timestamp_millis()),
+            OscType::Int(msg.priority as i32),
+            OscType::String(msg.payload.clone()),
+        ],
+    };
+    rosc::encoder::encode(&OscPacket::Message(osc)).context("Failed to encode /patch/dm")
+}
+
 /// Encode a departure announcement (sent on graceful shutdown).
 pub fn encode_bye(peer_id: Uuid) -> Result<Vec<u8>> {
     let osc = OscMessage {
@@ -148,6 +167,13 @@ pub enum PatchEvent {
         peer_id: Uuid,
     },
     Flash(ChannelFlash),
+    /// A direct (peer-to-peer) message addressed to `target_id`. `msg.channel_id`
+    /// is already set to `dm:{sender_id}` by the decoder (the receiver's key for
+    /// the conversation with the sender).
+    DirectMessage {
+        msg: PatchMessage,
+        target_id: Uuid,
+    },
     /// Simple external-OSC message injection (e.g. from QLab/Companion) — the
     /// receiving node fills in sender/id/timestamp and posts it. Args: payload
     /// (string) + optional priority (int, default info).
@@ -190,6 +216,7 @@ fn decode_message(msg: OscMessage) -> Result<PatchEvent> {
         addresses::ACK => decode_ack(msg),
         addresses::PRESENCE => decode_presence(msg),
         addresses::BYE => decode_bye(msg),
+        addresses::DM => decode_dm(msg),
         addresses::CHANNELS_REQUEST => decode_channels_request(msg),
         addresses::CHANNELS_ANNOUNCE => decode_channels_announce(msg),
         addr if addr.ends_with("/flash") => decode_flash(msg),
@@ -289,6 +316,44 @@ fn decode_say(msg: OscMessage) -> Result<PatchEvent> {
         channel_id,
         payload,
         priority,
+    })
+}
+
+fn decode_dm(msg: OscMessage) -> Result<PatchEvent> {
+    let args = msg.args;
+    if args.len() < 7 {
+        bail!("Expected 7 args for /patch/dm, got {}", args.len());
+    }
+    let sender_id = parse_uuid(&args[0])?;
+    let sender_name = parse_string(&args[1])?;
+    let target_id = parse_uuid(&args[2])?;
+    let message_id = parse_uuid(&args[3])?;
+    let ts_ms = parse_long(&args[4])?;
+    let priority = Priority::try_from(parse_int(&args[5])?)?;
+    let payload = parse_string(&args[6])?;
+    if payload.len() > MAX_PAYLOAD_LEN {
+        bail!(
+            "Rejected DM: payload {} bytes exceeds max {}",
+            payload.len(),
+            MAX_PAYLOAD_LEN
+        );
+    }
+    let pmsg = PatchMessage {
+        message_id,
+        sender_id,
+        sender_name,
+        // The receiver keys the conversation by the *other* peer (the sender).
+        channel_id: format!("dm:{}", sender_id),
+        timestamp: Utc
+            .timestamp_millis_opt(ts_ms)
+            .single()
+            .context("Invalid timestamp")?,
+        priority,
+        payload,
+    };
+    Ok(PatchEvent::DirectMessage {
+        msg: pmsg,
+        target_id,
     })
 }
 
@@ -555,6 +620,28 @@ mod tests {
                 assert_eq!(peer_id, pid);
             }
             other => panic!("expected Ack, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dm_round_trip_sets_receiver_channel_key() {
+        let target = Uuid::new_v4();
+        let mut m = sample_message();
+        m.priority = Priority::Warning;
+        // On the wire the message's own channel_id is irrelevant — the receiver
+        // derives `dm:{sender}`.
+        let bytes = encode_dm(&m, target).unwrap();
+        match decode_packet(&bytes).unwrap() {
+            PatchEvent::DirectMessage { msg, target_id } => {
+                assert_eq!(target_id, target);
+                assert_eq!(msg.sender_id, m.sender_id);
+                assert_eq!(msg.message_id, m.message_id);
+                assert_eq!(msg.payload, m.payload);
+                assert_eq!(msg.priority, Priority::Warning);
+                // Receiver keys it by the sender.
+                assert_eq!(msg.channel_id, format!("dm:{}", m.sender_id));
+            }
+            other => panic!("expected DirectMessage, got {:?}", other),
         }
     }
 

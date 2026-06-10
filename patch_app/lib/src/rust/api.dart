@@ -52,6 +52,19 @@ Future<String> sendMessage({
   priority: priority,
 );
 
+/// Send a direct (peer-to-peer) message to one peer. Stored locally under a
+/// `dm:{peer_id}` key and unicast **only** to that peer (never broadcast/relayed).
+/// Returns the message_id. DMs are best-effort (no retransmit) in this version.
+Future<String> sendDirectMessage({
+  required String peerId,
+  required String payload,
+  required int priority,
+}) => RustLib.instance.api.crateApiSendDirectMessage(
+  peerId: peerId,
+  payload: payload,
+  priority: priority,
+);
+
 /// Flashes a channel (sends to peers + fires local event).
 Future<void> sendFlash({required String channelId}) =>
     RustLib.instance.api.crateApiSendFlash(channelId: channelId);

@@ -90,6 +90,13 @@ class _HomeScreenState extends State<HomeScreen> {
   int _heartbeatSecs = 7;
   /// Delivery status for criticals we've sent, keyed by message id.
   final Map<String, MessageDeliveryStatus> _delivery = {};
+
+  /// Peer ids with an open DM thread (so an opened-but-empty thread still shows).
+  final Set<String> _openDms = {};
+
+  /// DM thread keys (`dm:<peer>`) with unread messages — cleared when viewed.
+  final Set<String> _unreadDms = {};
+
   StreamSubscription<Map<String, dynamic>>? _eventSub;
 
   /// Coalesces `peer_updated` bursts into one `getPeers()` fetch. `last_seen` is
@@ -108,15 +115,50 @@ class _HomeScreenState extends State<HomeScreen> {
 
   bool get _isMultiChannel => _selectedIds.length > 1;
 
+  /// DM mode — a single direct-message thread (`dm:<peer>`) is selected
+  /// (exclusive, like ALL mode). Shows that one private conversation.
+  bool get _isDmMode =>
+      _selectedIds.length == 1 && _selectedIds.first.startsWith('dm:');
+
+  /// The peer id of the open DM thread, or null when not in DM mode.
+  String? get _dmPeerId =>
+      _isDmMode ? _selectedIds.first.substring(3) : null;
+
+  /// Peer ids that have a DM thread — opened explicitly or with message history.
+  List<String> get _dmPeerIds {
+    final ids = <String>{..._openDms};
+    for (final k in _messages.keys) {
+      if (k.startsWith('dm:')) ids.add(k.substring(3));
+    }
+    return ids.toList();
+  }
+
+  /// Display name for a DM peer — from the live peer list, else the last message
+  /// they sent in the thread, else a short fallback.
+  String _dmPeerName(String peerId) {
+    for (final p in _peers) {
+      if (p.peerId == peerId) return p.peerName;
+    }
+    final thread = _messages['dm:$peerId'];
+    if (thread != null) {
+      for (final m in thread.reversed) {
+        if (m.senderId == peerId) return m.senderName;
+      }
+    }
+    return 'Unknown';
+  }
+
   /// Messages for the current view, merged and sorted by timestamp. In ALL mode
-  /// that's every channel's traffic; otherwise it's the selected channels plus
-  /// any broadcasts (`__all__`), so a broadcast shows up in whatever channel a
-  /// heads-down operator is viewing.
+  /// that's every channel's traffic (but not DM threads); in DM mode the one
+  /// thread; otherwise the selected channels plus any broadcasts (`__all__`).
   List<PatchMessage> get _combinedMessages {
     final all = <PatchMessage>[];
-    if (_isAllMode) {
-      for (final list in _messages.values) {
-        all.addAll(list);
+    if (_isDmMode) {
+      all.addAll(_messages[_selectedIds.first] ?? []);
+    } else if (_isAllMode) {
+      for (final entry in _messages.entries) {
+        if (entry.key.startsWith('dm:')) continue; // DMs stay private
+        all.addAll(entry.value);
       }
     } else {
       for (final id in _selectedIds) {
@@ -152,11 +194,18 @@ class _HomeScreenState extends State<HomeScreen> {
           ChannelMacro(channelId: '', channelColor: PatchTheme.accent, macro: gm),
       ];
 
-  /// Send a macro. A per-channel macro goes to its own channel; a global macro
-  /// (empty `channelId`) fires on every currently-selected channel — or, in ALL
-  /// mode, broadcasts on `__all__` — as if it existed on each of them.
+  /// Send a macro. In a DM thread the macro text is sent as a DM (a quick canned
+  /// reply); otherwise a per-channel macro goes to its own channel and a global
+  /// macro (empty `channelId`) fires on every selected channel — or, in ALL mode,
+  /// broadcasts on `__all__`.
   void _fireMacro(ChannelMacro cm) {
-    if (cm.channelId.isEmpty) {
+    if (_isDmMode) {
+      widget.bridge.sendDirectMessage(
+        peerId: _dmPeerId!,
+        payload: cm.macro.payload,
+        priority: cm.macro.priority,
+      );
+    } else if (cm.channelId.isEmpty) {
       final targets = _isAllMode ? [kAllChannelId] : _selectedIds.toList();
       for (final id in targets) {
         widget.bridge.sendMessage(
@@ -269,9 +318,12 @@ class _HomeScreenState extends State<HomeScreen> {
             widget.bridge.getMessages(_channels.first.id);
           }
           // Remove stale IDs (deleted channels), but keep the synthetic ALL id
-          // so a channel reload doesn't silently kick the user out of ALL mode.
+          // and any DM thread so a channel reload doesn't kick the user out of
+          // ALL / DM mode.
           final validIds = _channels.map((c) => c.id).toSet()..add(kAllChannelId);
-          _selectedIds = _selectedIds.intersection(validIds);
+          _selectedIds = _selectedIds
+              .where((id) => validIds.contains(id) || id.startsWith('dm:'))
+              .toSet();
           if (_selectedIds.isEmpty && _channels.isNotEmpty) {
             _selectedIds = {_channels.first.id};
           }
@@ -304,7 +356,12 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         });
         // Flash if global OR per-channel flag is set.
-        if (msg.channelId == kAllChannelId) {
+        if (msg.channelId.startsWith('dm:')) {
+          // DMs don't flash — mark the thread unread unless it's the one in view.
+          if (!_selectedIds.contains(msg.channelId)) {
+            setState(() => _unreadDms.add(msg.channelId));
+          }
+        } else if (msg.channelId == kAllChannelId) {
           // Broadcast — global flags only (it isn't tied to a channel).
           final shouldFlash =
               _flashOnMessage || (_flashOnCritical && msg.isCritical);
@@ -507,6 +564,7 @@ class _HomeScreenState extends State<HomeScreen> {
   // ── Channel selection ───────────────────────────────────────────────────────
 
   /// Tap — toggle channel in/out of selection. At least one channel stays selected.
+  /// ALL and DM threads are exclusive selections.
   void _toggleChannel(String id) {
     setState(() {
       if (id == kAllChannelId) {
@@ -515,8 +573,13 @@ class _HomeScreenState extends State<HomeScreen> {
         if (!_messages.containsKey(kAllChannelId)) {
           widget.bridge.getMessages(kAllChannelId); // backfill broadcast history
         }
-      } else if (_isAllMode) {
-        // Tapping a normal channel exits ALL mode.
+      } else if (id.startsWith('dm:')) {
+        // A DM thread is exclusive.
+        _selectedIds = {id};
+        _unreadDms.remove(id);
+        if (!_messages.containsKey(id)) widget.bridge.getMessages(id);
+      } else if (_isAllMode || _isDmMode) {
+        // Tapping a normal channel exits ALL / DM mode.
         _selectedIds = {id};
         if (!_messages.containsKey(id)) widget.bridge.getMessages(id);
       } else if (_selectedIds.contains(id)) {
@@ -530,12 +593,26 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_hideKeyboard) FocusScope.of(context).unfocus();
   }
 
+  /// Open (and select) the DM thread with a peer — from the peers panel button.
+  void _openDm(String peerId) {
+    final key = 'dm:$peerId';
+    setState(() {
+      _openDms.add(peerId);
+      _selectedIds = {key};
+      _unreadDms.remove(key);
+    });
+    if (!_messages.containsKey(key)) widget.bridge.getMessages(key);
+    _syncSelection();
+    if (_hideKeyboard) FocusScope.of(context).unfocus();
+  }
+
   /// Push the current selection to the engine so a MIDI-triggered global macro
   /// fires on the same channel(s) as a tap/F-key (the engine has no other view
-  /// of UI selection). Cheap fire-and-forget; called whenever `_selectedIds`
-  /// changes.
+  /// of UI selection). DM keys are excluded — they aren't channels.
   void _syncSelection() {
-    widget.bridge.setSelectedChannels(_selectedIds.toList());
+    widget.bridge.setSelectedChannels(
+      _selectedIds.where((id) => !id.startsWith('dm:')).toList(),
+    );
   }
 
   // ── Build ───────────────────────────────────────────────────────────────────
@@ -552,6 +629,14 @@ class _HomeScreenState extends State<HomeScreen> {
             globalFlashCount: _globalFlashCount,
             onTap: _toggleChannel,
             bridge: widget.bridge,
+            dmThreads: [
+              for (final pid in _dmPeerIds)
+                (
+                  id: 'dm:$pid',
+                  name: _dmPeerName(pid),
+                  unread: _unreadDms.contains('dm:$pid'),
+                ),
+            ],
           ),
           // Peers sit on the LEFT, beside the channel list — grouping "who/where"
           // context together (channels + peers), leaving macros on the right.
@@ -569,6 +654,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   channelColors: {for (final c in _channels) c.id: c.color},
                   onClearStale: () => widget.bridge.clearStalePeers(),
                   onClose: () => setState(() => _showPeers = false),
+                  onDm: _openDm,
                 ),
               ),
             ),
@@ -578,6 +664,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 : _ChannelView(
                     selectedChannels: _selectedChannels,
                     isAllMode: _isAllMode,
+                    isDmMode: _isDmMode,
+                    dmPeerId: _dmPeerId,
+                    dmPeerName: _dmPeerId == null ? null : _dmPeerName(_dmPeerId!),
                     messages: _combinedMessages,
                     channelColors: _channelColors,
                     delivery: _delivery,
@@ -625,6 +714,9 @@ class _ChannelStrip extends StatelessWidget {
   final ValueChanged<String> onTap;
   final BridgeClient bridge;
 
+  /// Open DM threads (`id` = `dm:<peer>`), shown below the channels.
+  final List<({String id, String name, bool unread})> dmThreads;
+
   const _ChannelStrip({
     required this.channels,
     required this.selectedIds,
@@ -632,6 +724,7 @@ class _ChannelStrip extends StatelessWidget {
     required this.globalFlashCount,
     required this.onTap,
     required this.bridge,
+    this.dmThreads = const [],
   });
 
   @override
@@ -671,18 +764,40 @@ class _ChannelStrip extends StatelessWidget {
           ),
           const Divider(color: PatchTheme.border, height: 1, indent: 12, endIndent: 12),
           Expanded(
-            child: ListView.builder(
-              itemCount: channels.length,
-              itemBuilder: (ctx, i) {
-                final ch = channels[i];
-                return ChannelTab(
-                  channel: ch,
-                  isSelected: selectedIds.contains(ch.id),
-                  flashCount: flashCounts[ch.id] ?? 0,
-                  pulseCount: ch.flashCount ?? globalFlashCount,
-                  onTap: () => onTap(ch.id),
-                );
-              },
+            child: ListView(
+              children: [
+                for (final ch in channels)
+                  ChannelTab(
+                    channel: ch,
+                    isSelected: selectedIds.contains(ch.id),
+                    flashCount: flashCounts[ch.id] ?? 0,
+                    pulseCount: ch.flashCount ?? globalFlashCount,
+                    onTap: () => onTap(ch.id),
+                  ),
+                // ── Direct messages ──────────────────────────────────────
+                if (dmThreads.isNotEmpty) ...[
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(0, 10, 0, 4),
+                    child: Text(
+                      'DIRECT',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: PatchTheme.textMuted,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
+                  for (final dm in dmThreads)
+                    _DmTab(
+                      name: dm.name,
+                      isSelected: selectedIds.contains(dm.id),
+                      unread: dm.unread,
+                      onTap: () => onTap(dm.id),
+                    ),
+                ],
+              ],
             ),
           ),
           const Divider(color: PatchTheme.border, height: 1),
@@ -713,6 +828,77 @@ class _ChannelStrip extends StatelessWidget {
   }
 }
 
+// ── Direct-message tab (sidebar) ──────────────────────────────────────────────
+
+class _DmTab extends StatelessWidget {
+  final String name;
+  final bool isSelected;
+  final bool unread;
+  final VoidCallback onTap;
+
+  const _DmTab({
+    required this.name,
+    required this.isSelected,
+    required this.unread,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? PatchTheme.accent.withAlpha(40) : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: isSelected ? PatchTheme.accent : Colors.transparent,
+            width: 1.5,
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                const Text('💬', style: TextStyle(fontSize: 14)),
+                if (unread)
+                  Positioned(
+                    right: -4,
+                    top: -2,
+                    child: Container(
+                      width: 7,
+                      height: 7,
+                      decoration: const BoxDecoration(
+                        color: PatchTheme.critical,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              name,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: isSelected ? PatchTheme.textPrimary : PatchTheme.textSecondary,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ── Per-channel (or multi-channel) view ──────────────────────────────────────
 
 class _ChannelView extends StatelessWidget {
@@ -721,6 +907,12 @@ class _ChannelView extends StatelessWidget {
   /// Broadcast (ALL) mode — `selectedChannels` is empty; send/flash target the
   /// reserved `__all__` id and the feed shows every channel's traffic.
   final bool isAllMode;
+
+  /// Direct-message mode — a 1:1 private thread. `selectedChannels` is empty;
+  /// send targets `dmPeerId` and there's no flash/macros.
+  final bool isDmMode;
+  final String? dmPeerId;
+  final String? dmPeerName;
   final List<PatchMessage> messages;
   final Map<String, Color> channelColors; // empty when single channel
   final Map<String, MessageDeliveryStatus> delivery;
@@ -738,6 +930,9 @@ class _ChannelView extends StatelessWidget {
   const _ChannelView({
     required this.selectedChannels,
     required this.isAllMode,
+    required this.isDmMode,
+    required this.dmPeerId,
+    required this.dmPeerName,
     required this.messages,
     required this.channelColors,
     required this.delivery,
@@ -756,7 +951,9 @@ class _ChannelView extends StatelessWidget {
   bool get _isMulti => selectedChannels.length > 1;
 
   void _sendMessage(String text) {
-    if (isAllMode) {
+    if (isDmMode) {
+      bridge.sendDirectMessage(peerId: dmPeerId!, payload: text);
+    } else if (isAllMode) {
       bridge.sendMessage(channelId: kAllChannelId, payload: text); // one broadcast
     } else {
       for (final ch in selectedChannels) {
@@ -776,11 +973,13 @@ class _ChannelView extends StatelessWidget {
   }
 
   Future<void> _exportMessages(BuildContext context) async {
-    final label = isAllMode
-        ? 'all_channels'
-        : selectedChannels.length == 1
-            ? selectedChannels.first.displayName.toLowerCase()
-            : 'all_channels';
+    final label = isDmMode
+        ? 'dm_${dmPeerName ?? ''}'.toLowerCase()
+        : isAllMode
+            ? 'all_channels'
+            : selectedChannels.length == 1
+                ? selectedChannels.first.displayName.toLowerCase()
+                : 'all_channels';
     final path = await FilePicker.platform.saveFile(
       dialogTitle: 'Export Messages',
       fileName: 'patch_$label.csv',
@@ -788,18 +987,23 @@ class _ChannelView extends StatelessWidget {
       type: FileType.custom,
     );
     if (path == null) return;
-    // ALL or multi-channel → export everything (null); single channel → that one.
-    final channelId =
-        (!isAllMode && selectedChannels.length == 1) ? selectedChannels.first.id : null;
+    // DM → that thread; ALL / multi-channel → everything (null); single → that one.
+    final channelId = isDmMode
+        ? 'dm:$dmPeerId'
+        : (!isAllMode && selectedChannels.length == 1)
+            ? selectedChannels.first.id
+            : null;
     bridge.exportMessages(channelId: channelId, path: path);
   }
 
   void _confirmClear(BuildContext context) {
-    final label = isAllMode
-        ? 'all channels'
-        : selectedChannels.length == 1
-            ? selectedChannels.first.displayName
-            : '${selectedChannels.length} channels';
+    final label = isDmMode
+        ? 'this conversation'
+        : isAllMode
+            ? 'all channels'
+            : selectedChannels.length == 1
+                ? selectedChannels.first.displayName
+                : '${selectedChannels.length} channels';
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -820,7 +1024,9 @@ class _ChannelView extends StatelessWidget {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: PatchTheme.critical),
             onPressed: () {
-              if (isAllMode) {
+              if (isDmMode) {
+                bridge.clearMessages(channelId: 'dm:$dmPeerId');
+              } else if (isAllMode) {
                 bridge.clearMessages(channelId: null); // clear everything
               } else {
                 for (final ch in selectedChannels) {
@@ -858,7 +1064,22 @@ class _ChannelView extends StatelessWidget {
                   onPressed: onTogglePeers,
                 ),
               // Channel dot(s) + name(s)
-              if (isAllMode) ...[
+              if (isDmMode) ...[
+                const Text('💬', style: TextStyle(fontSize: 16)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    dmPeerName ?? 'Direct message',
+                    style: const TextStyle(
+                      color: PatchTheme.textPrimary,
+                      fontSize: PatchTheme.fontSizeLarge,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.2,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ] else if (isAllMode) ...[
                 const Text('📢', style: TextStyle(fontSize: 16)),
                 const SizedBox(width: 10),
                 const Expanded(
@@ -949,7 +1170,11 @@ class _ChannelView extends StatelessWidget {
         MessageInput(
           onSend: _sendMessage,
           hideKeyboard: hideKeyboard,
-          hint: isAllMode ? '📢 Broadcast to ALL channels…' : null,
+          hint: isDmMode
+              ? '💬 Message ${dmPeerName ?? ''}…'
+              : isAllMode
+                  ? '📢 Broadcast to ALL channels…'
+                  : null,
         ),
       ],
     );

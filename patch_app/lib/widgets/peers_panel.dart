@@ -22,6 +22,11 @@ class PeersPanel extends StatefulWidget {
   final Map<String, Color> channelColors;
   final VoidCallback? onClearStale;
   final VoidCallback? onClose;
+
+  /// Open a direct-message thread with the given peer id (the 💬 button). Only
+  /// offered for real (dynamic) peers — not configured-only `ManualIp` entries,
+  /// whose id is a synthetic UUID that wouldn't reach a live Patch instance.
+  final ValueChanged<String>? onDm;
   const PeersPanel({
     super.key,
     required this.peers,
@@ -29,6 +34,7 @@ class PeersPanel extends StatefulWidget {
     this.channelColors = const {},
     this.onClearStale,
     this.onClose,
+    this.onDm,
   });
 
   @override
@@ -109,6 +115,7 @@ class _PeersPanelState extends State<PeersPanel> {
                       peer: widget.peers[i],
                       heartbeatSecs: widget.heartbeatSecs,
                       channelColors: widget.channelColors,
+                      onDm: widget.onDm,
                     ),
                   ),
           ),
@@ -130,10 +137,14 @@ class _PeerTile extends StatelessWidget {
   /// Viewer's channel id → colour map (see [PeersPanel.channelColors]).
   final Map<String, Color> channelColors;
 
+  /// Open a DM with this peer (see [PeersPanel.onDm]).
+  final ValueChanged<String>? onDm;
+
   const _PeerTile({
     required this.peer,
     required this.heartbeatSecs,
     this.channelColors = const {},
+    this.onDm,
   });
 
   /// Max channel dots rendered before collapsing the rest into a "+N" label,
@@ -262,6 +273,22 @@ class _PeerTile extends StatelessWidget {
               ],
             ),
           ),
+          // DM button — only for real (dynamic) peers, not configured-only ones.
+          // Compact (a bare tappable icon, not a full IconButton) to keep the
+          // narrow 160 px row from feeling crowded next to the status dot.
+          if (onDm != null && !_isManual)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => onDm!(peer.peerId),
+              child: const Tooltip(
+                message: 'Direct message',
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+                  child: Icon(Icons.chat_bubble_outline, size: 14, color: PatchTheme.textMuted),
+                ),
+              ),
+            ),
+          const SizedBox(width: 6),
           // Status dot: green (healthy) → amber (heartbeat missed, going quiet)
           // → gray (offline, or a configured-only ManualIp peer).
           Container(

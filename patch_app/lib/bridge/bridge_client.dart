@@ -134,6 +134,25 @@ class BridgeClient {
     }
   }
 
+  /// Send a direct (peer-to-peer) message to one peer. Stored locally under a
+  /// `dm:<peerId>` key and unicast only to that peer.
+  Future<void> sendDirectMessage({
+    required String peerId,
+    required String payload,
+    int priority = 1,
+  }) async {
+    try {
+      final id = await rust.sendDirectMessage(
+        peerId: peerId,
+        payload: payload,
+        priority: priority,
+      );
+      _emit({'event': 'ack_send', 'message_id': id});
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
   Future<void> sendFlash(String channelId) async {
     try {
       await rust.sendFlash(channelId: channelId);

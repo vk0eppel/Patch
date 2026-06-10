@@ -692,23 +692,29 @@ or gate it in the UI).
 become consistent across machines (same colour for "rf" everywhere) and dots for previously-unknown channels
 gain colour.
 
-### Direct messages (peer-to-peer, outside channels)
-**Effort:** medium
+### ~~Direct messages (peer-to-peer, outside channels)~~ ✅ Done (2026-06-10)
 
-Private messages between two specific peers. Uses the existing `PatchMessage` type
-and OSC address — no new wire format. A `dm:` channel_id convention identifies the
-conversation: `dm:{sorted_uuid_a}:{sorted_uuid_b}` (UUIDs sorted so A→B and B→A
-resolve to the same key). The transport unicasts to the target peer only.
+Private 1:1 messages between two peers. **Design change from the original plan:** a `dm:{uuid}:{uuid}`
+*channel_id* would fail `valid_channel_id` (colons, > 64 chars), so DMs use a **dedicated `/patch/dm` packet**
+instead — carrying a `target_id` (recipient's peer id) — unicast only to that peer; the receiver stores it
+under a local `dm:{sender_id}` key (never on the wire, so the slug rule doesn't apply). The sender stores
+under `dm:{target_id}`. Each side keys the thread by *the other peer*.
 
-Implementation:
-- Add `send_direct_message(peer_id, payload, priority)` to `api.rs`: builds the `dm:` channel_id, calls `transport.send_to()` for that peer only, stores locally
-- Add `sendDirectMessage()` to `bridge_client.dart`
-- DM button on each peer row in `peers_panel.dart`
-- DM conversations appear in the sidebar with a 💬 icon; created on-demand on first message
-- `get_messages(channel_id)` already works — `dm:` is just another channel key in the ring buffer
-- Flash does not apply to DMs; use a notification badge instead
+- Engine: `osc/addresses.rs` `DM`; `codec::{encode_dm, decode_dm}` (decode sets `channel_id = dm:{sender}`) +
+  `PatchEvent::DirectMessage { msg, target_id }`; `transport::handle_event` `DirectMessage` arm (target check
+  + auto-register sender + `store_message`); `api::send_direct_message(peer_id, payload, priority)` (unicast
+  to the target only; stored locally; best-effort, no retransmit). FRB regen. Test
+  `dm_round_trip_sets_receiver_channel_key`.
+- Flutter: `bridge.sendDirectMessage`; a 💬 button per **real** peer in `peers_panel.dart` (`onDm`; hidden for
+  `ManualIp`/synthetic peers whose id can't reach a live node); DM threads in the sidebar (`_DmTab`, below
+  channels, with an unread dot); DM mode in `home_screen` (exclusive selection like ALL — `_isDmMode`,
+  `_dmPeerId`; `_openDms`/`_unreadDms`; DMs excluded from ALL view + from the engine selection sync; no flash
+  (unread dot instead); flash + macros buttons stay in the DM header (flash is a no-op there; firing a macro
+  sends its text as a DM — quick canned replies); clear/export scoped to the thread). The
+  channel-reload prune now keeps `dm:` ids (like `__all__`) so a reload can't drop you out of a DM.
 
-Limitations: no offline queueing, no read receipts, conversation IDs are UUID-based (not portable across reinstalls).
+Limitations (as planned): no offline queueing, no read receipts, no retransmit for critical DMs, ids are
+UUID-based (not portable across reinstalls).
 
 ### OSC macro shortcuts + inbound trigger mapping
 
