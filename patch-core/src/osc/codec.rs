@@ -103,6 +103,24 @@ pub fn encode_channels_announce(
         .context("Failed to encode /patch/channels/announce")
 }
 
+/// Encode an arbitrary outbound OSC message for an "OSC macro" → external gear
+/// (QLab/Companion/vMix…). `path` must be a valid OSC address (start with '/');
+/// `arg`, when present, is sent as a single OSC string argument.
+pub fn encode_osc(path: &str, arg: Option<&str>) -> Result<Vec<u8>> {
+    if !path.starts_with('/') {
+        bail!("OSC path must start with '/': {:?}", path);
+    }
+    let args = match arg {
+        Some(s) => vec![OscType::String(s.to_string())],
+        None => Vec::new(),
+    };
+    let osc = OscMessage {
+        addr: path.to_string(),
+        args,
+    };
+    rosc::encoder::encode(&OscPacket::Message(osc)).context("Failed to encode OSC macro")
+}
+
 /// Encode an ACK for a given message_id.
 pub fn encode_ack(message_id: Uuid, peer_id: Uuid) -> Result<Vec<u8>> {
     let osc = OscMessage {
@@ -130,6 +148,14 @@ pub enum PatchEvent {
         peer_id: Uuid,
     },
     Flash(ChannelFlash),
+    /// Simple external-OSC message injection (e.g. from QLab/Companion) — the
+    /// receiving node fills in sender/id/timestamp and posts it. Args: payload
+    /// (string) + optional priority (int, default info).
+    Say {
+        channel_id: String,
+        payload: String,
+        priority: Priority,
+    },
     /// A peer asked us for our channel layout. We reply with a ChannelsAnnounce.
     ChannelsRequest {
         peer_id: Uuid,
@@ -159,6 +185,8 @@ fn decode_message(msg: OscMessage) -> Result<PatchEvent> {
         addr if addr.starts_with("/patch/channel/") && addr.ends_with("/message") => {
             decode_patch_message(msg)
         }
+        // Simple external-friendly form: /patch/channel/{id}/say
+        addr if addr.starts_with("/patch/channel/") && addr.ends_with("/say") => decode_say(msg),
         addresses::ACK => decode_ack(msg),
         addresses::PRESENCE => decode_presence(msg),
         addresses::BYE => decode_bye(msg),
@@ -226,6 +254,42 @@ fn decode_patch_message(msg: OscMessage) -> Result<PatchEvent> {
         priority,
         payload,
     }))
+}
+
+/// Decode the simple `/patch/channel/{id}/say` injection: arg 0 is the payload
+/// (string, required); arg 1 is an optional priority number (int/long/float —
+/// QLab can send any). Lenient on priority: missing or out-of-range → Info, so a
+/// fat-fingered cue still posts the message rather than being dropped.
+fn decode_say(msg: OscMessage) -> Result<PatchEvent> {
+    let parts: Vec<&str> = msg.addr.split('/').collect();
+    let channel_id = parts.get(3).copied().unwrap_or("unknown").to_string();
+    if !valid_channel_id(&channel_id) {
+        bail!("Rejected say: invalid channel id {:?}", channel_id);
+    }
+    let args = msg.args;
+    if args.is_empty() {
+        bail!("Expected at least 1 arg (payload) for .../say");
+    }
+    let payload = parse_string(&args[0])?;
+    if payload.len() > MAX_PAYLOAD_LEN {
+        bail!(
+            "Rejected say: payload {} bytes exceeds max {}",
+            payload.len(),
+            MAX_PAYLOAD_LEN
+        );
+    }
+    let priority = match args.get(1) {
+        Some(OscType::Int(i)) => Priority::try_from(*i).unwrap_or(Priority::Info),
+        Some(OscType::Long(l)) => Priority::try_from(*l as i32).unwrap_or(Priority::Info),
+        Some(OscType::Float(f)) => Priority::try_from(*f as i32).unwrap_or(Priority::Info),
+        Some(OscType::Double(d)) => Priority::try_from(*d as i32).unwrap_or(Priority::Info),
+        _ => Priority::Info,
+    };
+    Ok(PatchEvent::Say {
+        channel_id,
+        payload,
+        priority,
+    })
 }
 
 fn decode_ack(msg: OscMessage) -> Result<PatchEvent> {
@@ -545,6 +609,76 @@ mod tests {
             ],
         };
         assert!(decode_message(msg).is_err());
+    }
+
+    #[test]
+    fn say_decodes_payload_and_optional_priority() {
+        // Payload only → Info.
+        let m = OscMessage {
+            addr: "/patch/channel/rf/say".into(),
+            args: vec![OscType::String("Battery low".into())],
+        };
+        match decode_message(m).unwrap() {
+            PatchEvent::Say {
+                channel_id,
+                payload,
+                priority,
+            } => {
+                assert_eq!(channel_id, "rf");
+                assert_eq!(payload, "Battery low");
+                assert_eq!(priority, Priority::Info);
+            }
+            other => panic!("expected Say, got {:?}", other),
+        }
+        // Payload + critical priority (int).
+        let m = OscMessage {
+            addr: "/patch/channel/stage/say".into(),
+            args: vec![OscType::String("Evacuate".into()), OscType::Int(3)],
+        };
+        match decode_message(m).unwrap() {
+            PatchEvent::Say { priority, .. } => assert_eq!(priority, Priority::Critical),
+            other => panic!("expected Say, got {:?}", other),
+        }
+        // Out-of-range / float priority is lenient → Info (message still posts).
+        let m = OscMessage {
+            addr: "/patch/channel/rf/say".into(),
+            args: vec![OscType::String("hi".into()), OscType::Float(9.0)],
+        };
+        match decode_message(m).unwrap() {
+            PatchEvent::Say { priority, .. } => assert_eq!(priority, Priority::Info),
+            other => panic!("expected Say, got {:?}", other),
+        }
+        // Bad channel id is rejected; no payload is rejected.
+        assert!(decode_message(OscMessage {
+            addr: "/patch/channel/BAD!/say".into(),
+            args: vec![OscType::String("x".into())],
+        })
+        .is_err());
+        assert!(decode_message(OscMessage {
+            addr: "/patch/channel/rf/say".into(),
+            args: vec![],
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn encode_osc_rejects_bad_path_and_encodes_good() {
+        assert!(encode_osc("no-leading-slash", None).is_err());
+        let bytes = encode_osc("/cue/1/start", Some("go")).unwrap();
+        // A non-Patch address decodes as a generic (Unknown) OSC message.
+        match decode_packet(&bytes).unwrap() {
+            PatchEvent::Unknown(m) => {
+                assert_eq!(m.addr, "/cue/1/start");
+                assert_eq!(m.args.len(), 1);
+            }
+            other => panic!("expected Unknown, got {:?}", other),
+        }
+        // No-arg form encodes an empty arg list.
+        let bytes = encode_osc("/go", None).unwrap();
+        match decode_packet(&bytes).unwrap() {
+            PatchEvent::Unknown(m) => assert!(m.args.is_empty()),
+            other => panic!("expected Unknown, got {:?}", other),
+        }
     }
 
     #[test]

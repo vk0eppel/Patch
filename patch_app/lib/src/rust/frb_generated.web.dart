@@ -54,6 +54,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChannelFlash dco_decode_box_autoadd_channel_flash(dynamic raw);
 
   @protected
+  OscTarget dco_decode_box_autoadd_osc_target(dynamic raw);
+
+  @protected
   PatchMessage dco_decode_box_autoadd_patch_message(dynamic raw);
 
   @protected
@@ -120,7 +123,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool? dco_decode_opt_box_autoadd_bool(dynamic raw);
 
   @protected
+  OscTarget? dco_decode_opt_box_autoadd_osc_target(dynamic raw);
+
+  @protected
   int? dco_decode_opt_box_autoadd_u_8(dynamic raw);
+
+  @protected
+  OscTarget dco_decode_osc_target(dynamic raw);
 
   @protected
   PatchAppEvent dco_decode_patch_app_event(dynamic raw);
@@ -194,6 +203,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChannelFlash sse_decode_box_autoadd_channel_flash(
     SseDeserializer deserializer,
   );
+
+  @protected
+  OscTarget sse_decode_box_autoadd_osc_target(SseDeserializer deserializer);
 
   @protected
   PatchMessage sse_decode_box_autoadd_patch_message(
@@ -272,7 +284,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer);
 
   @protected
+  OscTarget? sse_decode_opt_box_autoadd_osc_target(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   int? sse_decode_opt_box_autoadd_u_8(SseDeserializer deserializer);
+
+  @protected
+  OscTarget sse_decode_osc_target(SseDeserializer deserializer);
 
   @protected
   PatchAppEvent sse_decode_patch_app_event(SseDeserializer deserializer);
@@ -349,6 +369,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_channel_flash(
     ChannelFlash self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_osc_target(
+    OscTarget self,
     SseSerializer serializer,
   );
 
@@ -446,7 +472,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_box_autoadd_osc_target(
+    OscTarget? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_u_8(int? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_osc_target(OscTarget self, SseSerializer serializer);
 
   @protected
   void sse_encode_patch_app_event(PatchAppEvent self, SseSerializer serializer);

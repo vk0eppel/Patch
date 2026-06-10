@@ -1001,7 +1001,7 @@ class _ChannelMacroEditor extends StatelessWidget {
                   style: TextButton.styleFrom(foregroundColor: PatchTheme.accent),
                   onPressed: () => _showMacroEditDialog(
                     context,
-                    onSave: (l, p, k, pr, mn, mc) => bridge.upsertMacro(
+                    onSave: (l, p, k, pr, mn, mc, osc) => bridge.upsertMacro(
                       channelId: channel.id,
                       label: l,
                       payload: p,
@@ -1009,6 +1009,10 @@ class _ChannelMacroEditor extends StatelessWidget {
                       priority: pr,
                       midiNote: mn,
                       midiCc: mc,
+                      oscAddress: osc?.address,
+                      oscPort: osc?.port,
+                      oscPath: osc?.path,
+                      oscArg: osc?.arg,
                     ),
                   ),
                 ),
@@ -1053,7 +1057,7 @@ class _ChannelMacroEditor extends StatelessWidget {
                   onEdit: () => _showMacroEditDialog(
                     context,
                     existing: s,
-                    onSave: (l, p, k, pr, mn, mc) => bridge.upsertMacro(
+                    onSave: (l, p, k, pr, mn, mc, osc) => bridge.upsertMacro(
                       channelId: channel.id,
                       label: l,
                       payload: p,
@@ -1061,6 +1065,10 @@ class _ChannelMacroEditor extends StatelessWidget {
                       priority: pr,
                       midiNote: mn,
                       midiCc: mc,
+                      oscAddress: osc?.address,
+                      oscPort: osc?.port,
+                      oscPath: osc?.path,
+                      oscArg: osc?.arg,
                     ),
                   ),
                   onDelete: () =>
@@ -1168,7 +1176,7 @@ class _ChannelMacroEditor extends StatelessWidget {
     MacroMessage? existing,
     bool allowMidi = true,
     required void Function(String label, String payload, String? keyBinding,
-            int priority, int? midiNote, int? midiCc)
+            int priority, int? midiNote, int? midiCc, MacroOsc? osc)
         onSave,
   }) {
     final labelCtrl = TextEditingController(text: existing?.label ?? '');
@@ -1178,7 +1186,14 @@ class _ChannelMacroEditor extends StatelessWidget {
         TextEditingController(text: existing?.midiNote?.toString() ?? '');
     final ccCtrl =
         TextEditingController(text: existing?.midiCc?.toString() ?? '');
+    final oscAddrCtrl = TextEditingController(text: existing?.osc?.address ?? '');
+    final oscPortCtrl =
+        TextEditingController(text: existing?.osc?.port.toString() ?? '');
+    final oscPathCtrl = TextEditingController(text: existing?.osc?.path ?? '');
+    final oscArgCtrl = TextEditingController(text: existing?.osc?.arg ?? '');
+    bool oscEnabled = existing?.osc != null;
     int priority = existing?.priority ?? 1;
+    String? error;
     // For a new macro, mirror the label into the message text (capitalized-first)
     // until the user edits the message themselves. Off when editing an existing
     // macro so its saved message is never overwritten.
@@ -1188,6 +1203,9 @@ class _ChannelMacroEditor extends StatelessWidget {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
+          // Scrollable so the content (especially with MIDI + OSC fields expanded)
+          // never overflows the dialog's max height on short/!tall screens.
+          scrollable: true,
           title: Text(existing == null ? 'New Macro' : 'Edit Macro'),
           content: SizedBox(
             width: double.infinity,
@@ -1290,6 +1308,61 @@ class _ChannelMacroEditor extends StatelessWidget {
                     }),
                   ),
                 ),
+                // ── OSC target (dual action) ──────────────────────────────
+                const SizedBox(height: 6),
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Also send OSC',
+                    style: TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeSmall),
+                  ),
+                  subtitle: const Text(
+                    'Fire an OSC message to gear (QLab, Companion, vMix…) when this macro fires.',
+                    style: TextStyle(color: PatchTheme.textMuted, fontSize: 11),
+                  ),
+                  value: oscEnabled,
+                  activeThumbColor: PatchTheme.accent,
+                  onChanged: (v) => setDialogState(() => oscEnabled = v),
+                ),
+                if (oscEnabled) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: TextField(
+                          controller: oscAddrCtrl,
+                          keyboardType: TextInputType.url,
+                          decoration: const InputDecoration(labelText: 'IP', hintText: '192.168.1.50'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 2,
+                        child: TextField(
+                          controller: oscPortCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(labelText: 'Port', hintText: '53000'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: oscPathCtrl,
+                    decoration: const InputDecoration(labelText: 'OSC path', hintText: '/cue/1/start'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: oscArgCtrl,
+                    decoration: const InputDecoration(labelText: 'Argument (optional)', hintText: 'e.g. go'),
+                  ),
+                ],
+                if (error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(error!, style: const TextStyle(color: PatchTheme.critical, fontSize: 11)),
+                ],
               ],
             ),
           ),
@@ -1311,6 +1384,20 @@ class _ChannelMacroEditor extends StatelessWidget {
                   return (v != null && v >= 0 && v <= 127) ? v : null;
                 }
 
+                MacroOsc? osc;
+                if (oscEnabled) {
+                  final addr = oscAddrCtrl.text.trim();
+                  final port = int.tryParse(oscPortCtrl.text.trim());
+                  final path = oscPathCtrl.text.trim();
+                  if (addr.isEmpty || port == null || port < 1 || port > 65535 || !path.startsWith('/')) {
+                    setDialogState(() => error =
+                        'OSC needs an IP, a port (1–65535), and a path starting with "/".');
+                    return;
+                  }
+                  final a = oscArgCtrl.text.trim();
+                  osc = MacroOsc(address: addr, port: port, path: path, arg: a.isEmpty ? null : a);
+                }
+
                 onSave(
                   label,
                   payload,
@@ -1318,6 +1405,7 @@ class _ChannelMacroEditor extends StatelessWidget {
                   priority,
                   allowMidi ? midi(noteCtrl) : null,
                   allowMidi ? midi(ccCtrl) : null,
+                  osc,
                 );
                 Navigator.pop(ctx);
               },
@@ -1387,13 +1475,17 @@ class _GlobalMacrosEditor extends StatelessWidget {
                   style: TextButton.styleFrom(foregroundColor: PatchTheme.accent),
                   onPressed: () => _ChannelMacroEditor._showMacroEditDialog(
                     context,
-                    onSave: (l, p, k, pr, mn, mc) => bridge.upsertGlobalMacro(
+                    onSave: (l, p, k, pr, mn, mc, osc) => bridge.upsertGlobalMacro(
                       label: l,
                       payload: p,
                       keyBinding: k,
                       priority: pr,
                       midiNote: mn,
                       midiCc: mc,
+                      oscAddress: osc?.address,
+                      oscPort: osc?.port,
+                      oscPath: osc?.path,
+                      oscArg: osc?.arg,
                     ),
                   ),
                 ),
@@ -1426,13 +1518,17 @@ class _GlobalMacrosEditor extends StatelessWidget {
                   onEdit: () => _ChannelMacroEditor._showMacroEditDialog(
                     context,
                     existing: s,
-                    onSave: (l, p, k, pr, mn, mc) => bridge.upsertGlobalMacro(
+                    onSave: (l, p, k, pr, mn, mc, osc) => bridge.upsertGlobalMacro(
                       label: l,
                       payload: p,
                       keyBinding: k,
                       priority: pr,
                       midiNote: mn,
                       midiCc: mc,
+                      oscAddress: osc?.address,
+                      oscPort: osc?.port,
+                      oscPath: osc?.path,
+                      oscArg: osc?.arg,
                     ),
                   ),
                   onDelete: () => bridge.deleteGlobalMacro(s.label),
@@ -1550,6 +1646,22 @@ class _MacroRow extends StatelessWidget {
                     ? '♪ ${shortcut.midiNote}'
                     : 'CC ${shortcut.midiCc}',
                 style: const TextStyle(color: PatchTheme.textMuted, fontSize: 10),
+              ),
+            ),
+          // OSC target badge
+          if (shortcut.osc != null)
+            Container(
+              margin: const EdgeInsets.only(left: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: PatchTheme.surfaceHigh,
+                borderRadius: BorderRadius.circular(3),
+                border: Border.all(color: PatchTheme.accent.withAlpha(120)),
+              ),
+              child: Tooltip(
+                message: '${shortcut.osc!.address}:${shortcut.osc!.port} ${shortcut.osc!.path}',
+                child: const Text('OSC',
+                    style: TextStyle(color: PatchTheme.accent, fontSize: 9, fontWeight: FontWeight.w700)),
               ),
             ),
           const SizedBox(width: 8),

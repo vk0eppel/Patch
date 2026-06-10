@@ -14,6 +14,11 @@
 //! (Linux) backends. On iOS/Android there's no backend, so [`start`] and
 //! [`list_ports`] are no-ops (and `midir` isn't depended on — see Cargo.toml).
 //!
+//! Besides every physical input port, on **macOS/Linux** a virtual input port
+//! named "Patch" is created (`connect_all`) so other software/gear can send MIDI
+//! to Patch with no hardware. Windows (WinMM) has no virtual ports — those users
+//! route through a loopback driver (loopMIDI) and a physical port.
+//!
 //! Threading: the OS MIDI callback runs on the backend's own thread and forwards
 //! a parsed trigger over a tokio mpsc to a task that does the (async) send. The
 //! `MidiInputConnection`s are kept alive for the process lifetime by a dedicated
@@ -83,7 +88,8 @@ mod backend {
             .ok();
     }
 
-    /// Open every available input port, forwarding parsed triggers onto `tx`.
+    /// Open every available input port (plus a virtual port on macOS/Linux),
+    /// forwarding parsed triggers onto `tx`.
     fn connect_all(
         tx: tokio::sync::mpsc::UnboundedSender<MidiTrigger>,
     ) -> anyhow::Result<Vec<MidiInputConnection<()>>> {
@@ -112,6 +118,35 @@ mod backend {
                 Err(e) => tracing::warn!("MIDI connect failed for {}: {}", name, e),
             }
         }
+
+        // Virtual input port — appears as a "Patch" MIDI **destination** that other
+        // software/gear on the machine can send to directly, no hardware needed (a
+        // DAW, Bitfocus Companion, another app routing MIDI…). Feeds the same parse
+        // → fire pipeline. CoreMIDI (macOS) + ALSA (Linux) only; WinMM (Windows)
+        // has no virtual-port concept — Windows users route through a loopback
+        // driver (e.g. loopMIDI) and a physical port instead.
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        {
+            use midir::os::unix::VirtualInput;
+            let input = MidiInput::new(CLIENT_NAME)?;
+            let txc = tx.clone();
+            match input.create_virtual(
+                CLIENT_NAME,
+                move |_ts, msg, _| {
+                    if let Some(trigger) = parse(msg) {
+                        let _ = txc.send(trigger);
+                    }
+                },
+                (),
+            ) {
+                Ok(conn) => {
+                    tracing::info!("MIDI: virtual input port '{}' created", CLIENT_NAME);
+                    conns.push(conn);
+                }
+                Err(e) => tracing::warn!("MIDI: virtual port creation failed: {}", e),
+            }
+        }
+
         Ok(conns)
     }
 
@@ -162,7 +197,31 @@ mod backend {
         out
     }
 
-    /// Fire every macro bound to this trigger (see `resolve_targets`).
+    /// The OSC targets to fire for a trigger — **one per matched macro** (a global
+    /// macro fires its OSC once, regardless of how many channels its message goes
+    /// to; OSC is independent of channel selection, so `selected` isn't needed).
+    fn resolve_osc(
+        channels: &[crate::state::channel::Channel],
+        globals: &[crate::state::channel::MacroMessage],
+        trigger: MidiTrigger,
+    ) -> Vec<crate::state::channel::OscTarget> {
+        let hit = |m: &crate::state::channel::MacroMessage| match trigger {
+            MidiTrigger::Note(n) => m.midi_note == Some(n),
+            MidiTrigger::Cc(c) => m.midi_cc == Some(c),
+        };
+        let mut out = Vec::new();
+        for m in channels.iter().flat_map(|c| &c.macros).chain(globals) {
+            if hit(m) {
+                if let Some(o) = &m.osc {
+                    out.push(o.clone());
+                }
+            }
+        }
+        out
+    }
+
+    /// Fire every macro bound to this trigger: the Patch message(s) (see
+    /// `resolve_targets`) plus any attached OSC packet (dual action).
     async fn fire(
         state: &AppState,
         transport: &Arc<Transport>,
@@ -188,12 +247,18 @@ mod backend {
                 tracing::warn!("MIDI macro send failed on {}: {}", ch_id, e);
             }
         }
+        // OSC macros (dual action) — once per matched macro.
+        for target in resolve_osc(&channels, &globals, trigger) {
+            if let Err(e) = crate::api::dispatch_osc(transport, &target).await {
+                tracing::warn!("MIDI OSC macro to {} failed: {}", target.address, e);
+            }
+        }
     }
 
     #[cfg(test)]
     mod tests {
         use super::*;
-        use crate::state::channel::{Channel, MacroMessage};
+        use crate::state::channel::{Channel, MacroMessage, OscTarget};
 
         fn mac(label: &str, note: Option<u8>, cc: Option<u8>) -> MacroMessage {
             MacroMessage {
@@ -203,6 +268,14 @@ mod backend {
                 priority: 2,
                 midi_note: note,
                 midi_cc: cc,
+                osc: None,
+            }
+        }
+
+        fn mac_osc(label: &str, note: u8, osc: OscTarget) -> MacroMessage {
+            MacroMessage {
+                osc: Some(osc),
+                ..mac(label, Some(note), None)
             }
         }
 
@@ -238,6 +311,30 @@ mod backend {
                 resolve_targets(&[], &globals, &["rf".into()], MidiTrigger::Cc(64)),
                 vec![("rf".into(), "p-G".into(), 2)]
             );
+        }
+
+        #[test]
+        fn osc_fires_once_per_matched_macro_regardless_of_channels() {
+            let osc = OscTarget {
+                address: "10.0.0.9".into(),
+                port: 53000,
+                path: "/cue/1/start".into(),
+                arg: None,
+            };
+            // A global macro (note 60) with an OSC target + a plain per-channel
+            // macro (note 60, no OSC) on "rf".
+            let mut rf = Channel::new("rf", "RF", "#fff");
+            rf.macros = vec![mac("A", Some(60), None)];
+            let globals = vec![mac_osc("G", 60, osc.clone())];
+
+            // The global's message goes to 2 selected channels, but its OSC fires
+            // exactly once; the per-channel macro has no OSC.
+            let got = resolve_osc(&[rf], &globals, MidiTrigger::Note(60));
+            assert_eq!(got.len(), 1);
+            assert_eq!(got[0].path, "/cue/1/start");
+
+            // A trigger that matches nothing yields no OSC.
+            assert!(resolve_osc(&[], &globals, MidiTrigger::Note(61)).is_empty());
         }
     }
 }

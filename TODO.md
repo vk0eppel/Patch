@@ -494,7 +494,20 @@ Macros')` + description + `_GlobalMacrosEditor`) to just above the Channels & Ma
 (`_SectionHeader('Channels & Macros')` row). The section description already reads "Macros shown on every
 channel's panel…", so it's self-explanatory even when it appears first. Pure reorder; no behaviour change.
 
-### Virtual MIDI input port ("Patch")
+### ~~Virtual MIDI input port ("Patch")~~ ✅ Done (2026-06-10)
+**Files:** `patch-core/src/midi/mod.rs` (+ docs)
+
+Shipped: `connect_all` now also creates a virtual input port named "Patch" via
+`midir::os::unix::VirtualInput::create_virtual`, gated `#[cfg(any(target_os = "macos", target_os = "linux"))]`
+(Windows/WinMM has no virtual ports — documented loopMIDI workaround). It reuses the same `parse → tx.send`
+callback and is kept alive in the same `conns` Vec (parked thread). Failure logs a `warn` and is non-fatal
+(physical ports still work). No FRB/Dart change. **Verified working (2026-06-10):** "Patch" is selectable as a MIDI destination in QLab. NB an app-created
+virtual endpoint does **not** appear in macOS Audio MIDI Setup → MIDI Studio (that only lists hardware
+devices + the IAC/Network drivers) — it shows only in other apps' CoreMIDI destination lists, which is the
+correct signal. The sandboxed `.app` creates it fine (no entitlement needed). `RUST_LOG=info` logs
+`MIDI: virtual input port 'Patch' created`. **Future:** a virtual MIDI *output* port (Patch → other software) — see below.
+
+#### (Original spec retained for reference)
 **Files:** `patch-core/src/midi/mod.rs` (+ docs) · **Effort:** small (macOS/Linux)
 
 Decided with the user: expose a **virtual MIDI input port** named "Patch" so other software/gear on the
@@ -698,31 +711,32 @@ Implementation:
 Limitations: no offline queueing, no read receipts, conversation IDs are UUID-based (not portable across reinstalls).
 
 ### OSC macro shortcuts + inbound trigger mapping
-**Effort:** medium
 
-Two related features covering both directions of OSC interoperability:
+**~~Outbound — OSC macro~~ ✅ Done (2026-06-10).** A macro can carry an optional `OscTarget`
+(`address`/`port`/`path`/`arg`) on `MacroMessage` (`state/channel.rs`, `#[serde(default)]`). When the macro
+fires — tap, F-key, **or MIDI** — Patch sends the normal channel message to peers **and** the OSC packet to
+the target (dual action). Engine: `osc::codec::encode_osc` (validates path starts with `/`),
+`api::dispatch_osc` (validates IP + non-zero port, sends via the transport socket), the FFI
+`api::send_osc_macro` (used by the UI's `_fireMacro`), and `midi::fire` → `resolve_osc` (fires once per
+matched macro, engine-side, so footswitches trigger gear too). `upsert_macro`/`upsert_global_macro` take an
+`Option<OscTarget>` and validate it (`validate_osc`). UI: an "Also send OSC" toggle + IP/port/path/arg fields
+in the macro editor (`settings_screen.dart`), an **OSC** badge on `_MacroRow`, and the firing wired in
+`home_screen._fireMacro`. Bridge: `sendOscMacro` + osc carried through the macro maps + `upsertMacro`/
+`upsertGlobalMacro`. FRB regenerated. Tests: `encode_osc` round-trip/validation + `resolve_osc` (once per
+macro). 57 engine / 23 Flutter tests pass.
 
-**Outbound — OSC macro**
-A macro that fires an arbitrary OSC message to a configured destination (address, port,
-OSC path) in addition to the normal Patch channel message sent to peers. Useful for
-triggering QLab cues, Companion buttons, vMix overlays, or any other OSC-capable gear
-directly from the macros panel.
-
-Infrastructure is mostly in place — `rosc` already encodes/sends OSC; the transport
-socket is available; the macro editor UI is already extensible.
-
-Implementation steps:
-- Add optional fields to `MacroMessage` in `channel.rs`: `osc_address: Option<String>`, `osc_port: Option<u16>`, `osc_path: Option<String>`, `osc_arg: Option<String>` (single string arg covers ~80% of QLab use cases; typed arg list can come later)
-- Add `send_osc_macro(address, port, path, arg: Option<String>)` to `api.rs`; encode via `rosc` and send a raw UDP packet via the existing transport socket
-- Regenerate FRB bindings; add `sendOscMacro()` to `bridge_client.dart`
-- Extend the macro editor in `settings_screen.dart` with an expandable "OSC Target" section (IP field, port field, OSC path field, optional arg field); show only when enabled via a toggle
-
-Design decision (resolve before starting): when a macro has an OSC target, it should fire **both** the Patch channel message to peers **and** the OSC packet to the target — dual action is the most useful live behaviour (crew gets the message AND QLab gets the trigger simultaneously).
-
-**Inbound — external OSC trigger → Patch message mapping**
-Allow an incoming OSC message on any address (e.g. `/rf/battery_low`) to be mapped
-to a Patch channel message with a configured priority and payload — bridging external
-show-control gear into Patch without custom scripts.
+**Inbound — external OSC → Patch message**
+- **~~Simple injection (`/patch/channel/{id}/say`)~~ ✅ Done (2026-06-10).** `decode_say` (codec) +
+  `transport::handle_event` `Say` arm: an external source (QLab/Companion/script) sends
+  `/patch/channel/rf/say "text" [priority]` and the receiving node originates the message (its identity,
+  fresh id + timestamp), relays it to the whole crew, and stores it locally. Lenient priority (default info).
+  No UUIDs/timestamp/de-dupe bookkeeping for the sender. Tests: `say_decodes_payload_and_optional_priority`.
+  Docs: `docs/osc-integration.md`, README. 58 engine tests pass.
+- **Arbitrary-foreign-address mapping table** *(still TODO)* · **Effort:** medium. Map an incoming OSC
+  message on an address you **can't** change (e.g. `/rf/battery_low` from a proprietary device) to a channel
+  message with a configured priority/payload. The decode side currently drops unknown addresses as
+  `PatchEvent::Unknown`; this adds a configurable rule table (match address → channel + priority + payload
+  template). `/say` already covers any sender whose output address you *can* set.
 
 ### OSCQuery support for zero-config integration
 **Effort:** large

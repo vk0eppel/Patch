@@ -306,6 +306,10 @@ class BridgeClient {
     int priority = 1,
     int? midiNote,
     int? midiCc,
+    String? oscAddress,
+    int? oscPort,
+    String? oscPath,
+    String? oscArg,
   }) async {
     try {
       await rust.upsertMacro(
@@ -316,7 +320,18 @@ class BridgeClient {
         keyBinding: keyBinding,
         midiNote: midiNote,
         midiCc: midiCc,
+        osc: _buildOsc(oscAddress, oscPort, oscPath, oscArg),
       );
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
+  /// Fire an arbitrary OSC message to external gear (the dual-action half of an
+  /// OSC macro — the Patch message is sent separately via [sendMessage]).
+  Future<void> sendOscMacro(String address, int port, String path, String? arg) async {
+    try {
+      await rust.sendOscMacro(address: address, port: port, path: path, arg: arg);
     } catch (e) {
       _emitError(e);
     }
@@ -361,6 +376,10 @@ class BridgeClient {
     int priority = 1,
     int? midiNote,
     int? midiCc,
+    String? oscAddress,
+    int? oscPort,
+    String? oscPath,
+    String? oscArg,
   }) async {
     try {
       await rust.upsertGlobalMacro(
@@ -370,11 +389,31 @@ class BridgeClient {
         keyBinding: keyBinding,
         midiNote: midiNote,
         midiCc: midiCc,
+        osc: _buildOsc(oscAddress, oscPort, oscPath, oscArg),
       );
       _emit({'event': 'config_updated'});
     } catch (e) {
       _emitError(e);
     }
+  }
+
+  /// Build a typed `OscTarget` from flat UI fields — null unless address, port,
+  /// and path are all present (an empty `arg` collapses to null).
+  rust_channel.OscTarget? _buildOsc(
+    String? address,
+    int? port,
+    String? path,
+    String? arg,
+  ) {
+    if (address == null || address.isEmpty || port == null || path == null || path.isEmpty) {
+      return null;
+    }
+    return rust_channel.OscTarget(
+      address: address,
+      port: port,
+      path: path,
+      arg: (arg == null || arg.isEmpty) ? null : arg,
+    );
   }
 
   /// Push the UI's current channel selection to the engine so a MIDI-triggered
@@ -656,6 +695,14 @@ Map<String, dynamic> _macroToMap(rust_channel.MacroMessage s) => {
       'priority': s.priority,
       'midi_note': s.midiNote,
       'midi_cc': s.midiCc,
+      'osc': s.osc == null
+          ? null
+          : {
+              'address': s.osc!.address,
+              'port': s.osc!.port,
+              'path': s.osc!.path,
+              'arg': s.osc!.arg,
+            },
     };
 
 // Inverse of `_channelToMap`/`_macroToMap` — rebuilds the typed FRB structs from
@@ -680,7 +727,19 @@ rust_channel.MacroMessage _macroFromMap(Map<String, dynamic> m) => rust_channel.
       priority: (m['priority'] as num).toInt(),
       midiNote: (m['midi_note'] as num?)?.toInt(),
       midiCc: (m['midi_cc'] as num?)?.toInt(),
+      osc: _oscFromMap(m['osc']),
     );
+
+rust_channel.OscTarget? _oscFromMap(dynamic o) {
+  if (o == null) return null;
+  final m = Map<String, dynamic>.from(o as Map);
+  return rust_channel.OscTarget(
+    address: m['address'] as String,
+    port: (m['port'] as num).toInt(),
+    path: m['path'] as String,
+    arg: m['arg'] as String?,
+  );
+}
 
 Map<String, dynamic> _messageToMap(rust_osc.PatchMessage m) => {
       'message_id': m.messageId.toString(),

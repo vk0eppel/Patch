@@ -86,6 +86,10 @@ class MacroMessage {
   /// value ≥ 64, i.e. a footswitch "press").
   final int? midiCc;
 
+  /// Optional outbound OSC target — when the macro fires, Patch *also* sends this
+  /// OSC message to external gear, alongside the normal Patch channel message.
+  final OscTarget? osc;
+
   const MacroMessage({
     required this.label,
     required this.payload,
@@ -93,6 +97,7 @@ class MacroMessage {
     required this.priority,
     this.midiNote,
     this.midiCc,
+    this.osc,
   });
 
   @override
@@ -102,7 +107,8 @@ class MacroMessage {
       keyBinding.hashCode ^
       priority.hashCode ^
       midiNote.hashCode ^
-      midiCc.hashCode;
+      midiCc.hashCode ^
+      osc.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -114,5 +120,44 @@ class MacroMessage {
           keyBinding == other.keyBinding &&
           priority == other.priority &&
           midiNote == other.midiNote &&
-          midiCc == other.midiCc;
+          midiCc == other.midiCc &&
+          osc == other.osc;
+}
+
+/// An outbound OSC target attached to a macro (dual action — fired alongside the
+/// Patch message). Lets a macro trigger QLab cues, Companion buttons, vMix
+/// overlays, etc. from the same button/key/MIDI that messages the crew.
+class OscTarget {
+  /// Destination IP address (e.g. "192.168.1.50").
+  final String address;
+
+  /// Destination UDP port (e.g. 53000 for QLab).
+  final int port;
+
+  /// OSC address path, must start with '/' (e.g. "/cue/1/start").
+  final String path;
+
+  /// Optional single string argument.
+  final String? arg;
+
+  const OscTarget({
+    required this.address,
+    required this.port,
+    required this.path,
+    this.arg,
+  });
+
+  @override
+  int get hashCode =>
+      address.hashCode ^ port.hashCode ^ path.hashCode ^ arg.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is OscTarget &&
+          runtimeType == other.runtimeType &&
+          address == other.address &&
+          port == other.port &&
+          path == other.path &&
+          arg == other.arg;
 }

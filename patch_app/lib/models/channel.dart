@@ -1,5 +1,28 @@
 import 'package:flutter/material.dart';
 
+/// An outbound OSC target attached to a macro — fired alongside the Patch message
+/// (dual action) to trigger external gear (QLab, Companion, vMix…).
+class MacroOsc {
+  final String address;
+  final int port;
+  final String path;
+  final String? arg;
+
+  const MacroOsc({
+    required this.address,
+    required this.port,
+    required this.path,
+    this.arg,
+  });
+
+  factory MacroOsc.fromJson(Map<String, dynamic> j) => MacroOsc(
+        address: j['address'] as String,
+        port: (j['port'] as num).toInt(),
+        path: j['path'] as String,
+        arg: j['arg'] as String?,
+      );
+}
+
 class MacroMessage {
   final String label;
   final String payload;
@@ -12,6 +35,9 @@ class MacroMessage {
   /// Optional MIDI Control Change number (0–127) that fires this macro.
   final int? midiCc;
 
+  /// Optional outbound OSC target fired alongside the Patch message.
+  final MacroOsc? osc;
+
   const MacroMessage({
     required this.label,
     required this.payload,
@@ -19,6 +45,7 @@ class MacroMessage {
     this.priority = 1,
     this.midiNote,
     this.midiCc,
+    this.osc,
   });
 
   factory MacroMessage.fromJson(Map<String, dynamic> j) => MacroMessage(
@@ -28,6 +55,9 @@ class MacroMessage {
         priority: (j['priority'] as num).toInt(),
         midiNote: (j['midi_note'] as num?)?.toInt(),
         midiCc: (j['midi_cc'] as num?)?.toInt(),
+        osc: j['osc'] == null
+            ? null
+            : MacroOsc.fromJson(j['osc'] as Map<String, dynamic>),
       );
 }
 

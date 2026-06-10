@@ -15,7 +15,7 @@ import 'state/session.dart';
 import 'transport.dart';
 part 'api.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `csv_escape`, `dispatch_message`, `init_tracing`, `resolve_peer_names`
+// These functions are ignored because they are not marked as `pub`: `csv_escape`, `dispatch_message`, `dispatch_osc`, `init_tracing`, `resolve_peer_names`, `validate_osc`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `EngineHandle`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `engine`
@@ -26,6 +26,20 @@ part 'api.freezed.dart';
 /// (used by tests and by hosts that want to pin the config to a specific path).
 Future<void> init({String? configDir}) =>
     RustLib.instance.api.crateApiInit(configDir: configDir);
+
+/// Fire an OSC message to an external target (e.g. QLab). Used by the UI's
+/// dual-action macro (the macro sends its Patch message *and* this OSC packet).
+Future<void> sendOscMacro({
+  required String address,
+  required int port,
+  required String path,
+  String? arg,
+}) => RustLib.instance.api.crateApiSendOscMacro(
+  address: address,
+  port: port,
+  path: path,
+  arg: arg,
+);
 
 /// Sends a message on a channel. Returns the message_id.
 Future<String> sendMessage({
@@ -179,6 +193,7 @@ Future<void> upsertMacro({
   String? keyBinding,
   int? midiNote,
   int? midiCc,
+  OscTarget? osc,
 }) => RustLib.instance.api.crateApiUpsertMacro(
   channelId: channelId,
   label: label,
@@ -187,6 +202,7 @@ Future<void> upsertMacro({
   keyBinding: keyBinding,
   midiNote: midiNote,
   midiCc: midiCc,
+  osc: osc,
 );
 
 Future<void> deleteMacro({required String channelId, required String label}) =>
@@ -211,6 +227,7 @@ Future<void> upsertGlobalMacro({
   String? keyBinding,
   int? midiNote,
   int? midiCc,
+  OscTarget? osc,
 }) => RustLib.instance.api.crateApiUpsertGlobalMacro(
   label: label,
   payload: payload,
@@ -218,6 +235,7 @@ Future<void> upsertGlobalMacro({
   keyBinding: keyBinding,
   midiNote: midiNote,
   midiCc: midiCc,
+  osc: osc,
 );
 
 /// Tell the engine which channels the UI currently has selected, so a

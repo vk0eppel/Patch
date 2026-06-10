@@ -78,6 +78,7 @@ Macros are one-tap buttons that appear in a side panel on each channel. They're 
    - **Message** — the payload sent (can be different from the label)
    - **Priority** — Info / Warning / Critical
    - **Key binding** — optional F1–F12 binding (desktop only)
+   - **MIDI / OSC** — optional hardware/software triggers and an outbound OSC target (see below)
 
 ### Reordering macros
 
@@ -95,6 +96,20 @@ Where a MIDI-fired macro sends matches what tapping it would do:
 
 - A **per-channel** macro fires **on its own channel, regardless of which channel you're viewing** (or whether Patch is even focused) — so a pedal can fire "RF: LOW BATT" while you're looking at AUDIO.
 - A **global** macro fires **on the channel(s) you currently have selected** — exactly like tapping it. If you're in the **ALL** view, it goes out as a crew-wide broadcast.
+
+#### Sending MIDI from other software (no hardware)
+
+On **macOS and Linux**, Patch also creates a **virtual MIDI port named "Patch"**. Other software on the same machine — a DAW, Bitfocus Companion, a software MIDI controller, a Stream Deck MIDI action — can send MIDI straight to it: just pick **"Patch"** as the MIDI output/destination in that app, and notes/CCs trigger your bound macros exactly like a hardware controller would. No cables, no interface. (On **Windows** there's no virtual-port support, so install a loopback driver like [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html) and route through that port instead.)
+
+### Triggering external gear (OSC)
+
+A macro can also fire an **OSC message to external gear** when it's pressed — so one button both tells the crew *and* triggers a QLab cue, a Companion button, a vMix overlay, or anything else that speaks OSC. In the macro editor, turn on **"Also send OSC"** and fill in:
+
+- **IP** + **Port** — the gear's OSC listener (e.g. `192.168.1.50` : `53000` for QLab)
+- **OSC path** — the address to send, must start with `/` (e.g. `/cue/1/start`)
+- **Argument** — an optional single string argument
+
+When the macro fires — by tap, F-key, **or** MIDI — Patch sends its normal crew message *and* the OSC packet, simultaneously. A macro with an OSC target shows a small **OSC** badge in Settings.
 
 ---
 

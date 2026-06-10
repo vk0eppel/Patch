@@ -8,7 +8,8 @@ Patch speaks OSC natively over UDP. Any show-control system that can send or rec
 
 | Address | Direction | Description |
 |---|---|---|
-| `/patch/channel/{id}/message` | Send / Receive | Channel message |
+| `/patch/channel/{id}/say` | Send | **Simple** message post — payload (+ optional priority); Patch fills in the rest. Best for QLab/Companion/scripts. |
+| `/patch/channel/{id}/message` | Send / Receive | Full channel message (6 args incl. UUIDs/timestamp) — used Patch-to-Patch. |
 | `/patch/channel/{id}/flash` | Send / Receive | Flash / page a channel |
 | `/patch/presence` | Send / Receive | Peer heartbeat / presence / discovery — the single announce address. Send one to make an external tool appear as a peer; Patch emits it every heartbeat. |
 | `/patch/bye` | Send / Receive | Departure announcement — marks the sender offline promptly. |
@@ -18,9 +19,38 @@ Patch speaks OSC natively over UDP. Any show-control system that can send or rec
 
 ---
 
-## Sending a message to Patch
+## Posting a message — the easy way (`/say`)
 
-Send a standard OSC message to any Patch device on UDP port 9000:
+For QLab, Companion, or any script, the simplest path is `/patch/channel/{id}/say` on UDP port 9000. You send just the **text** and (optionally) a **priority** — Patch fills in the sender, a fresh message id, and the timestamp, then the receiving node posts the message to the whole crew.
+
+```
+/patch/channel/rf/say   "Battery low — swap now"   3
+```
+
+| Arg # | Type | Field | Notes |
+|---|---|---|---|
+| 0 | string | payload (the message text) | required |
+| 1 | int (or float) | priority — 0=debug 1=info 2=warning 3=critical | optional; default `1` (info); out-of-range → info |
+
+No UUIDs, no timestamp, no de-duplication bookkeeping — fire the same cue as many times as you want. The message appears to come from the Patch node that receives it.
+
+### Example — QLab OSC (Network) cue
+
+```
+Destination: 192.168.1.50 : 9000        (the Patch machine; 127.0.0.1 if same Mac)
+Address:     /patch/channel/rf/say
+Arguments:
+  s  "Battery low on Belt Pack 3 — swap now"
+  i  3                                          ← critical (omit for info)
+```
+
+> The channel id in the address must exist as a slug (`[a-z0-9_-]`, ≤ 64 chars) on the receiving Patch and the payload must be ≤ 4 KB.
+
+---
+
+## Full message form (Patch-to-Patch / UUID-capable scripts)
+
+The full 6-arg form is what Patch uses between its own nodes; use it from a script that can generate UUIDs and a timestamp. Send to any Patch device on UDP port 9000:
 
 ```
 /patch/channel/{id}/message  s s s h i s
@@ -109,8 +139,8 @@ Messages arrive in the same `/patch/channel/{id}/message` format as above.
 ## Companion integration (Bitfocus)
 
 1. Add a **Generic OSC** connection pointing at your Patch device IP, port 9000.
-2. Create a button with an OSC action sending `/patch/channel/rf/flash` with the two string args.
-3. For messages: build a press action sending `/patch/channel/stage/message` with the six args — use a static sender UUID, dynamic timestamp via Companion's `$(internal:time_ms)` variable, and a unique message ID.
+2. For messages: a press action sending `/patch/channel/stage/say` with a string (the text) and optionally an int priority — simplest by far.
+3. For flash/page: an OSC action sending `/patch/channel/rf/flash` with the two string args.
 
 ---
 
@@ -138,6 +168,8 @@ Configure the `oscout1` CHOP with the Patch device IP and port 9000.
 
 ---
 
-## OSC trigger → Patch message mapping *(planned)*
+## OSC trigger → Patch message mapping *(partly available)*
 
-Future: Patch will support mapping any incoming OSC address to a channel message with a configured priority and payload — no external scripting needed. Track progress in [TODO.md](../TODO.md).
+For systems you control (QLab, Companion, scripts), the `/patch/channel/{id}/say` address above already lets you post a message with just text + priority — no scripting, no UUIDs.
+
+Still planned: mapping an **arbitrary foreign** OSC address (e.g. `/rf/battery_low` from a proprietary device whose output address you can't change) to a channel message with a configured priority/payload. Track progress in [TODO.md](../TODO.md).

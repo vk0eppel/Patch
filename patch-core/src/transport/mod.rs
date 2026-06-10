@@ -10,8 +10,10 @@ use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, warn};
 use uuid::Uuid;
 
-use crate::osc::codec::{decode_packet, encode_ack, encode_channels_announce, PatchEvent};
-use crate::osc::types::PeerPresence;
+use crate::osc::codec::{
+    decode_packet, encode_ack, encode_channels_announce, encode_message, PatchEvent,
+};
+use crate::osc::types::{PatchMessage, PeerPresence};
 use crate::reliability::ReliabilityManager;
 use crate::state::channel::Channel;
 use crate::state::{AppEvent, AppState, Config};
@@ -383,6 +385,51 @@ async fn handle_event(
                     .await;
             }
             state.publish(AppEvent::ChannelFlash(f)).await;
+        }
+        PatchEvent::Say {
+            channel_id,
+            payload,
+            priority,
+        } => {
+            // External OSC injection (e.g. QLab). This node *originates* the
+            // message — its identity, a fresh id + timestamp — then relays it to
+            // every known peer and stores it locally, so an OSC source can post to
+            // the whole crew through this node (exactly as if typed here).
+            let config = state.config().await;
+            let msg = PatchMessage::new(
+                config.client_id,
+                &config.client_name,
+                channel_id,
+                priority,
+                payload,
+            );
+            match encode_message(&msg) {
+                Ok(bytes) => {
+                    let mut targets = Vec::new();
+                    let mut seen = HashSet::new();
+                    for peer in state.get_peers().await {
+                        if peer.peer_id == config.client_id || !peer.has_address() {
+                            continue;
+                        }
+                        if let Ok(ip) = peer.address.parse::<IpAddr>() {
+                            let addr = SocketAddr::new(ip, peer.osc_port);
+                            if seen.insert(addr) {
+                                let _ = send_tx.send(Outgoing::To(bytes.clone(), addr)).await;
+                                targets.push(addr);
+                            }
+                        }
+                    }
+                    // Track criticals for retransmit, like a hand-sent message.
+                    if msg.is_critical() && !targets.is_empty() {
+                        reliability
+                            .lock()
+                            .await
+                            .track(msg.message_id, bytes, targets);
+                    }
+                }
+                Err(e) => warn!("Failed to encode OSC-injected message: {}", e),
+            }
+            state.store_message(msg).await;
         }
         PatchEvent::ChannelsRequest { peer_id } => {
             if peer_id == client_id {

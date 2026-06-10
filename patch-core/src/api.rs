@@ -19,10 +19,12 @@ use tokio::sync::{Mutex, OnceCell};
 use uuid::Uuid;
 
 use crate::discovery::Discovery;
-use crate::osc::codec::{encode_bye, encode_channels_request, encode_flash, encode_message};
+use crate::osc::codec::{
+    encode_bye, encode_channels_request, encode_flash, encode_message, encode_osc,
+};
 use crate::osc::types::{ChannelFlash, PatchMessage, Priority};
 use crate::reliability::ReliabilityManager;
-use crate::state::channel::{Channel, MacroMessage};
+use crate::state::channel::{Channel, MacroMessage, OscTarget};
 use crate::state::session::{self, SessionConfig, SessionMeta};
 use crate::state::{config::StaticPeer, AppEvent, AppState, Config};
 use crate::transport::{list_interfaces, InterfaceInfo, Transport};
@@ -236,6 +238,43 @@ pub(crate) async fn dispatch_message(
             .await;
     }
     Ok(message_id)
+}
+
+/// Send an arbitrary outbound OSC message to external gear (the "OSC macro"
+/// action). Shared by the FFI `send_osc_macro` and the engine-side MIDI fire path.
+/// Validates the address + port + path; the packet goes out on the OSC socket via
+/// the normal send queue.
+#[frb(ignore)]
+pub(crate) async fn dispatch_osc(transport: &Arc<Transport>, target: &OscTarget) -> Result<()> {
+    let ip: IpAddr = target
+        .address
+        .parse()
+        .map_err(|_| anyhow::anyhow!("invalid OSC address '{}'", target.address))?;
+    if target.port == 0 {
+        anyhow::bail!("OSC port 0 is not valid");
+    }
+    let bytes = encode_osc(&target.path, target.arg.as_deref())?;
+    transport
+        .send_to(bytes, SocketAddr::new(ip, target.port))
+        .await?;
+    Ok(())
+}
+
+/// Fire an OSC message to an external target (e.g. QLab). Used by the UI's
+/// dual-action macro (the macro sends its Patch message *and* this OSC packet).
+pub async fn send_osc_macro(
+    address: String,
+    port: u16,
+    path: String,
+    arg: Option<String>,
+) -> Result<()> {
+    let target = OscTarget {
+        address,
+        port,
+        path,
+        arg,
+    };
+    dispatch_osc(&engine().transport, &target).await
 }
 
 /// Sends a message on a channel. Returns the message_id.
@@ -607,6 +646,23 @@ pub async fn adopt_channels(channels: Vec<Channel>) -> Result<u32> {
     Ok(engine().state.merge_channels(channels).await? as u32)
 }
 
+/// Validate an OSC macro target before storing it: address parses as an IP, port
+/// is non-zero, path is a valid OSC address (starts with '/').
+#[frb(ignore)]
+fn validate_osc(t: &OscTarget) -> Result<()> {
+    t.address
+        .parse::<IpAddr>()
+        .map_err(|_| anyhow::anyhow!("invalid OSC address '{}'", t.address))?;
+    if t.port == 0 {
+        anyhow::bail!("OSC port 0 is not valid");
+    }
+    if !t.path.starts_with('/') {
+        anyhow::bail!("OSC path must start with '/'");
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
 pub async fn upsert_macro(
     channel_id: String,
     label: String,
@@ -615,10 +671,14 @@ pub async fn upsert_macro(
     key_binding: Option<String>,
     midi_note: Option<u8>,
     midi_cc: Option<u8>,
+    osc: Option<OscTarget>,
 ) -> Result<()> {
     let label = label.trim().to_string();
     if label.is_empty() {
         anyhow::bail!("label must be non-empty");
+    }
+    if let Some(o) = &osc {
+        validate_osc(o)?;
     }
     engine()
         .state
@@ -631,6 +691,7 @@ pub async fn upsert_macro(
                 priority,
                 midi_note,
                 midi_cc,
+                osc,
             },
         )
         .await
@@ -653,6 +714,7 @@ pub async fn reorder_macros(channel_id: String, ordered_labels: Vec<String>) -> 
 // Shown on every channel's macro panel; fired on the currently-selected
 // channel(s) by the UI. Stored on the config, surfaced via `ConfigSnapshot`.
 
+#[allow(clippy::too_many_arguments)]
 pub async fn upsert_global_macro(
     label: String,
     payload: String,
@@ -660,10 +722,14 @@ pub async fn upsert_global_macro(
     key_binding: Option<String>,
     midi_note: Option<u8>,
     midi_cc: Option<u8>,
+    osc: Option<OscTarget>,
 ) -> Result<()> {
     let label = label.trim().to_string();
     if label.is_empty() {
         anyhow::bail!("label must be non-empty");
+    }
+    if let Some(o) = &osc {
+        validate_osc(o)?;
     }
     engine()
         .state
@@ -677,6 +743,7 @@ pub async fn upsert_global_macro(
             // `set_selected_channels` (pushed from Flutter).
             midi_note,
             midi_cc,
+            osc,
         })
         .await
 }

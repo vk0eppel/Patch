@@ -64,4 +64,24 @@ pub struct MacroMessage {
     /// value ≥ 64, i.e. a footswitch "press").
     #[serde(default)]
     pub midi_cc: Option<u8>,
+    /// Optional outbound OSC target — when the macro fires, Patch *also* sends this
+    /// OSC message to external gear, alongside the normal Patch channel message.
+    #[serde(default)]
+    pub osc: Option<OscTarget>,
+}
+
+/// An outbound OSC target attached to a macro (dual action — fired alongside the
+/// Patch message). Lets a macro trigger QLab cues, Companion buttons, vMix
+/// overlays, etc. from the same button/key/MIDI that messages the crew.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OscTarget {
+    /// Destination IP address (e.g. "192.168.1.50").
+    pub address: String,
+    /// Destination UDP port (e.g. 53000 for QLab).
+    pub port: u16,
+    /// OSC address path, must start with '/' (e.g. "/cue/1/start").
+    pub path: String,
+    /// Optional single string argument.
+    #[serde(default)]
+    pub arg: Option<String>,
 }

@@ -144,7 +144,18 @@ For end-user documentation (getting started, networking, OSC integration, troubl
 
 ## OSC Integration
 
-Patch listens on UDP port 9000 (configurable). Send a standard OSC message to it from any device on the LAN:
+Patch listens on UDP port 9000 (configurable).
+
+**Post a message — the easy way (QLab, Companion, scripts):**
+
+```
+/patch/channel/rf/say   "Battery low — swap now"   3
+                        └ message text (string)     └ priority (int, optional; default 1/info)
+```
+
+Patch fills in the sender, a fresh message id, and the timestamp for you — so you just send the text (and optionally a priority `0`–`3`). The node that receives it posts the message to the whole crew. No UUIDs, no per-send bookkeeping; fire it as often as you like.
+
+**Full message form** (Patch-to-Patch, or scripts that can generate UUIDs):
 
 ```
 /patch/channel/rf/message  <sender_id> <sender_name> <message_id> <timestamp_ms> <priority> <payload>
@@ -207,6 +218,8 @@ label = "Monitor World"
 - [x] Configurable flash pulse count — 3–7 globally (default 4), per-channel override
 - [x] F-key bindings for macros (F1–F12, fires from any focus state)
 - [x] MIDI-triggered macros — bind a macro to a Note/CC (footswitch/pad), fired hands-free; per-channel macros fire on their own channel, global on the selected channel (desktop)
+- [x] Virtual MIDI port — Patch appears as a "Patch" MIDI destination so other software (DAW, Companion…) can trigger macros with no hardware (macOS/Linux)
+- [x] OSC macros — a macro can also fire an OSC message to external gear (QLab/Companion/vMix) when pressed, alongside the crew message (dual action)
 - [x] Platform data directory (`~/Library/Application Support/Patch/`, `%APPDATA%\Patch\`, etc.) with legacy `./patch.toml` migration
 - [x] iOS / macOS Local Network permission strings in Info.plist (`NSLocalNetworkUsageDescription` + `NSBonjourServices`)
 - [x] Settings screen — static peer management via UI (add/remove peers by address + port + label)

@@ -1000,6 +1000,7 @@ mod tests {
                 priority: 1,
                 midi_note: None,
                 midi_cc: None,
+                osc: None,
             })
             .collect();
         st.upsert_channel(ch).await;
@@ -1045,6 +1046,7 @@ mod tests {
             priority: 1,
             midi_note: None,
             midi_cc: None,
+            osc: None,
         };
         let labels = |c: &Config| {
             c.global_macros
@@ -1064,6 +1066,7 @@ mod tests {
             priority: 2,
             midi_note: None,
             midi_cc: None,
+            osc: None,
         })
         .await
         .unwrap();
@@ -1116,6 +1119,7 @@ mod tests {
             priority: 1,
             midi_note: None,
             midi_cc: None,
+            osc: None,
         })
         .await
         .unwrap();
@@ -1225,6 +1229,7 @@ mod tests {
             priority: 1,
             midi_note: None,
             midi_cc: None,
+            osc: None,
         }];
         st.upsert_channel(existing).await;
 

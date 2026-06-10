@@ -71,7 +71,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -365620320;
+  int get rustContentHash => 741005591;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -169,6 +169,13 @@ abstract class RustLibApi extends BaseApi {
     required int priority,
   });
 
+  Future<void> crateApiSendOscMacro({
+    required String address,
+    required int port,
+    required String path,
+    String? arg,
+  });
+
   Future<void> crateApiSetAudibleAlert({required bool enabled});
 
   Future<void> crateApiSetChannelFlash({
@@ -213,6 +220,7 @@ abstract class RustLibApi extends BaseApi {
     String? keyBinding,
     int? midiNote,
     int? midiCc,
+    OscTarget? osc,
   });
 
   Future<void> crateApiUpsertMacro({
@@ -223,6 +231,7 @@ abstract class RustLibApi extends BaseApi {
     String? keyBinding,
     int? midiNote,
     int? midiCc,
+    OscTarget? osc,
   });
 }
 
@@ -1100,6 +1109,44 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  Future<void> crateApiSendOscMacro({
+    required String address,
+    required int port,
+    required String path,
+    String? arg,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(address, serializer);
+          sse_encode_u_16(port, serializer);
+          sse_encode_String(path, serializer);
+          sse_encode_opt_String(arg, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 30,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiSendOscMacroConstMeta,
+        argValues: [address, port, path, arg],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSendOscMacroConstMeta => const TaskConstMeta(
+    debugName: "send_osc_macro",
+    argNames: ["address", "port", "path", "arg"],
+  );
+
+  @override
   Future<void> crateApiSetAudibleAlert({required bool enabled}) {
     return handler.executeNormal(
       NormalTask(
@@ -1109,7 +1156,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 30,
+            funcId: 31,
             port: port_,
           );
         },
@@ -1147,7 +1194,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 31,
+            funcId: 32,
             port: port_,
           );
         },
@@ -1177,7 +1224,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 32,
+            funcId: 33,
             port: port_,
           );
         },
@@ -1205,7 +1252,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 33,
+            funcId: 34,
             port: port_,
           );
         },
@@ -1233,7 +1280,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 34,
+            funcId: 35,
             port: port_,
           );
         },
@@ -1263,7 +1310,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 35,
+            funcId: 36,
             port: port_,
           );
         },
@@ -1293,7 +1340,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 36,
+            funcId: 37,
             port: port_,
           );
         },
@@ -1323,7 +1370,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 37,
+            funcId: 38,
             port: port_,
           );
         },
@@ -1351,7 +1398,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 38,
+            funcId: 39,
             port: port_,
           );
         },
@@ -1381,7 +1428,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 39,
+            funcId: 40,
             port: port_,
           );
         },
@@ -1409,7 +1456,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 40,
+            funcId: 41,
             port: port_,
           );
         },
@@ -1439,7 +1486,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 41,
+            funcId: 42,
             port: port_,
           );
         },
@@ -1469,7 +1516,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 42,
+              funcId: 43,
               port: port_,
             );
           },
@@ -1505,7 +1552,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 43,
+            funcId: 44,
             port: port_,
           );
         },
@@ -1533,6 +1580,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     String? keyBinding,
     int? midiNote,
     int? midiCc,
+    OscTarget? osc,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1544,10 +1592,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_opt_String(keyBinding, serializer);
           sse_encode_opt_box_autoadd_u_8(midiNote, serializer);
           sse_encode_opt_box_autoadd_u_8(midiCc, serializer);
+          sse_encode_opt_box_autoadd_osc_target(osc, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 44,
+            funcId: 45,
             port: port_,
           );
         },
@@ -1556,7 +1605,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiUpsertGlobalMacroConstMeta,
-        argValues: [label, payload, priority, keyBinding, midiNote, midiCc],
+        argValues: [
+          label,
+          payload,
+          priority,
+          keyBinding,
+          midiNote,
+          midiCc,
+          osc,
+        ],
         apiImpl: this,
       ),
     );
@@ -1571,6 +1628,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       "keyBinding",
       "midiNote",
       "midiCc",
+      "osc",
     ],
   );
 
@@ -1583,6 +1641,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     String? keyBinding,
     int? midiNote,
     int? midiCc,
+    OscTarget? osc,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1595,10 +1654,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_opt_String(keyBinding, serializer);
           sse_encode_opt_box_autoadd_u_8(midiNote, serializer);
           sse_encode_opt_box_autoadd_u_8(midiCc, serializer);
+          sse_encode_opt_box_autoadd_osc_target(osc, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 45,
+            funcId: 46,
             port: port_,
           );
         },
@@ -1615,6 +1675,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           keyBinding,
           midiNote,
           midiCc,
+          osc,
         ],
         apiImpl: this,
       ),
@@ -1631,6 +1692,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       "keyBinding",
       "midiNote",
       "midiCc",
+      "osc",
     ],
   );
 
@@ -1682,6 +1744,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ChannelFlash dco_decode_box_autoadd_channel_flash(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_channel_flash(raw);
+  }
+
+  @protected
+  OscTarget dco_decode_box_autoadd_osc_target(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_osc_target(raw);
   }
 
   @protected
@@ -1843,8 +1911,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MacroMessage dco_decode_macro_message(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6)
-      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return MacroMessage(
       label: dco_decode_String(arr[0]),
       payload: dco_decode_String(arr[1]),
@@ -1852,6 +1920,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       priority: dco_decode_i_32(arr[3]),
       midiNote: dco_decode_opt_box_autoadd_u_8(arr[4]),
       midiCc: dco_decode_opt_box_autoadd_u_8(arr[5]),
+      osc: dco_decode_opt_box_autoadd_osc_target(arr[6]),
     );
   }
 
@@ -1868,9 +1937,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  OscTarget? dco_decode_opt_box_autoadd_osc_target(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_osc_target(raw);
+  }
+
+  @protected
   int? dco_decode_opt_box_autoadd_u_8(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_u_8(raw);
+  }
+
+  @protected
+  OscTarget dco_decode_osc_target(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return OscTarget(
+      address: dco_decode_String(arr[0]),
+      port: dco_decode_u_16(arr[1]),
+      path: dco_decode_String(arr[2]),
+      arg: dco_decode_opt_String(arr[3]),
+    );
   }
 
   @protected
@@ -2124,6 +2213,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  OscTarget sse_decode_box_autoadd_osc_target(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_osc_target(deserializer));
+  }
+
+  @protected
   PatchMessage sse_decode_box_autoadd_patch_message(
     SseDeserializer deserializer,
   ) {
@@ -2357,6 +2452,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_priority = sse_decode_i_32(deserializer);
     var var_midiNote = sse_decode_opt_box_autoadd_u_8(deserializer);
     var var_midiCc = sse_decode_opt_box_autoadd_u_8(deserializer);
+    var var_osc = sse_decode_opt_box_autoadd_osc_target(deserializer);
     return MacroMessage(
       label: var_label,
       payload: var_payload,
@@ -2364,6 +2460,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       priority: var_priority,
       midiNote: var_midiNote,
       midiCc: var_midiCc,
+      osc: var_osc,
     );
   }
 
@@ -2390,6 +2487,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  OscTarget? sse_decode_opt_box_autoadd_osc_target(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_osc_target(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   int? sse_decode_opt_box_autoadd_u_8(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -2398,6 +2508,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     } else {
       return null;
     }
+  }
+
+  @protected
+  OscTarget sse_decode_osc_target(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_address = sse_decode_String(deserializer);
+    var var_port = sse_decode_u_16(deserializer);
+    var var_path = sse_decode_String(deserializer);
+    var var_arg = sse_decode_opt_String(deserializer);
+    return OscTarget(
+      address: var_address,
+      port: var_port,
+      path: var_path,
+      arg: var_arg,
+    );
   }
 
   @protected
@@ -2677,6 +2802,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_osc_target(
+    OscTarget self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_osc_target(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_patch_message(
     PatchMessage self,
     SseSerializer serializer,
@@ -2872,6 +3006,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.priority, serializer);
     sse_encode_opt_box_autoadd_u_8(self.midiNote, serializer);
     sse_encode_opt_box_autoadd_u_8(self.midiCc, serializer);
+    sse_encode_opt_box_autoadd_osc_target(self.osc, serializer);
   }
 
   @protected
@@ -2895,6 +3030,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_osc_target(
+    OscTarget? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_osc_target(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_u_8(int? self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -2902,6 +3050,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     if (self != null) {
       sse_encode_box_autoadd_u_8(self, serializer);
     }
+  }
+
+  @protected
+  void sse_encode_osc_target(OscTarget self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.address, serializer);
+    sse_encode_u_16(self.port, serializer);
+    sse_encode_String(self.path, serializer);
+    sse_encode_opt_String(self.arg, serializer);
   }
 
   @protected

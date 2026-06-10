@@ -223,6 +223,7 @@ pub fn default_global_macros() -> Vec<MacroMessage> {
         priority,
         midi_note: None,
         midi_cc: None,
+        osc: None,
     };
     vec![
         g("COPY", "Copy", 1, Some("F1")),
