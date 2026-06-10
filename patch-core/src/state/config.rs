@@ -188,12 +188,15 @@ fn whoami() -> String {
 }
 
 pub fn default_channels() -> Vec<Channel> {
+    // Colours are spread around the hue wheel — red · amber · green · blue ·
+    // purple — so every channel dot/tab is easily told apart at a glance (the old
+    // red/deep-orange and teal/green pairs were too close).
     let specs = [
-        ("audio", "AUDIO", "#E53935"),
-        ("rf", "RF", "#1E88E5"),
-        ("lighting", "LIGHTING", "#F4511E"),
-        ("video", "VIDEO", "#00897B"),
-        ("stage", "STAGE", "#43A047"),
+        ("audio", "AUDIO", "#E53935"),       // red
+        ("rf", "RF", "#1E88E5"),             // blue
+        ("lighting", "LIGHTING", "#FFB300"), // amber
+        ("video", "VIDEO", "#8E24AA"),       // purple
+        ("stage", "STAGE", "#43A047"),       // green
     ];
 
     // Channels start with **no** per-channel macros — the common cross-channel

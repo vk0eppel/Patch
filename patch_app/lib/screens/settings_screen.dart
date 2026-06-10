@@ -1584,14 +1584,14 @@ class _MacroRow extends StatelessWidget {
 // Default channel palette — matches `default_channels()` in patch-core's
 // state/config.rs, plus a few extras for variety.
 const List<Color> _channelPalette = [
-  Color(0xFFE53935), // red       (FOH default)
-  Color(0xFFF4511E), // deep-orange (LIGHTING default)
-  Color(0xFFFFB300), // amber     (PRODUCTION default)
+  Color(0xFFE53935), // red       (AUDIO default)
+  Color(0xFFFFB300), // amber     (LIGHTING default)
   Color(0xFF43A047), // green     (STAGE default)
-  Color(0xFF00897B), // teal      (VIDEO default)
   Color(0xFF1E88E5), // blue      (RF default)
+  Color(0xFF8E24AA), // purple    (VIDEO default)
+  Color(0xFFF4511E), // deep-orange
+  Color(0xFF00897B), // teal
   Color(0xFF3949AB), // indigo
-  Color(0xFF8E24AA), // purple    (MON default)
   Color(0xFFD81B60), // pink
   Color(0xFF607D8B), // blue-grey (fallback for new channels)
 ];

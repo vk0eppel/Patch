@@ -19,6 +19,12 @@ class PatchTheme {
   static const warning       = Color(0xFFFFB300); // amber
   static const success       = Color(0xFF43A047); // green
 
+  /// The synthetic ALL / crew-wide broadcast tab. Neutral light-grey on purpose —
+  /// ALL isn't a department, and a real colour (the old accent blue) clashed with
+  /// the RF channel. Softer than pure white so it doesn't glare next to the vivid
+  /// channel dots. Used for the ALL tab dot, its header label, and the broadcast flash.
+  static const broadcast     = Color(0xFFCCCCCC); // soft light-grey
+
   // ── Layout ────────────────────────────────────────────────────────────────
   /// Unified header height for all top-of-screen sections (channel strip logo,
   /// message area header, shortcuts panel, peers panel).

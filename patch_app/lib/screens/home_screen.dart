@@ -488,13 +488,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Flash for a broadcast (`__all__`): pulses the ALL tab and always flashes the
   /// message area (a broadcast is visible in whatever view the operator is in),
-  /// in the accent colour.
+  /// in the neutral broadcast (white) colour.
   void _triggerBroadcastFlash() {
     _playAlert();
     setState(() {
       _flashCounts[kAllChannelId] = (_flashCounts[kAllChannelId] ?? 0) + 1;
       _flashNotify++;
-      _flashColor = PatchTheme.accent;
+      _flashColor = PatchTheme.broadcast;
       _flashPulseCount = _globalFlashCount;
     });
   }
@@ -656,7 +656,7 @@ class _ChannelStrip extends StatelessWidget {
               channel: const PatchChannel(
                 id: kAllChannelId,
                 displayName: 'ALL',
-                color: PatchTheme.accent,
+                color: PatchTheme.broadcast, // neutral white — not a department
               ),
               isSelected: selectedIds.contains(kAllChannelId),
               flashCount: flashCounts[kAllChannelId] ?? 0,
@@ -860,7 +860,7 @@ class _ChannelView extends StatelessWidget {
                   child: Text(
                     'ALL CHANNELS',
                     style: TextStyle(
-                      color: PatchTheme.accent,
+                      color: PatchTheme.broadcast,
                       fontSize: PatchTheme.fontSizeLarge,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 1.2,
