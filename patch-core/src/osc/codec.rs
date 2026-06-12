@@ -82,6 +82,21 @@ pub fn encode_dm(msg: &PatchMessage, target_id: Uuid) -> Result<Vec<u8>> {
     rosc::encoder::encode(&OscPacket::Message(osc)).context("Failed to encode /patch/dm")
 }
 
+/// Encode a direct flash (attention ping) to one peer. `target_id` is the
+/// recipient's peer id; the flash's `channel_id` is *not* sent — the receiver
+/// derives `dm:{sender_id}` locally (mirroring [`encode_dm`]).
+pub fn encode_dm_flash(flash: &ChannelFlash, target_id: Uuid) -> Result<Vec<u8>> {
+    let osc = OscMessage {
+        addr: addresses::DM_FLASH.to_string(),
+        args: vec![
+            OscType::String(flash.sender_id.to_string()),
+            OscType::String(flash.sender_name.clone()),
+            OscType::String(target_id.to_string()),
+        ],
+    };
+    rosc::encoder::encode(&OscPacket::Message(osc)).context("Failed to encode /patch/dm/flash")
+}
+
 /// Encode a departure announcement (sent on graceful shutdown).
 pub fn encode_bye(peer_id: Uuid) -> Result<Vec<u8>> {
     let osc = OscMessage {
@@ -174,6 +189,13 @@ pub enum PatchEvent {
         msg: PatchMessage,
         target_id: Uuid,
     },
+    /// A direct flash/attention ping addressed to `target_id`. The receiver
+    /// flashes its `dm:{sender_id}` thread.
+    DirectFlash {
+        sender_id: Uuid,
+        sender_name: String,
+        target_id: Uuid,
+    },
     /// Simple external-OSC message injection (e.g. from QLab/Companion) — the
     /// receiving node fills in sender/id/timestamp and posts it. Args: payload
     /// (string) + optional priority (int, default info).
@@ -217,6 +239,8 @@ fn decode_message(msg: OscMessage) -> Result<PatchEvent> {
         addresses::PRESENCE => decode_presence(msg),
         addresses::BYE => decode_bye(msg),
         addresses::DM => decode_dm(msg),
+        // Must precede the generic `.../flash` arm — /patch/dm/flash also ends "/flash".
+        addresses::DM_FLASH => decode_dm_flash(msg),
         addresses::CHANNELS_REQUEST => decode_channels_request(msg),
         addresses::CHANNELS_ANNOUNCE => decode_channels_announce(msg),
         addr if addr.ends_with("/flash") => decode_flash(msg),
@@ -354,6 +378,18 @@ fn decode_dm(msg: OscMessage) -> Result<PatchEvent> {
     Ok(PatchEvent::DirectMessage {
         msg: pmsg,
         target_id,
+    })
+}
+
+fn decode_dm_flash(msg: OscMessage) -> Result<PatchEvent> {
+    let args = msg.args;
+    if args.len() < 3 {
+        bail!("Expected 3 args for /patch/dm/flash, got {}", args.len());
+    }
+    Ok(PatchEvent::DirectFlash {
+        sender_id: parse_uuid(&args[0])?,
+        sender_name: parse_string(&args[1])?,
+        target_id: parse_uuid(&args[2])?,
     })
 }
 
@@ -643,6 +679,35 @@ mod tests {
             }
             other => panic!("expected DirectMessage, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn dm_flash_round_trip() {
+        let f = ChannelFlash {
+            channel_id: "ignored-on-the-wire".into(),
+            sender_id: Uuid::new_v4(),
+            sender_name: "FOH".into(),
+        };
+        let target = Uuid::new_v4();
+        let bytes = encode_dm_flash(&f, target).unwrap();
+        match decode_packet(&bytes).unwrap() {
+            PatchEvent::DirectFlash {
+                sender_id,
+                sender_name,
+                target_id,
+            } => {
+                assert_eq!(sender_id, f.sender_id);
+                assert_eq!(sender_name, "FOH");
+                assert_eq!(target_id, target);
+            }
+            other => panic!("expected DirectFlash, got {:?}", other),
+        }
+        // Too few args must bail, not panic.
+        assert!(decode_message(OscMessage {
+            addr: addresses::DM_FLASH.to_string(),
+            args: vec![OscType::String(Uuid::new_v4().to_string())],
+        })
+        .is_err());
     }
 
     #[test]

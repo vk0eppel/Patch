@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::osc::codec::{
     decode_packet, encode_ack, encode_channels_announce, encode_message, PatchEvent,
 };
-use crate::osc::types::{PatchMessage, PeerPresence};
+use crate::osc::types::{ChannelFlash, PatchMessage, PeerPresence};
 use crate::reliability::ReliabilityManager;
 use crate::state::channel::Channel;
 use crate::state::{AppEvent, AppState, Config};
@@ -281,6 +281,7 @@ async fn handle_event(
         PatchEvent::Presence(p) => Some(p.peer_id),
         PatchEvent::Flash(f) => Some(f.sender_id),
         PatchEvent::DirectMessage { msg, .. } => Some(msg.sender_id),
+        PatchEvent::DirectFlash { sender_id, .. } => Some(*sender_id),
         _ => None,
     };
     if let Some(id) = sender_id {
@@ -342,6 +343,40 @@ async fn handle_event(
             }
             // msg.channel_id is already `dm:{sender_id}` (set by decode_dm).
             state.store_message(msg).await;
+        }
+        PatchEvent::DirectFlash {
+            sender_id,
+            sender_name,
+            target_id,
+        } => {
+            // Only accept pings addressed to us (unicast — defensive check).
+            if target_id != client_id {
+                return;
+            }
+            // Auto-register the sender so the DM thread + peers panel show them.
+            if !state.has_peer(sender_id).await {
+                let presence = PeerPresence {
+                    peer_id: sender_id,
+                    peer_name: sender_name.clone(),
+                    channels: Vec::new(),
+                    role: None,
+                    timestamp: Utc::now(),
+                };
+                state.upsert_peer(presence).await;
+                state
+                    .touch_peer_address(sender_id, from.ip().to_string(), from.port())
+                    .await;
+            }
+            // Flash our DM thread with the sender (keyed by the *other* peer,
+            // exactly like an inbound DM). The id is built locally, so it never
+            // passes through valid_channel_id (which rejects `dm:` keys).
+            state
+                .publish(AppEvent::ChannelFlash(ChannelFlash {
+                    channel_id: format!("dm:{}", sender_id),
+                    sender_id,
+                    sender_name,
+                }))
+                .await;
         }
         PatchEvent::Ack {
             message_id,

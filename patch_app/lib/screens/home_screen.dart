@@ -148,6 +148,38 @@ class _HomeScreenState extends State<HomeScreen> {
     return 'Unknown';
   }
 
+  /// Whether the open DM peer looks offline — no resolved address, or not heard
+  /// from within the peers-panel "offline" window (beyond 5× the heartbeat, the
+  /// same threshold as the grey dot). DMs are best-effort with no delivery
+  /// receipt, so we warn before one that probably won't arrive.
+  bool get _isDmPeerOffline {
+    final id = _dmPeerId;
+    if (id == null) return false;
+    final peer = _peers
+        .cast<PeerInfo?>()
+        .firstWhere((p) => p?.peerId == id, orElse: () => null);
+    if (peer == null || peer.address.isEmpty) return true;
+    return DateTime.now().difference(peer.lastSeen).inSeconds >
+        _heartbeatSecs * 5;
+  }
+
+  /// Warn (once) when a DM has just been sent to a peer that appears offline.
+  /// The message is still stored locally and sent best-effort, but the recipient
+  /// may never receive it. Called after every DM send — typed, macro, or flash.
+  void _warnIfDmPeerOffline() {
+    if (!_isDmMode || !_isDmPeerOffline || !mounted) return;
+    final name = _dmPeerName(_dmPeerId!);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('$name appears offline — they may not receive this DM'),
+          backgroundColor: PatchTheme.warning,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+  }
+
   /// Messages for the current view, merged and sorted by timestamp. In ALL mode
   /// that's every channel's traffic (but not DM threads); in DM mode the one
   /// thread; otherwise the selected channels plus any broadcasts (`__all__`).
@@ -205,6 +237,7 @@ class _HomeScreenState extends State<HomeScreen> {
         payload: cm.macro.payload,
         priority: cm.macro.priority,
       );
+      _warnIfDmPeerOffline();
     } else if (cm.channelId.isEmpty) {
       final targets = _isAllMode ? [kAllChannelId] : _selectedIds.toList();
       for (final id in targets) {
@@ -357,8 +390,13 @@ class _HomeScreenState extends State<HomeScreen> {
         });
         // Flash if global OR per-channel flag is set.
         if (msg.channelId.startsWith('dm:')) {
-          // DMs don't flash — mark the thread unread unless it's the one in view.
-          if (!_selectedIds.contains(msg.channelId)) {
+          // A plain DM is a silent unread dot, but a *critical* DM flashes too
+          // (honouring the global flash-on-critical flag) — same attention
+          // treatment as a direct ping. _triggerDmFlash also sets the unread dot
+          // when the thread isn't in view, so it covers the non-critical case.
+          if (_flashOnCritical && msg.isCritical) {
+            _triggerDmFlash(msg.channelId);
+          } else if (!_selectedIds.contains(msg.channelId)) {
             setState(() => _unreadDms.add(msg.channelId));
           }
         } else if (msg.channelId == kAllChannelId) {
@@ -423,6 +461,8 @@ class _HomeScreenState extends State<HomeScreen> {
         final chId = event['data']['channel_id'] as String;
         if (chId == kAllChannelId) {
           _triggerBroadcastFlash();
+        } else if (chId.startsWith('dm:')) {
+          _triggerDmFlash(chId);
         } else {
           _triggerFlash(chId);
         }
@@ -561,6 +601,26 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  /// Flash for a **direct** ping (`dm:{peer}`). Unlike a plain DM (silent unread
+  /// dot), a direct flash plays the alert sound and pulses the message area when
+  /// the thread is in view — a deliberate "look at me" from one person. The DM
+  /// tab is opened (so it appears even with no prior message) and marked unread
+  /// when the thread isn't the one being viewed.
+  void _triggerDmFlash(String dmKey) {
+    final peerId = dmKey.substring(3);
+    _playAlert();
+    setState(() {
+      _openDms.add(peerId); // ensure the tab exists even on a first-ever ping
+      if (_selectedIds.contains(dmKey)) {
+        _flashNotify++;
+        _flashColor = PatchTheme.accent;
+        _flashPulseCount = _globalFlashCount;
+      } else {
+        _unreadDms.add(dmKey);
+      }
+    });
+  }
+
   // ── Channel selection ───────────────────────────────────────────────────────
 
   /// Tap — toggle channel in/out of selection. At least one channel stays selected.
@@ -667,6 +727,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     isDmMode: _isDmMode,
                     dmPeerId: _dmPeerId,
                     dmPeerName: _dmPeerId == null ? null : _dmPeerName(_dmPeerId!),
+                    onDmSent: _warnIfDmPeerOffline,
                     messages: _combinedMessages,
                     channelColors: _channelColors,
                     delivery: _delivery,
@@ -913,6 +974,10 @@ class _ChannelView extends StatelessWidget {
   final bool isDmMode;
   final String? dmPeerId;
   final String? dmPeerName;
+
+  /// Called by the parent after a DM is sent (typed or flash) so it can warn
+  /// when the recipient looks offline — the parent owns the peer list + context.
+  final VoidCallback onDmSent;
   final List<PatchMessage> messages;
   final Map<String, Color> channelColors; // empty when single channel
   final Map<String, MessageDeliveryStatus> delivery;
@@ -933,6 +998,7 @@ class _ChannelView extends StatelessWidget {
     required this.isDmMode,
     required this.dmPeerId,
     required this.dmPeerName,
+    required this.onDmSent,
     required this.messages,
     required this.channelColors,
     required this.delivery,
@@ -953,6 +1019,7 @@ class _ChannelView extends StatelessWidget {
   void _sendMessage(String text) {
     if (isDmMode) {
       bridge.sendDirectMessage(peerId: dmPeerId!, payload: text);
+      onDmSent();
     } else if (isAllMode) {
       bridge.sendMessage(channelId: kAllChannelId, payload: text); // one broadcast
     } else {
@@ -963,7 +1030,11 @@ class _ChannelView extends StatelessWidget {
   }
 
   void _sendFlash() {
-    if (isAllMode) {
+    if (isDmMode) {
+      // Direct attention ping — unicast only to this peer.
+      bridge.sendDmFlash(dmPeerId!);
+      onDmSent();
+    } else if (isAllMode) {
       bridge.sendFlash(kAllChannelId);
     } else {
       for (final ch in selectedChannels) {

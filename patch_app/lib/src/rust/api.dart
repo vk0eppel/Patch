@@ -69,6 +69,13 @@ Future<String> sendDirectMessage({
 Future<void> sendFlash({required String channelId}) =>
     RustLib.instance.api.crateApiSendFlash(channelId: channelId);
 
+/// Send a direct flash/attention ping to one peer. Unicast **only** to that peer
+/// (never broadcast); the recipient's DM thread with us flashes. Locally we flash
+/// our own `dm:{peer}` thread so the sender sees the ping land too. Best-effort
+/// (no ACK/retransmit), mirroring `send_direct_message`.
+Future<void> sendDmFlash({required String peerId}) =>
+    RustLib.instance.api.crateApiSendDmFlash(peerId: peerId);
+
 /// Announce departure so peers drop us promptly instead of waiting out the
 /// heartbeat timeout. Call from the Dart side when the app is closing. Sends a
 /// `/patch/bye` directly on the socket (bypassing the queue, so it flushes

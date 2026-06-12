@@ -205,10 +205,11 @@ label = "Monitor World"
 Sometimes you need a quiet word with one person, not the whole channel. Open the **peers panel** (the people icon), find the peer, and tap the **💬** button next to their name. A private thread opens, and a **💬 tab** for that person appears under **DIRECT** at the bottom of the channel sidebar.
 
 - Messages are sent **only** to that peer — never broadcast or shown to anyone else.
-- New direct messages show a small **red dot** on the person's DM tab (DMs don't flash the screen). The dot clears when you open the thread.
+- New direct messages show a small **red dot** on the person's DM tab. A normal-priority DM doesn't flash the screen; a **critical** DM does (it plays the alert and flashes the thread, following your global "Flash on critical messages" setting). The dot clears when you open the thread.
+- **Direct flash** — need their attention *now*? Press the **flash button** in the DM header. It sends a private attention ping to just that person: their Patch plays the alert sound and their DM thread flashes (or shows the red dot if they're looking elsewhere). Nobody else sees it.
 - A DM thread stays in the sidebar for the session. You can clear or export it with the same buttons as a channel.
 
-> DMs are best-effort and not stored to disk. There's no offline delivery — if the other person's Patch isn't running, they won't get it. The 💬 button only appears for live peers (not configured-only static peers).
+> DMs are best-effort and not stored to disk. There's no offline delivery — if the other person's Patch isn't running, they won't get it. If you send a DM (or a direct flash) to someone who appears **offline**, Patch shows an amber warning so you know it may not have landed — the message still stays in your thread. The 💬 button only appears for live peers (not configured-only static peers).
 
 ## Message history
 

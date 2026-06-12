@@ -20,7 +20,8 @@ use uuid::Uuid;
 
 use crate::discovery::Discovery;
 use crate::osc::codec::{
-    encode_bye, encode_channels_request, encode_dm, encode_flash, encode_message, encode_osc,
+    encode_bye, encode_channels_request, encode_dm, encode_dm_flash, encode_flash, encode_message,
+    encode_osc,
 };
 use crate::osc::types::{ChannelFlash, PatchMessage, Priority};
 use crate::reliability::ReliabilityManager;
@@ -348,6 +349,45 @@ pub async fn send_flash(channel_id: String) -> Result<()> {
     };
     let bytes = encode_flash(&flash)?;
     h.transport.send_to_peers(bytes, &h.state, &config).await?;
+    h.state.publish(AppEvent::ChannelFlash(flash)).await;
+    Ok(())
+}
+
+/// Send a direct flash/attention ping to one peer. Unicast **only** to that peer
+/// (never broadcast); the recipient's DM thread with us flashes. Locally we flash
+/// our own `dm:{peer}` thread so the sender sees the ping land too. Best-effort
+/// (no ACK/retransmit), mirroring `send_direct_message`.
+pub async fn send_dm_flash(peer_id: String) -> Result<()> {
+    let h = engine();
+    let target = Uuid::parse_str(&peer_id).map_err(|_| anyhow::anyhow!("invalid peer id"))?;
+    let config = h.state.config().await;
+    let flash = ChannelFlash {
+        // Local key: our thread with the target peer.
+        channel_id: format!("dm:{}", target),
+        sender_id: config.client_id,
+        sender_name: config.client_name.clone(),
+    };
+    let peer = h
+        .state
+        .get_peers()
+        .await
+        .into_iter()
+        .find(|p| p.peer_id == target)
+        .ok_or_else(|| anyhow::anyhow!("peer not found"))?;
+    if peer.has_address() {
+        if let Ok(ip) = peer.address.parse::<IpAddr>() {
+            let bytes = encode_dm_flash(&flash, target)?;
+            h.transport
+                .send_to(bytes, SocketAddr::new(ip, peer.osc_port))
+                .await?;
+        }
+    } else {
+        tracing::warn!(
+            "DM flash target {} has no address yet — local flash only",
+            target
+        );
+    }
+    // Fire the local flash so the sender sees their own ping (like send_flash).
     h.state.publish(AppEvent::ChannelFlash(flash)).await;
     Ok(())
 }

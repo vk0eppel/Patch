@@ -10,6 +10,9 @@ pub const BYE: &str = "/patch/bye";
 /// Direct (peer-to-peer) message — unicast to one peer. Args include a target_id
 /// so the recipient confirms it's addressed to them. Stored under a `dm:{peer}` key.
 pub const DM: &str = "/patch/dm";
+/// Direct flash/attention ping — unicast to one peer. Args: sender_id,
+/// sender_name, target_id. Flashes the recipient's DM thread (`dm:{sender}`).
+pub const DM_FLASH: &str = "/patch/dm/flash";
 /// Request a peer's full channel layout (unicast). Arg: requester peer_id.
 pub const CHANNELS_REQUEST: &str = "/patch/channels/request";
 /// Reply to a channels request (unicast). Args: peer_id, peer_name, channels JSON.

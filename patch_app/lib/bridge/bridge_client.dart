@@ -161,6 +161,16 @@ class BridgeClient {
     }
   }
 
+  /// Send a direct flash (attention ping) to one peer — unicast only; flashes
+  /// the recipient's DM thread with us (and our own thread locally).
+  Future<void> sendDmFlash(String peerId) async {
+    try {
+      await rust.sendDmFlash(peerId: peerId);
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
   Future<void> getChannels() async {
     try {
       final channels = await rust.getChannels();
