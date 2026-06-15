@@ -12,7 +12,7 @@ patch/
 │   ├── discovery/mod.rs    # mDNS + heartbeat loop
 │   ├── midi/mod.rs         # MIDI input (desktop only)
 │   ├── reliability/mod.rs  # ACK tracking, exponential-backoff retransmit
-│   └── state/              # AppState, Config, Channel, Peer, Session
+│   └── state/              # AppState, Config, Channel, Peer, ShowFile
 └── patch_app/lib/
     ├── bridge/bridge_client.dart  # Façade over FRB bindings
     ├── screens/home_screen.dart   # Main UI
@@ -85,7 +85,7 @@ DMs use a dedicated `/patch/dm` packet — not a channel message (`dm:` prefixed
 
 DMs are excluded from the ALL feed and `set_selected_channels`. Non-critical DMs produce a silent unread dot on the peer row; critical DMs call `_triggerDmFlash`. Firing a macro in DM mode sends its text as a DM. No ACK/retransmit for DMs (best-effort).
 
-**DM navigation lives in the peers panel, not the channel strip.** Tapping a peer row opens their DM thread in the main message area. DM tabs never appear in the channel strip. Threads persist for the session — tapping a channel exits the DM view but the thread remains accessible by tapping the peer row again. Unread state is tracked per-peer and shown as a dot on the peer row; when the peers panel is closed, the peers toggle button in the header carries a badge instead. DMs are only available for real (dynamic) peers, not synthetic `ManualIp` entries.
+**DM navigation lives in the peers panel, not the channel strip.** Tapping a peer row opens their DM thread in the main message area. DM tabs never appear in the channel strip. Threads persist while the app is open — tapping a channel exits the DM view but the thread remains accessible by tapping the peer row again. Unread state is tracked per-peer and shown as a dot on the peer row; when the peers panel is closed, the peers toggle button in the header carries a badge instead. DMs are only available for real (dynamic) peers, not synthetic `ManualIp` entries.
 
 ## MIDI
 

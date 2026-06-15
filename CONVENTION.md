@@ -17,7 +17,7 @@ After editing `patch-core/src/api.rs`:
 
 All OSC encoding/decoding belongs in `patch-core/src/osc/codec.rs`. Add and test new packet types there first.
 
-`valid_channel_id` (`pub(crate)` in `codec.rs`) is the single source of truth for the channel slug rule (`[a-z0-9_-]`, ≤64 chars). Call it from `upsert_channel` and `apply_session` — never duplicate the check elsewhere.
+`valid_channel_id` (`pub(crate)` in `codec.rs`) is the single source of truth for the channel slug rule (`[a-z0-9_-]`, ≤64 chars). Call it from `upsert_channel` and `apply_show_file` — never duplicate the check elsewhere.
 
 `csv_escape` in `api.rs` neutralises formula injection (cells starting with `= + - @` get a `'` prefix). Apply to any network-sourced export data.
 

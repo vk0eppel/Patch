@@ -60,9 +60,9 @@ If the OSC beacon is also blocked (full broadcast filtering), use static peers.
 
 ## Peers disappear briefly then reappear
 
-Peers never auto-expire in Patch — they stay in the panel for the full session. If you see a peer disappear, it may be:
+Peers never auto-expire in Patch — they stay in the panel while the app is open. If you see a peer disappear, it may be:
 - A Patch restart on that device (the peer re-registers within one heartbeat)
-- A session load that replaced the channel list (peers are unaffected)
+- A show file load that replaced the channel list (peers are unaffected)
 
 If a peer's dot turns grey, it means no packet (message, flash, or heartbeat) has been received from them in the last 35 seconds — but the peer is still remembered and will turn green again as soon as any packet arrives from them.
 
@@ -76,10 +76,10 @@ If a peer's name looks wrong, it will update on their next heartbeat.
 
 ---
 
-## Session won't load from file
+## Show file won't load from file
 
 - Ensure the file has a `.toml` extension.
-- The file must be a valid Patch session exported from Patch itself (or manually written to the [session format](channels-and-sessions.md#session-file-format)).
+- The file must be a valid Patch show file exported from Patch itself (or manually written to the [show file format](channels-and-show-files.md#show-file-format)).
 - On macOS (sandboxed app), you must select the file through the file picker — placing it in an arbitrary folder and typing the path won't work due to sandbox restrictions.
 - On iOS, the file must be accessible from the Files app (iCloud Drive, On My iPhone, etc.).
 

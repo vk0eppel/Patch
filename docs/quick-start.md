@@ -36,7 +36,7 @@ Channels are your departments: AUDIO, RF, LIGHTING, VIDEO, STAGE, etc. Each chan
 - **Tap** a channel tab to toggle it in or out of the view. Multiple channels can be active at once — their feeds are combined and sorted by time. At least one channel is always selected.
 - **ALL tab** (pinned at the top, 📢) — shows every channel's traffic combined, and anything you send from it is a **crew-wide broadcast**: it reaches everyone in whatever channel they're viewing, even channels you don't have. Use it for all-department calls ("HOLD ALL", "LUNCH", a show stop). Broadcast messages show a 📢 and appear in every channel's feed.
 
-The default channels are seeded on first run. Your production manager may load a custom session with show-specific channels before the gig — see [Channels & Sessions](channels-and-sessions.md).
+The default channels are seeded on first run. Your production manager may load a custom show file with show-specific channels before the gig — see [Channels & Show Files](channels-and-show-files.md).
 
 ---
 
@@ -80,10 +80,10 @@ Macros are configured in **Settings → Channels & Macros** — drag the **≡**
 
 ---
 
-## 7. Sessions
+## 7. Show Files
 
-A **session** is a saved snapshot of your channel layout (channels, macros, static peers). Your PM can prepare a session before the show and distribute it as a `.toml` file.
+A **show file** is a saved snapshot of your channel layout (channels, macros, static peers). Your PM can prepare one before the show and distribute it as a `.toml` file.
 
-To load a session: tap the **folder icon** in the left sidebar → **Load from file…** or select a named preset.
+To load a show file: tap the **folder icon** in the left sidebar → **Load from file…** or select a named preset.
 
-See [Channels & Sessions](channels-and-sessions.md) for more.
+See [Channels & Show Files](channels-and-show-files.md) for more.

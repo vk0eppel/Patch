@@ -1,4 +1,4 @@
-# Channels, Macros & Sessions
+# Channels, Macros & Show Files
 
 ---
 
@@ -47,7 +47,7 @@ Tap any channel row in **Settings → Channels & Macros** to open the editor. Yo
 
 ### Deleting a channel
 
-Swipe left on a channel row (iOS) or tap the delete icon. The channel and all its macros are removed. Messages already received are not deleted from the in-memory buffer for the current session.
+Swipe left on a channel row (iOS) or tap the delete icon. The channel and all its macros are removed. Messages already received are not deleted from the in-memory buffer while the app is open.
 
 ### Resetting to defaults
 
@@ -59,9 +59,9 @@ To get a new machine onto the crew's channel set quickly, tap the **cloud-downlo
 
 > Flash and alert preferences are **not** imported — they stay local to your machine. Adopted channels start with your own flash defaults (set in **Settings → Behavior**), so importing a layout can never change how your machine flashes or sounds. Adjust per-channel flash in the channel editor afterwards if you want.
 
-### Roles & channel dots in the peers panel
+### Role label in the peers panel
 
-Set an optional **role** (e.g. "FOH", "Monitors", "PM") in **Settings → Identity** — it shows as a small label next to your name on every other device's peers panel. Each peer row also shows small **colour dots** for the channels that peer is on (using your own channel colours), so you can see who covers what at a glance. Dots for a channel you don't have appear grey until you import that channel (see above).
+Set an optional **role** (e.g. "FOH", "Monitors", "PM") in **Settings → Identity** — it shows as a small badge next to your name on every other device's peers panel.
 
 ---
 
@@ -141,39 +141,39 @@ Flash pulse count shows **–** in the channel editor when the global value is i
 
 ---
 
-## Sessions
+## Show Files
 
-A **session** is a named snapshot of your full channel layout: channels, macros, and static peers. Use sessions to:
+A **show file** is a named snapshot of your full channel layout: channels, macros, and static peers. Use show files to:
 
 - Save and restore a show-specific configuration
 - Share a layout with the rest of the crew (export → send the `.toml` file)
 - Quickly switch between different show configurations
 
-### Opening the sessions panel
+### Opening the show files panel
 
 Tap the **folder icon** in the left sidebar (below the channel list).
 
-### Saving a session
+### Saving a show file
 
 1. Configure channels, macros, and static peers as needed.
-2. Open the sessions panel → tap **+ Save current layout**.
+2. Open the show files panel → tap **+ Save current layout**.
 3. Enter a name (e.g. "Festival Day 1") → Save.
 
-### Loading a session
+### Loading a show file
 
-Open the sessions panel → tap **Load** next to a saved session. The current channel layout **and static peers** are replaced immediately with the ones the session captured — so a layout distributed by your PM brings its known device IPs with it.
+Open the show files panel → tap **Load** next to a saved show file. The current channel layout **and static peers** are replaced immediately with the ones the show file captured — so a layout distributed by your PM brings its known device IPs with it.
 
 ### Importing from a file
 
-Tap **Load from file…** → select a `.toml` session file. Useful when the PM distributes a pre-built layout.
+Tap **Load from file…** → select a `.toml` show file. Useful when the PM distributes a pre-built layout.
 
 ### Exporting to a file
 
 Tap **Save to file…** → choose a save location. The current layout is written as a `.toml` file you can share or archive.
 
-### Session file format
+### Show file format
 
-Sessions are plain TOML — human-readable and easily version-controlled:
+Show files are plain TOML — human-readable and easily version-controlled:
 
 ```toml
 name = "Festival Day 1"
@@ -207,7 +207,7 @@ Sometimes you need a quiet word with one person, not the whole channel. Open the
 - Messages are sent **only** to that peer — never broadcast or shown to anyone else.
 - New direct messages show a small **red dot** on the person's DM tab. A normal-priority DM doesn't flash the screen; a **critical** DM does (it plays the alert and flashes the thread, following your global "Flash on critical messages" setting). The dot clears when you open the thread.
 - **Direct flash** — need their attention *now*? Press the **flash button** in the DM header. It sends a private attention ping to just that person: their Patch plays the alert sound and their DM thread flashes (or shows the red dot if they're looking elsewhere). Nobody else sees it.
-- A DM thread stays in the sidebar for the session. You can clear or export it with the same buttons as a channel.
+- A DM thread stays in the sidebar while the app is open. You can clear or export it with the same buttons as a channel.
 
 > DMs are best-effort and not stored to disk. There's no offline delivery — if the other person's Patch isn't running, they won't get it. If you send a DM (or a direct flash) to someone who appears **offline**, Patch shows an amber warning so you know it may not have landed — the message still stays in your thread. The 💬 button only appears for live peers (not configured-only static peers).
 
@@ -224,4 +224,4 @@ The save dialog pre-fills the filename as `patch_<channel>.csv`. Open the file i
 
 ### Clearing messages
 
-Tap the **🗑 (delete sweep) icon** next to the export button to clear the message buffer for the current channel(s). A confirmation dialog appears before anything is deleted. This only affects the in-memory buffer — nothing is stored to disk, so clearing is permanent for that session.
+Tap the **🗑 (delete sweep) icon** next to the export button to clear the message buffer for the current channel(s). A confirmation dialog appears before anything is deleted. This only affects the in-memory buffer — nothing is stored to disk, so clearing is permanent.

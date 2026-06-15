@@ -17,7 +17,7 @@ Patch is a real-time operational communication tool for live production teams (A
 
 ## Developer docs
 
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** — subsystem design: FFI bridge, OSC namespace, discovery, sessions, DMs, MIDI, reliability, config I/O
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — subsystem design: FFI bridge, OSC namespace, discovery, show files, DMs, MIDI, reliability, config I/O
 - **[ERRORS.md](ERRORS.md)** — proven mistakes and traps; read before touching transport, discovery, UI flash, or the bridge
 - **[CONVENTION.md](CONVENTION.md)** — coding conventions, CI requirements, patterns to follow
 
