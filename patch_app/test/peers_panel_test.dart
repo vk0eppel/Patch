@@ -1,6 +1,9 @@
-// Widget test for PeersPanel — focuses on the per-peer "last seen" line.
+// Widget tests for PeersPanel — name display, status dots, role badge, empty state.
 // Pure widget (no bridge/engine). PeersPanel runs a 3 s periodic timer, so each
 // test unmounts it at the end (pump an empty tree) to cancel that timer.
+//
+// Note: last-seen subtitle, IP address, and channel dots are intentionally omitted
+// from the redesigned panel (diagnostic clutter during a live show) — no tests for those.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -43,25 +46,11 @@ Widget _host(List<PeerInfo> peers) =>
     );
 
 void main() {
-  testWidgets('dynamic peer shows a relative "last seen"', (tester) async {
+  testWidgets('peer name is shown', (tester) async {
     await tester.pumpWidget(
-      _host([_peer(name: 'MON', mode: 'osc_beacon', seenAgo: const Duration(seconds: 30))]),
+      _host([_peer(name: 'MON', mode: 'osc_beacon')]),
     );
     expect(find.text('MON'), findsOneWidget);
-    expect(find.textContaining('ago'), findsOneWidget);
-    await tester.pumpWidget(const SizedBox()); // unmount → cancel the panel timer
-  });
-
-  testWidgets('a freshly-heard peer reads "now"', (tester) async {
-    await tester.pumpWidget(_host([_peer(name: 'FOH', mode: 'mdns')]));
-    expect(find.textContaining('now'), findsOneWidget);
-    await tester.pumpWidget(const SizedBox());
-  });
-
-  testWidgets('manual peer shows its address, not a relative time', (tester) async {
-    await tester.pumpWidget(_host([_peer(name: 'Booth', mode: 'manual_ip', address: '10.0.0.9')]));
-    expect(find.textContaining('ago'), findsNothing);
-    expect(find.textContaining('10.0.0.9'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
