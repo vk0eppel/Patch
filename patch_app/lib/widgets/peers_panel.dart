@@ -16,25 +16,25 @@ class PeersPanel extends StatefulWidget {
   /// (healthy ≤ 2×, amber ≤ 5×) so they track the configured interval.
   final int heartbeatSecs;
 
-  /// The viewer's own channel id → colour map. Each peer announces the channel
-  /// ids it's on (`PeerInfo.channels`); we render a colour dot per channel using
-  /// this map, so a channel the viewer doesn't have falls back to a grey dot.
-  final Map<String, Color> channelColors;
   final VoidCallback? onClearStale;
   final VoidCallback? onClose;
 
-  /// Open a direct-message thread with the given peer id (the 💬 button). Only
-  /// offered for real (dynamic) peers — not configured-only `ManualIp` entries,
-  /// whose id is a synthetic UUID that wouldn't reach a live Patch instance.
+  /// Open a direct-message thread with the given peer id. Only offered for real
+  /// (dynamic) peers — not configured-only `ManualIp` entries, whose id is a
+  /// synthetic UUID that wouldn't reach a live Patch instance.
   final ValueChanged<String>? onDm;
+
+  /// Peer ids that have an unread DM — shown as a dot on the peer row.
+  final Set<String> unreadPeerIds;
+
   const PeersPanel({
     super.key,
     required this.peers,
     this.heartbeatSecs = 7,
-    this.channelColors = const {},
     this.onClearStale,
     this.onClose,
     this.onDm,
+    this.unreadPeerIds = const {},
   });
 
   @override
@@ -89,13 +89,6 @@ class _PeersPanelState extends State<PeersPanel> {
                     ),
                   ),
                 ),
-                if (widget.onClearStale != null)
-                  IconButton(
-                    icon: const Icon(Icons.person_remove_outlined, size: 16),
-                    color: PatchTheme.textMuted,
-                    tooltip: 'Clear inactive peers',
-                    onPressed: widget.onClearStale,
-                  ),
               ],
             ),
           ),
@@ -114,11 +107,25 @@ class _PeersPanelState extends State<PeersPanel> {
                     itemBuilder: (ctx, i) => _PeerTile(
                       peer: widget.peers[i],
                       heartbeatSecs: widget.heartbeatSecs,
-                      channelColors: widget.channelColors,
                       onDm: widget.onDm,
+                      isUnread: widget.unreadPeerIds.contains(widget.peers[i].peerId),
                     ),
                   ),
           ),
+          if (widget.onClearStale != null) ...[
+            const Divider(color: PatchTheme.border, height: 1),
+            TextButton.icon(
+              onPressed: widget.onClearStale,
+              icon: const Icon(Icons.person_remove_outlined, size: 14),
+              label: const Text('Clear inactive'),
+              style: TextButton.styleFrom(
+                foregroundColor: PatchTheme.textMuted,
+                textStyle: const TextStyle(fontSize: 11),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                minimumSize: const Size(double.infinity, 0),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -128,28 +135,16 @@ class _PeersPanelState extends State<PeersPanel> {
 
 class _PeerTile extends StatelessWidget {
   final PeerInfo peer;
-
-  /// Presence heartbeat interval (s). Dot thresholds derive from it: healthy
-  /// ≤ 2× (one dropped beat tolerated), amber ≤ 5×, gray beyond. With the default
-  /// 7 s heartbeat that's the previous 14 s / 35 s, now tracking the interval.
   final int heartbeatSecs;
-
-  /// Viewer's channel id → colour map (see [PeersPanel.channelColors]).
-  final Map<String, Color> channelColors;
-
-  /// Open a DM with this peer (see [PeersPanel.onDm]).
   final ValueChanged<String>? onDm;
+  final bool isUnread;
 
   const _PeerTile({
     required this.peer,
     required this.heartbeatSecs,
-    this.channelColors = const {},
     this.onDm,
+    this.isUnread = false,
   });
-
-  /// Max channel dots rendered before collapsing the rest into a "+N" label,
-  /// so a peer on many channels can't overflow the narrow (160 px) panel.
-  static const int _kMaxChannelDots = 5;
 
   int get _healthySecs => heartbeatSecs * 2;
   int get _staleSecs => heartbeatSecs * 5;
@@ -157,8 +152,6 @@ class _PeerTile extends StatelessWidget {
   bool get _isManual =>
       peer.discoveryMode == 'manual_ip' || peer.discoveryMode == 'ManualIp';
 
-  /// Three-state health: green = healthy, amber = a heartbeat or more missed
-  /// (going quiet), gray = offline or a configured-only (ManualIp) peer.
   Color get _dotColor {
     if (_isManual) return PatchTheme.textMuted;
     final age = DateTime.now().difference(peer.lastSeen).inSeconds;
@@ -167,130 +160,45 @@ class _PeerTile extends StatelessWidget {
     return PatchTheme.textMuted;
   }
 
-  String get _discoveryIcon {
-    return switch (peer.discoveryMode) {
-      'Mdns' || 'mdns' => '🔍',
-      'ManualIp' || 'manual_ip' => '📌',
-      _ => '📡',
-    };
-  }
-
-  /// Secondary line. The status dot already conveys liveness at a glance, so we
-  /// lead with the IP (the stable identifier) and trail the constantly-changing
-  /// "last seen" time. Static/manual peers have a synthetic `lastSeen`, so they
-  /// show just their configured address.
-  String get _subtitle {
-    final addr = peer.address.isNotEmpty ? peer.address : 'unknown IP';
-    return _isManual ? addr : '$addr · ${_relativeLastSeen(peer.lastSeen)}';
-  }
-
-  /// A row of small colour dots, one per channel the peer announces, coloured
-  /// from the viewer's [channelColors] (grey for a channel the viewer doesn't
-  /// have). Collapses to "+N" past [_kMaxChannelDots]. Empty (a zero-height box)
-  /// for peers with no announced channels — e.g. configured-only static peers.
-  Widget _channelDots() {
-    if (peer.channels.isEmpty) return const SizedBox.shrink();
-    final shown = peer.channels.take(_kMaxChannelDots);
-    final extra = peer.channels.length - shown.length;
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Row(
-        children: [
-          for (final id in shown)
-            Padding(
-              padding: const EdgeInsets.only(right: 3),
-              child: Tooltip(
-                message: id,
-                child: Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: channelColors[id] ?? PatchTheme.textMuted,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-            ),
-          if (extra > 0)
-            Text(
-              '+$extra',
-              style: const TextStyle(color: PatchTheme.textMuted, fontSize: 9),
-            ),
-        ],
-      ),
-    );
-  }
-
-  static String _relativeLastSeen(DateTime t) {
-    final d = DateTime.now().difference(t);
-    if (d.isNegative || d.inSeconds < 5) return 'now';
-    if (d.inSeconds < 60) return '${d.inSeconds}s ago';
-    if (d.inMinutes < 60) return '${d.inMinutes}m ago';
-    if (d.inHours < 24) return '${d.inHours}h ago';
-    return '${d.inDays}d ago';
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    final tile = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       child: Row(
         children: [
-          Text(_discoveryIcon, style: const TextStyle(fontSize: 12)),
-          const SizedBox(width: 8),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        peer.peerName,
-                        style: const TextStyle(
-                          color: PatchTheme.textPrimary,
-                          fontSize: PatchTheme.fontSizeSmall,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                Flexible(
+                  child: Text(
+                    peer.peerName,
+                    style: const TextStyle(
+                      color: PatchTheme.textPrimary,
+                      fontSize: PatchTheme.fontSizeSmall,
+                      fontWeight: FontWeight.w600,
                     ),
-                    if (peer.role != null && peer.role!.isNotEmpty) ...[
-                      const SizedBox(width: 6),
-                      _RoleBadge(peer.role!),
-                    ],
-                  ],
-                ),
-                Text(
-                  _subtitle,
-                  style: const TextStyle(
-                    color: PatchTheme.textMuted,
-                    fontSize: 10,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
-                _channelDots(),
+                if (isUnread) ...[
+                  const SizedBox(width: 4),
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: const BoxDecoration(
+                      color: PatchTheme.critical,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ],
+                if (peer.role != null && peer.role!.isNotEmpty) ...[
+                  const SizedBox(width: 6),
+                  _RoleBadge(peer.role!),
+                ],
               ],
             ),
           ),
-          // DM button — only for real (dynamic) peers, not configured-only ones.
-          // Compact (a bare tappable icon, not a full IconButton) to keep the
-          // narrow 160 px row from feeling crowded next to the status dot.
-          if (onDm != null && !_isManual)
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => onDm!(peer.peerId),
-              child: const Tooltip(
-                message: 'Direct message',
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 5, vertical: 4),
-                  child: Icon(Icons.chat_bubble_outline, size: 14, color: PatchTheme.textMuted),
-                ),
-              ),
-            ),
           const SizedBox(width: 6),
-          // Status dot: green (healthy) → amber (heartbeat missed, going quiet)
-          // → gray (offline, or a configured-only ManualIp peer).
           Container(
             width: 7,
             height: 7,
@@ -301,6 +209,14 @@ class _PeerTile extends StatelessWidget {
           ),
         ],
       ),
+    );
+
+    if (onDm == null || _isManual) return tile;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => onDm!(peer.peerId),
+      child: tile,
     );
   }
 }

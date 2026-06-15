@@ -157,9 +157,34 @@ impl AppState {
     /// Persist the discovery-beacon interface scope (None = announce on all).
     /// Applies live — the heartbeat re-reads it each tick; the socket always
     /// binds 0.0.0.0, so there's nothing to rebind.
+    ///
+    /// Also clears all dynamically-discovered peers (OscBeacon/Mdns) so the
+    /// peer list rebuilds via the new NIC's discovery. ManualIp/static peers
+    /// are kept — their addresses don't depend on which NIC was used.
     pub async fn set_network_interface(&self, iface: Option<String>) -> anyhow::Result<()> {
         self.0.config.write().await.network_interface = iface;
+        let removed = self.clear_dynamic_peers().await;
+        for id in removed {
+            self.publish(AppEvent::PeerExpired(id)).await;
+        }
         self.save_config().await
+    }
+
+    /// Remove all OscBeacon/Mdns peers from the registry immediately.
+    /// ManualIp/static peers are never touched.
+    /// Returns the IDs of removed peers so callers can emit PeerExpired events.
+    async fn clear_dynamic_peers(&self) -> Vec<Uuid> {
+        let mut peers = self.0.peers.write().await;
+        let mut removed = Vec::new();
+        peers.retain(|id, p| {
+            if matches!(p.discovery_mode, peer::DiscoveryMode::ManualIp) {
+                true
+            } else {
+                removed.push(*id);
+                false
+            }
+        });
+        removed
     }
 
     /// Persist the flash-on-critical setting.
