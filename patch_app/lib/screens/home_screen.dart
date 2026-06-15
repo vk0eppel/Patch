@@ -14,7 +14,7 @@ import '../widgets/flash_button.dart';
 import '../widgets/message_list.dart';
 import '../widgets/message_input.dart';
 import '../widgets/peers_panel.dart';
-import '../widgets/sessions_dialog.dart';
+import '../widgets/show_files_dialog.dart';
 import '../widgets/macros_panel.dart' show MacrosPanel, ChannelMacro;
 import 'settings_screen.dart';
 
@@ -475,9 +475,9 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         });
 
-      case 'session_loaded':
+      case 'show_file_loaded':
         widget.bridge.getChannels();
-        // A session also restores static peers — refresh the peers panel.
+        // A show file also restores static peers — refresh the peers panel.
         widget.bridge.getPeers();
         setState(() => _selectedIds = {});
 
@@ -503,7 +503,7 @@ class _HomeScreenState extends State<HomeScreen> {
               (event['data']['heartbeat_interval_secs'] as int?) ?? 7;
         });
 
-      case 'session_saved':
+      case 'show_file_saved':
       case 'client_name_changed':
       case 'interface_changed':
         break;
@@ -845,10 +845,10 @@ class _ChannelStrip extends StatelessWidget {
           // (with colour); no separate quick-add here.
           IconButton(
             icon: const Icon(Icons.folder_outlined, color: PatchTheme.textMuted),
-            tooltip: 'Sessions',
+            tooltip: 'Show Files',
             onPressed: () => showDialog(
               context: context,
-              builder: (_) => SessionsDialog(bridge: bridge),
+              builder: (_) => ShowFilesDialog(bridge: bridge),
             ),
           ),
           IconButton(

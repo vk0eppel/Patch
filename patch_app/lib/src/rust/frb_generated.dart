@@ -15,7 +15,7 @@ import 'package:uuid/uuid.dart';
 import 'state/channel.dart';
 import 'state/config.dart';
 import 'state/peer.dart';
-import 'state/session.dart';
+import 'state/show_file.dart';
 import 'transport.dart';
 
 /// Main entrypoint of the Rust API
@@ -71,7 +71,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -1235984216;
+  int get rustContentHash => -2128031310;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -104,7 +104,7 @@ abstract class RustLibApi extends BaseApi {
     required String label,
   });
 
-  Future<void> crateApiDeleteSession({required String slug});
+  Future<void> crateApiDeleteShowFile({required String slug});
 
   Future<void> crateApiExportLayout({
     required String path,
@@ -131,13 +131,13 @@ abstract class RustLibApi extends BaseApi {
 
   Future<List<Peer>> crateApiGetPeers();
 
-  Future<SessionLoaded> crateApiImportLayout({required String path});
+  Future<ShowFileLoaded> crateApiImportLayout({required String path});
 
   Future<void> crateApiInit({String? configDir});
 
-  Future<List<SessionMeta>> crateApiListSessions();
+  Future<List<ShowFileMeta>> crateApiListShowFiles();
 
-  Future<SessionLoaded> crateApiLoadSession({required String slug});
+  Future<ShowFileLoaded> crateApiLoadShowFile({required String slug});
 
   Future<void> crateApiRemoveStaticPeer({
     required String address,
@@ -159,7 +159,7 @@ abstract class RustLibApi extends BaseApi {
 
   Future<void> crateApiResetGlobalMacros();
 
-  Future<SessionSaved> crateApiSaveSession({required String name});
+  Future<ShowFileSaved> crateApiSaveShowFile({required String name});
 
   Future<String> crateApiSendDirectMessage({
     required String peerId,
@@ -466,7 +466,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
-  Future<void> crateApiDeleteSession({required String slug}) {
+  Future<void> crateApiDeleteShowFile({required String slug}) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
@@ -483,15 +483,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeSuccessData: sse_decode_unit,
           decodeErrorData: sse_decode_AnyhowException,
         ),
-        constMeta: kCrateApiDeleteSessionConstMeta,
+        constMeta: kCrateApiDeleteShowFileConstMeta,
         argValues: [slug],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiDeleteSessionConstMeta =>
-      const TaskConstMeta(debugName: "delete_session", argNames: ["slug"]);
+  TaskConstMeta get kCrateApiDeleteShowFileConstMeta =>
+      const TaskConstMeta(debugName: "delete_show_file", argNames: ["slug"]);
 
   @override
   Future<void> crateApiExportLayout({
@@ -731,7 +731,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "get_peers", argNames: []);
 
   @override
-  Future<SessionLoaded> crateApiImportLayout({required String path}) {
+  Future<ShowFileLoaded> crateApiImportLayout({required String path}) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
@@ -745,7 +745,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_session_loaded,
+          decodeSuccessData: sse_decode_show_file_loaded,
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiImportLayoutConstMeta,
@@ -787,7 +787,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "init", argNames: ["configDir"]);
 
   @override
-  Future<List<SessionMeta>> crateApiListSessions() {
+  Future<List<ShowFileMeta>> crateApiListShowFiles() {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
@@ -800,21 +800,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_list_session_meta,
+          decodeSuccessData: sse_decode_list_show_file_meta,
           decodeErrorData: sse_decode_AnyhowException,
         ),
-        constMeta: kCrateApiListSessionsConstMeta,
+        constMeta: kCrateApiListShowFilesConstMeta,
         argValues: [],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiListSessionsConstMeta =>
-      const TaskConstMeta(debugName: "list_sessions", argNames: []);
+  TaskConstMeta get kCrateApiListShowFilesConstMeta =>
+      const TaskConstMeta(debugName: "list_show_files", argNames: []);
 
   @override
-  Future<SessionLoaded> crateApiLoadSession({required String slug}) {
+  Future<ShowFileLoaded> crateApiLoadShowFile({required String slug}) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
@@ -828,18 +828,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_session_loaded,
+          decodeSuccessData: sse_decode_show_file_loaded,
           decodeErrorData: sse_decode_AnyhowException,
         ),
-        constMeta: kCrateApiLoadSessionConstMeta,
+        constMeta: kCrateApiLoadShowFileConstMeta,
         argValues: [slug],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiLoadSessionConstMeta =>
-      const TaskConstMeta(debugName: "load_session", argNames: ["slug"]);
+  TaskConstMeta get kCrateApiLoadShowFileConstMeta =>
+      const TaskConstMeta(debugName: "load_show_file", argNames: ["slug"]);
 
   @override
   Future<void> crateApiRemoveStaticPeer({
@@ -1025,7 +1025,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "reset_global_macros", argNames: []);
 
   @override
-  Future<SessionSaved> crateApiSaveSession({required String name}) {
+  Future<ShowFileSaved> crateApiSaveShowFile({required String name}) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
@@ -1039,18 +1039,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_session_saved,
+          decodeSuccessData: sse_decode_show_file_saved,
           decodeErrorData: sse_decode_AnyhowException,
         ),
-        constMeta: kCrateApiSaveSessionConstMeta,
+        constMeta: kCrateApiSaveShowFileConstMeta,
         argValues: [name],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiSaveSessionConstMeta =>
-      const TaskConstMeta(debugName: "save_session", argNames: ["name"]);
+  TaskConstMeta get kCrateApiSaveShowFileConstMeta =>
+      const TaskConstMeta(debugName: "save_show_file", argNames: ["name"]);
 
   @override
   Future<String> crateApiSendDirectMessage({
@@ -1968,9 +1968,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  List<SessionMeta> dco_decode_list_session_meta(dynamic raw) {
+  List<ShowFileMeta> dco_decode_list_show_file_meta(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
-    return (raw as List<dynamic>).map(dco_decode_session_meta).toList();
+    return (raw as List<dynamic>).map(dco_decode_show_file_meta).toList();
   }
 
   @protected
@@ -2141,12 +2141,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  SessionLoaded dco_decode_session_loaded(dynamic raw) {
+  ShowFileLoaded dco_decode_show_file_loaded(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
     if (arr.length != 3)
       throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
-    return SessionLoaded(
+    return ShowFileLoaded(
       slug: dco_decode_String(arr[0]),
       name: dco_decode_String(arr[1]),
       channelCount: dco_decode_u_32(arr[2]),
@@ -2154,12 +2154,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  SessionMeta dco_decode_session_meta(dynamic raw) {
+  ShowFileMeta dco_decode_show_file_meta(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
     if (arr.length != 4)
       throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
-    return SessionMeta(
+    return ShowFileMeta(
       slug: dco_decode_String(arr[0]),
       name: dco_decode_String(arr[1]),
       createdAt: dco_decode_Chrono_Utc(arr[2]),
@@ -2168,12 +2168,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  SessionSaved dco_decode_session_saved(dynamic raw) {
+  ShowFileSaved dco_decode_show_file_saved(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
     if (arr.length != 2)
       throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
-    return SessionSaved(
+    return ShowFileSaved(
       slug: dco_decode_String(arr[0]),
       name: dco_decode_String(arr[1]),
     );
@@ -2492,13 +2492,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  List<SessionMeta> sse_decode_list_session_meta(SseDeserializer deserializer) {
+  List<ShowFileMeta> sse_decode_list_show_file_meta(
+    SseDeserializer deserializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
     var len_ = sse_decode_i_32(deserializer);
-    var ans_ = <SessionMeta>[];
+    var ans_ = <ShowFileMeta>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
-      ans_.add(sse_decode_session_meta(deserializer));
+      ans_.add(sse_decode_show_file_meta(deserializer));
     }
     return ans_;
   }
@@ -2726,12 +2728,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  SessionLoaded sse_decode_session_loaded(SseDeserializer deserializer) {
+  ShowFileLoaded sse_decode_show_file_loaded(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_slug = sse_decode_String(deserializer);
     var var_name = sse_decode_String(deserializer);
     var var_channelCount = sse_decode_u_32(deserializer);
-    return SessionLoaded(
+    return ShowFileLoaded(
       slug: var_slug,
       name: var_name,
       channelCount: var_channelCount,
@@ -2739,13 +2741,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  SessionMeta sse_decode_session_meta(SseDeserializer deserializer) {
+  ShowFileMeta sse_decode_show_file_meta(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_slug = sse_decode_String(deserializer);
     var var_name = sse_decode_String(deserializer);
     var var_createdAt = sse_decode_Chrono_Utc(deserializer);
     var var_channelCount = sse_decode_usize(deserializer);
-    return SessionMeta(
+    return ShowFileMeta(
       slug: var_slug,
       name: var_name,
       createdAt: var_createdAt,
@@ -2754,11 +2756,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  SessionSaved sse_decode_session_saved(SseDeserializer deserializer) {
+  ShowFileSaved sse_decode_show_file_saved(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_slug = sse_decode_String(deserializer);
     var var_name = sse_decode_String(deserializer);
-    return SessionSaved(slug: var_slug, name: var_name);
+    return ShowFileSaved(slug: var_slug, name: var_name);
   }
 
   @protected
@@ -3046,14 +3048,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_list_session_meta(
-    List<SessionMeta> self,
+  void sse_encode_list_show_file_meta(
+    List<ShowFileMeta> self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
-      sse_encode_session_meta(item, serializer);
+      sse_encode_show_file_meta(item, serializer);
     }
   }
 
@@ -3234,7 +3236,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_session_loaded(SessionLoaded self, SseSerializer serializer) {
+  void sse_encode_show_file_loaded(
+    ShowFileLoaded self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.slug, serializer);
     sse_encode_String(self.name, serializer);
@@ -3242,7 +3247,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_session_meta(SessionMeta self, SseSerializer serializer) {
+  void sse_encode_show_file_meta(ShowFileMeta self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.slug, serializer);
     sse_encode_String(self.name, serializer);
@@ -3251,7 +3256,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_session_saved(SessionSaved self, SseSerializer serializer) {
+  void sse_encode_show_file_saved(
+    ShowFileSaved self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.slug, serializer);
     sse_encode_String(self.name, serializer);

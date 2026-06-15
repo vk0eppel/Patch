@@ -6,7 +6,7 @@ import '../src/rust/osc/types.dart' as rust_osc;
 import '../src/rust/state/channel.dart' as rust_channel;
 import '../src/rust/state/config.dart' as rust_config;
 import '../src/rust/state/peer.dart' as rust_peer;
-import '../src/rust/state/session.dart' as rust_session;
+import '../src/rust/state/show_file.dart' as rust_show_file;
 import '../src/rust/transport.dart' as rust_transport;
 
 /// Façade over the `flutter_rust_bridge`-generated engine API.
@@ -545,10 +545,10 @@ class BridgeClient {
     }
   }
 
-  Future<void> saveSession(String name) async {
+  Future<void> saveShowFile(String name) async {
     try {
-      final s = await rust.saveSession(name: name);
-      _emit({'event': 'session_saved', 'slug': s.slug, 'name': s.name});
+      final s = await rust.saveShowFile(name: name);
+      _emit({'event': 'show_file_saved', 'slug': s.slug, 'name': s.name});
     } catch (e) {
       _emitError(e);
     }
@@ -563,21 +563,21 @@ class BridgeClient {
     }
   }
 
-  /// Import a session from an arbitrary file path (from a file picker) and apply it.
+  /// Import a show file from an arbitrary file path (from a file picker) and apply it.
   Future<void> importLayout(String path) async {
     try {
       final s = await rust.importLayout(path: path);
-      _emit({'event': 'session_loaded', 'slug': s.slug, 'name': s.name, 'channel_count': s.channelCount});
+      _emit({'event': 'show_file_loaded', 'slug': s.slug, 'name': s.name, 'channel_count': s.channelCount});
     } catch (e) {
       _emitError(e);
     }
   }
 
-  Future<void> loadSession(String slug) async {
+  Future<void> loadShowFile(String slug) async {
     try {
-      final s = await rust.loadSession(slug: slug);
+      final s = await rust.loadShowFile(slug: slug);
       _emit({
-        'event': 'session_loaded',
+        'event': 'show_file_loaded',
         'slug': s.slug,
         'name': s.name,
         'channel_count': s.channelCount,
@@ -587,21 +587,21 @@ class BridgeClient {
     }
   }
 
-  Future<void> listSessions() async {
+  Future<void> listShowFiles() async {
     try {
-      final list = await rust.listSessions();
+      final list = await rust.listShowFiles();
       _emit({
-        'event': 'sessions',
-        'data': list.map(_sessionMetaToMap).toList(),
+        'event': 'show_files',
+        'data': list.map(_showFileMetaToMap).toList(),
       });
     } catch (e) {
       _emitError(e);
     }
   }
 
-  Future<void> deleteSession(String slug) async {
+  Future<void> deleteShowFile(String slug) async {
     try {
-      await rust.deleteSession(slug: slug);
+      await rust.deleteShowFile(slug: slug);
     } catch (e) {
       _emitError(e);
     }
@@ -816,7 +816,7 @@ Map<String, dynamic> _staticPeerToMap(rust_config.StaticPeer s) => {
       'label': s.label,
     };
 
-Map<String, dynamic> _sessionMetaToMap(rust_session.SessionMeta s) => {
+Map<String, dynamic> _showFileMetaToMap(rust_show_file.ShowFileMeta s) => {
       'slug': s.slug,
       'name': s.name,
       'created_at': s.createdAt.toIso8601String(),

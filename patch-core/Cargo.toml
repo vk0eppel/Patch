@@ -15,7 +15,7 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
-# Platform-correct data directory (config + sessions live here when bundled).
+# Platform-correct data directory (config + show_files live here when bundled).
 dirs = "5"
 
 # Flutter ↔ Rust FFI bridge. Pinned to match the Dart-side `flutter_rust_bridge`

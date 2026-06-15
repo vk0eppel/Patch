@@ -18,7 +18,7 @@ patch/
     ├── screens/home_screen.dart   # Main UI
     ├── screens/settings_screen.dart
     └── widgets/                   # channel_tab, flash_button, message_list,
-                                   # macros_panel, peers_panel, sessions_dialog
+                                   # macros_panel, peers_panel, show_files_dialog
 ```
 
 Generated Dart bindings live in `patch_app/lib/src/rust/` — excluded from analysis, never hand-edited.
@@ -73,11 +73,11 @@ Heartbeat re-reads `client_name` and `role` from config on every tick, so rename
 
 Static peers always appear in the peers panel: `get_peers()` merges `config.static_peers` as synthetic `ManualIp` entries. A synthetic entry disappears once a real packet arrives and creates a dynamic entry for the same address.
 
-## Sessions
+## Show Files
 
-`apply_session_full` (load/import) replaces channels **and** static peers. `apply_session` (reset_channels) replaces channels only — factory reset never wipes configured peers. Channel IDs are validated atomically upfront; the whole session is rejected if any ID is invalid.
+`apply_show_file_full` (load/import) replaces channels **and** static peers. `apply_show_file` (reset_channels) replaces channels only — factory reset never wipes configured peers. Channel IDs are validated atomically upfront; the whole show file is rejected if any ID is invalid.
 
-Sessions panel opened from the folder icon in the channel strip (not Settings).
+Show files panel opened from the folder icon in the channel strip (not Settings).
 
 ## Direct Messages
 

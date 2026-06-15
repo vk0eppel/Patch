@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1235984216;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -2128031310;
 
 // Section: executor
 
@@ -302,7 +302,7 @@ fn wire__crate__api__delete_macro_impl(
         },
     )
 }
-fn wire__crate__api__delete_session_impl(
+fn wire__crate__api__delete_show_file_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -310,7 +310,7 @@ fn wire__crate__api__delete_session_impl(
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "delete_session",
+            debug_name: "delete_show_file",
             port: Some(port_),
             mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
@@ -329,7 +329,7 @@ fn wire__crate__api__delete_session_impl(
             move |context| {
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                     (move || {
-                        let output_ok = crate::api::delete_session(api_slug)?;
+                        let output_ok = crate::api::delete_show_file(api_slug)?;
                         Ok(output_ok)
                     })(),
                 )
@@ -694,7 +694,7 @@ fn wire__crate__api__init_impl(
         },
     )
 }
-fn wire__crate__api__list_sessions_impl(
+fn wire__crate__api__list_show_files_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -702,7 +702,7 @@ fn wire__crate__api__list_sessions_impl(
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "list_sessions",
+            debug_name: "list_show_files",
             port: Some(port_),
             mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
@@ -720,7 +720,7 @@ fn wire__crate__api__list_sessions_impl(
             move |context| {
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                     (move || {
-                        let output_ok = crate::api::list_sessions()?;
+                        let output_ok = crate::api::list_show_files()?;
                         Ok(output_ok)
                     })(),
                 )
@@ -728,7 +728,7 @@ fn wire__crate__api__list_sessions_impl(
         },
     )
 }
-fn wire__crate__api__load_session_impl(
+fn wire__crate__api__load_show_file_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -736,7 +736,7 @@ fn wire__crate__api__load_session_impl(
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "load_session",
+            debug_name: "load_show_file",
             port: Some(port_),
             mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
@@ -755,7 +755,7 @@ fn wire__crate__api__load_session_impl(
             move |context| async move {
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                     (move || async move {
-                        let output_ok = crate::api::load_session(api_slug).await?;
+                        let output_ok = crate::api::load_show_file(api_slug).await?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -983,7 +983,7 @@ fn wire__crate__api__reset_global_macros_impl(
         },
     )
 }
-fn wire__crate__api__save_session_impl(
+fn wire__crate__api__save_show_file_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -991,7 +991,7 @@ fn wire__crate__api__save_session_impl(
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "save_session",
+            debug_name: "save_show_file",
             port: Some(port_),
             mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
@@ -1010,7 +1010,7 @@ fn wire__crate__api__save_session_impl(
             move |context| async move {
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                     (move || async move {
-                        let output_ok = crate::api::save_session(api_name).await?;
+                        let output_ok = crate::api::save_show_file(api_name).await?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -2087,13 +2087,13 @@ impl SseDecode for Vec<u8> {
     }
 }
 
-impl SseDecode for Vec<crate::state::session::SessionMeta> {
+impl SseDecode for Vec<crate::state::show_file::ShowFileMeta> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut len_ = <i32>::sse_decode(deserializer);
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
-            ans_.push(<crate::state::session::SessionMeta>::sse_decode(
+            ans_.push(<crate::state::show_file::ShowFileMeta>::sse_decode(
                 deserializer,
             ));
         }
@@ -2349,13 +2349,13 @@ impl SseDecode for crate::osc::types::Priority {
     }
 }
 
-impl SseDecode for crate::api::SessionLoaded {
+impl SseDecode for crate::api::ShowFileLoaded {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_slug = <String>::sse_decode(deserializer);
         let mut var_name = <String>::sse_decode(deserializer);
         let mut var_channelCount = <u32>::sse_decode(deserializer);
-        return crate::api::SessionLoaded {
+        return crate::api::ShowFileLoaded {
             slug: var_slug,
             name: var_name,
             channel_count: var_channelCount,
@@ -2363,14 +2363,14 @@ impl SseDecode for crate::api::SessionLoaded {
     }
 }
 
-impl SseDecode for crate::state::session::SessionMeta {
+impl SseDecode for crate::state::show_file::ShowFileMeta {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_slug = <String>::sse_decode(deserializer);
         let mut var_name = <String>::sse_decode(deserializer);
         let mut var_createdAt = <chrono::DateTime<chrono::Utc>>::sse_decode(deserializer);
         let mut var_channelCount = <usize>::sse_decode(deserializer);
-        return crate::state::session::SessionMeta {
+        return crate::state::show_file::ShowFileMeta {
             slug: var_slug,
             name: var_name,
             created_at: var_createdAt,
@@ -2379,12 +2379,12 @@ impl SseDecode for crate::state::session::SessionMeta {
     }
 }
 
-impl SseDecode for crate::api::SessionSaved {
+impl SseDecode for crate::api::ShowFileSaved {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_slug = <String>::sse_decode(deserializer);
         let mut var_name = <String>::sse_decode(deserializer);
-        return crate::api::SessionSaved {
+        return crate::api::ShowFileSaved {
             slug: var_slug,
             name: var_name,
         };
@@ -2461,7 +2461,7 @@ fn pde_ffi_dispatcher_primary_impl(
         5 => wire__crate__api__delete_channel_impl(port, ptr, rust_vec_len, data_len),
         6 => wire__crate__api__delete_global_macro_impl(port, ptr, rust_vec_len, data_len),
         7 => wire__crate__api__delete_macro_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__delete_session_impl(port, ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__delete_show_file_impl(port, ptr, rust_vec_len, data_len),
         9 => wire__crate__api__export_layout_impl(port, ptr, rust_vec_len, data_len),
         10 => wire__crate__api__export_messages_impl(port, ptr, rust_vec_len, data_len),
         11 => wire__crate__api__get_channels_impl(port, ptr, rust_vec_len, data_len),
@@ -2472,15 +2472,15 @@ fn pde_ffi_dispatcher_primary_impl(
         16 => wire__crate__api__get_peers_impl(port, ptr, rust_vec_len, data_len),
         17 => wire__crate__api__import_layout_impl(port, ptr, rust_vec_len, data_len),
         18 => wire__crate__api__init_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__list_sessions_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__load_session_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__list_show_files_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__load_show_file_impl(port, ptr, rust_vec_len, data_len),
         21 => wire__crate__api__remove_static_peer_impl(port, ptr, rust_vec_len, data_len),
         22 => wire__crate__api__reorder_global_macros_impl(port, ptr, rust_vec_len, data_len),
         23 => wire__crate__api__reorder_macros_impl(port, ptr, rust_vec_len, data_len),
         24 => wire__crate__api__request_channels_impl(port, ptr, rust_vec_len, data_len),
         25 => wire__crate__api__reset_channels_impl(port, ptr, rust_vec_len, data_len),
         26 => wire__crate__api__reset_global_macros_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__save_session_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__save_show_file_impl(port, ptr, rust_vec_len, data_len),
         28 => wire__crate__api__send_direct_message_impl(port, ptr, rust_vec_len, data_len),
         29 => wire__crate__api__send_dm_flash_impl(port, ptr, rust_vec_len, data_len),
         30 => wire__crate__api__send_flash_impl(port, ptr, rust_vec_len, data_len),
@@ -2850,7 +2850,7 @@ impl flutter_rust_bridge::IntoIntoDart<crate::osc::types::Priority>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::SessionLoaded {
+impl flutter_rust_bridge::IntoDart for crate::api::ShowFileLoaded {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.slug.into_into_dart().into_dart(),
@@ -2860,14 +2860,14 @@ impl flutter_rust_bridge::IntoDart for crate::api::SessionLoaded {
         .into_dart()
     }
 }
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::SessionLoaded {}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::SessionLoaded> for crate::api::SessionLoaded {
-    fn into_into_dart(self) -> crate::api::SessionLoaded {
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::ShowFileLoaded {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::ShowFileLoaded> for crate::api::ShowFileLoaded {
+    fn into_into_dart(self) -> crate::api::ShowFileLoaded {
         self
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::state::session::SessionMeta {
+impl flutter_rust_bridge::IntoDart for crate::state::show_file::ShowFileMeta {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.slug.into_into_dart().into_dart(),
@@ -2879,18 +2879,18 @@ impl flutter_rust_bridge::IntoDart for crate::state::session::SessionMeta {
     }
 }
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::state::session::SessionMeta
+    for crate::state::show_file::ShowFileMeta
 {
 }
-impl flutter_rust_bridge::IntoIntoDart<crate::state::session::SessionMeta>
-    for crate::state::session::SessionMeta
+impl flutter_rust_bridge::IntoIntoDart<crate::state::show_file::ShowFileMeta>
+    for crate::state::show_file::ShowFileMeta
 {
-    fn into_into_dart(self) -> crate::state::session::SessionMeta {
+    fn into_into_dart(self) -> crate::state::show_file::ShowFileMeta {
         self
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::SessionSaved {
+impl flutter_rust_bridge::IntoDart for crate::api::ShowFileSaved {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.slug.into_into_dart().into_dart(),
@@ -2899,9 +2899,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::SessionSaved {
         .into_dart()
     }
 }
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::SessionSaved {}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::SessionSaved> for crate::api::SessionSaved {
-    fn into_into_dart(self) -> crate::api::SessionSaved {
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::ShowFileSaved {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::ShowFileSaved> for crate::api::ShowFileSaved {
+    fn into_into_dart(self) -> crate::api::ShowFileSaved {
         self
     }
 }
@@ -3122,12 +3122,12 @@ impl SseEncode for Vec<u8> {
     }
 }
 
-impl SseEncode for Vec<crate::state::session::SessionMeta> {
+impl SseEncode for Vec<crate::state::show_file::ShowFileMeta> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
-            <crate::state::session::SessionMeta>::sse_encode(item, serializer);
+            <crate::state::show_file::ShowFileMeta>::sse_encode(item, serializer);
         }
     }
 }
@@ -3331,7 +3331,7 @@ impl SseEncode for crate::osc::types::Priority {
     }
 }
 
-impl SseEncode for crate::api::SessionLoaded {
+impl SseEncode for crate::api::ShowFileLoaded {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.slug, serializer);
@@ -3340,7 +3340,7 @@ impl SseEncode for crate::api::SessionLoaded {
     }
 }
 
-impl SseEncode for crate::state::session::SessionMeta {
+impl SseEncode for crate::state::show_file::ShowFileMeta {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.slug, serializer);
@@ -3350,7 +3350,7 @@ impl SseEncode for crate::state::session::SessionMeta {
     }
 }
 
-impl SseEncode for crate::api::SessionSaved {
+impl SseEncode for crate::api::ShowFileSaved {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.slug, serializer);

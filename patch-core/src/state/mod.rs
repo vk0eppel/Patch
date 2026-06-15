@@ -4,7 +4,7 @@
 pub mod channel;
 pub mod config;
 pub mod peer;
-pub mod session;
+pub mod show_file;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
@@ -559,22 +559,22 @@ impl AppState {
 
     /// Replace all channels with the factory defaults.
     pub async fn reset_channels(&self) -> anyhow::Result<()> {
-        self.apply_session(config::default_channels()).await
+        self.apply_show_file(config::default_channels()).await
     }
 
-    /// Apply a loaded/imported session: replace channels **and** static peers.
+    /// Apply a loaded/imported show file: replace channels **and** static peers.
     ///
-    /// Like [`apply_session`] but also restores the static peers the session
-    /// captured (a session is a full show layout — distributing one should bring
-    /// the known device IPs with it). `reset_channels` deliberately uses
-    /// `apply_session` (channels only) instead, so resetting channels to factory
+    /// Like [`apply_show_file`] but also restores the static peers the show file
+    /// captured (a show file is a full production layout — distributing one should
+    /// bring the known device IPs with it). `reset_channels` deliberately uses
+    /// `apply_show_file` (channels only) instead, so resetting channels to factory
     /// defaults never wipes the operator's configured peers.
     ///
     /// Both lists are untrusted file input: channel ids are validated up front
-    /// (whole session rejected atomically on a bad id, before any mutation);
+    /// (whole show file rejected atomically on a bad id, before any mutation);
     /// static peers with an unparseable address or port 0 are skipped with a
     /// warning (and de-duplicated by `address:port`) rather than failing the load.
-    pub async fn apply_session_full(
+    pub async fn apply_show_file_full(
         &self,
         channels: Vec<channel::Channel>,
         static_peers: Vec<config::StaticPeer>,
@@ -582,7 +582,7 @@ impl AppState {
         for ch in &channels {
             if !crate::osc::codec::valid_channel_id(&ch.id) {
                 anyhow::bail!(
-                    "session contains invalid channel id {:?} — use only lowercase letters, digits, _ or - (≤64 chars)",
+                    "show file contains invalid channel id {:?} — use only lowercase letters, digits, _ or - (≤64 chars)",
                     ch.id
                 );
             }
@@ -592,13 +592,13 @@ impl AppState {
         for sp in static_peers {
             if sp.address.parse::<std::net::IpAddr>().is_err() {
                 tracing::warn!(
-                    "session: skipping static peer with invalid address {:?}",
+                    "show_file: skipping static peer with invalid address {:?}",
                     sp.address
                 );
                 continue;
             }
             if sp.port == 0 {
-                tracing::warn!("session: skipping static peer {} with port 0", sp.address);
+                tracing::warn!("show_file: skipping static peer {} with port 0", sp.address);
                 continue;
             }
             if seen.insert((sp.address.clone(), sp.port)) {
@@ -672,17 +672,17 @@ impl AppState {
         Ok(added)
     }
 
-    /// Replace all channels with those from a loaded session.
-    pub async fn apply_session(&self, channels: Vec<channel::Channel>) -> anyhow::Result<()> {
-        // A session file is untrusted input (shared between machines, possibly
+    /// Replace all channels with those from a loaded show file.
+    pub async fn apply_show_file(&self, channels: Vec<channel::Channel>) -> anyhow::Result<()> {
+        // A show file is untrusted input (shared between machines, possibly
         // hand-edited). Validate every channel id against the OSC-path slug rule
         // *before* mutating anything — an invalid id would otherwise be embedded
         // verbatim in `/patch/channel/{id}/...` on the next send. Reject the whole
-        // session atomically so a single bad entry can't half-apply.
+        // show file atomically so a single bad entry can't half-apply.
         for ch in &channels {
             if !crate::osc::codec::valid_channel_id(&ch.id) {
                 anyhow::bail!(
-                    "session contains invalid channel id {:?} — use only lowercase letters, digits, _ or - (≤64 chars)",
+                    "show file contains invalid channel id {:?} — use only lowercase letters, digits, _ or - (≤64 chars)",
                     ch.id
                 );
             }
@@ -1174,14 +1174,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn apply_session_full_restores_static_peers() {
+    async fn apply_show_file_full_restores_static_peers() {
         // Touches disk (persists config) — pin a temp data dir.
         let _guard = config::test_data_dir_guard().await;
         let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         config::set_data_dir(dir.clone());
 
-        // Start with a pre-existing static peer that the session should replace.
+        // Start with a pre-existing static peer that the show file should replace.
         let st = AppState::new(Config {
             default_channels: Vec::new(),
             static_peers: vec![config::StaticPeer {
@@ -1193,7 +1193,7 @@ mod tests {
         });
 
         let channels = vec![channel::Channel::new("rf", "RF", "#1E88E5")];
-        let session_peers = vec![
+        let show_file_peers = vec![
             config::StaticPeer {
                 address: "10.0.0.10".into(),
                 port: 9000,
@@ -1218,7 +1218,7 @@ mod tests {
                 label: None,
             },
         ];
-        st.apply_session_full(channels, session_peers)
+        st.apply_show_file_full(channels, show_file_peers)
             .await
             .unwrap();
 
@@ -1322,16 +1322,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn apply_session_rejects_invalid_channel_id() {
+    async fn apply_show_file_rejects_invalid_channel_id() {
         let st = test_state();
-        // A crafted/hand-edited session with an OSC-unsafe id must be rejected
+        // A crafted/hand-edited show file with an OSC-unsafe id must be rejected
         // wholesale — and must not partially apply (the valid channel alongside
         // it should not be inserted either).
         let bad = channel::Channel::new("RF/../x", "RF", "#1E88E5");
         let good = channel::Channel::new("audio", "AUDIO", "#E53935");
         // Validation runs before any mutation, so the call errors and never
         // clears/persists — the good channel beside the bad one isn't applied.
-        assert!(st.apply_session(vec![good, bad]).await.is_err());
+        assert!(st.apply_show_file(vec![good, bad]).await.is_err());
         assert!(st.get_channels().await.is_empty());
     }
 

@@ -8,7 +8,7 @@ use super::channel::{Channel, MacroMessage};
 
 // ── Data directory resolution ────────────────────────────────────────────────
 //
-// patch.toml + sessions/ live in a platform-appropriate per-user directory
+// patch.toml + show_files/ live in a platform-appropriate per-user directory
 // when running as a bundled app (Library/Application Support on macOS,
 // %APPDATA% on Windows, Documents/ on iOS). The dev binary used to write into
 // CWD; we keep that as a fallback on first run, migrating in place so existing
@@ -18,14 +18,14 @@ use super::channel::{Channel, MacroMessage};
 
 static DATA_DIR_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
 
-/// Pin the data directory for this process (config + sessions). Production calls
+/// Pin the data directory for this process (config + show_files). Production calls
 /// this at most once during `init`; the tests reset it per case (serialized via
 /// [`test_data_dir_guard`]) so each gets its own isolated temp directory.
 pub fn set_data_dir(path: PathBuf) {
     *DATA_DIR_OVERRIDE.write().unwrap_or_else(|e| e.into_inner()) = Some(path);
 }
 
-/// Resolves to the directory that holds `patch.toml` and the `sessions/` subdir.
+/// Resolves to the directory that holds `patch.toml` and the `show_files/` subdir.
 pub fn data_dir() -> PathBuf {
     if let Some(p) = DATA_DIR_OVERRIDE
         .read()

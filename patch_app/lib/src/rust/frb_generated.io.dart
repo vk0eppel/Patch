@@ -14,7 +14,7 @@ import 'package:uuid/uuid.dart';
 import 'state/channel.dart';
 import 'state/config.dart';
 import 'state/peer.dart';
-import 'state/session.dart';
+import 'state/show_file.dart';
 import 'transport.dart';
 
 abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
@@ -106,7 +106,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
-  List<SessionMeta> dco_decode_list_session_meta(dynamic raw);
+  List<ShowFileMeta> dco_decode_list_show_file_meta(dynamic raw);
 
   @protected
   List<StaticPeer> dco_decode_list_static_peer(dynamic raw);
@@ -145,13 +145,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Priority dco_decode_priority(dynamic raw);
 
   @protected
-  SessionLoaded dco_decode_session_loaded(dynamic raw);
+  ShowFileLoaded dco_decode_show_file_loaded(dynamic raw);
 
   @protected
-  SessionMeta dco_decode_session_meta(dynamic raw);
+  ShowFileMeta dco_decode_show_file_meta(dynamic raw);
 
   @protected
-  SessionSaved dco_decode_session_saved(dynamic raw);
+  ShowFileSaved dco_decode_show_file_saved(dynamic raw);
 
   @protected
   StaticPeer dco_decode_static_peer(dynamic raw);
@@ -267,7 +267,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
-  List<SessionMeta> sse_decode_list_session_meta(SseDeserializer deserializer);
+  List<ShowFileMeta> sse_decode_list_show_file_meta(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<StaticPeer> sse_decode_list_static_peer(SseDeserializer deserializer);
@@ -308,13 +310,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Priority sse_decode_priority(SseDeserializer deserializer);
 
   @protected
-  SessionLoaded sse_decode_session_loaded(SseDeserializer deserializer);
+  ShowFileLoaded sse_decode_show_file_loaded(SseDeserializer deserializer);
 
   @protected
-  SessionMeta sse_decode_session_meta(SseDeserializer deserializer);
+  ShowFileMeta sse_decode_show_file_meta(SseDeserializer deserializer);
 
   @protected
-  SessionSaved sse_decode_session_saved(SseDeserializer deserializer);
+  ShowFileSaved sse_decode_show_file_saved(SseDeserializer deserializer);
 
   @protected
   StaticPeer sse_decode_static_peer(SseDeserializer deserializer);
@@ -449,8 +451,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_list_session_meta(
-    List<SessionMeta> self,
+  void sse_encode_list_show_file_meta(
+    List<ShowFileMeta> self,
     SseSerializer serializer,
   );
 
@@ -497,13 +499,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_priority(Priority self, SseSerializer serializer);
 
   @protected
-  void sse_encode_session_loaded(SessionLoaded self, SseSerializer serializer);
+  void sse_encode_show_file_loaded(
+    ShowFileLoaded self,
+    SseSerializer serializer,
+  );
 
   @protected
-  void sse_encode_session_meta(SessionMeta self, SseSerializer serializer);
+  void sse_encode_show_file_meta(ShowFileMeta self, SseSerializer serializer);
 
   @protected
-  void sse_encode_session_saved(SessionSaved self, SseSerializer serializer);
+  void sse_encode_show_file_saved(ShowFileSaved self, SseSerializer serializer);
 
   @protected
   void sse_encode_static_peer(StaticPeer self, SseSerializer serializer);

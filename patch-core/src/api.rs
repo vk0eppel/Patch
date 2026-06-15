@@ -26,7 +26,7 @@ use crate::osc::codec::{
 use crate::osc::types::{ChannelFlash, PatchMessage, Priority};
 use crate::reliability::ReliabilityManager;
 use crate::state::channel::{Channel, MacroMessage, OscTarget};
-use crate::state::session::{self, SessionConfig, SessionMeta};
+use crate::state::show_file::{self, ShowFileConfig, ShowFileMeta};
 use crate::state::{config::StaticPeer, AppEvent, AppState, Config};
 use crate::transport::{list_interfaces, InterfaceInfo, Transport};
 
@@ -854,22 +854,22 @@ pub async fn reorder_global_macros(ordered_labels: Vec<String>) -> Result<()> {
     engine().state.reorder_global_macros(ordered_labels).await
 }
 
-// ── Sessions ─────────────────────────────────────────────────────────────────
+// ── Show Files ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionSaved {
+pub struct ShowFileSaved {
     pub slug: String,
     pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionLoaded {
+pub struct ShowFileLoaded {
     pub slug: String,
     pub name: String,
     pub channel_count: u32,
 }
 
-pub async fn save_session(name: String) -> Result<SessionSaved> {
+pub async fn save_show_file(name: String) -> Result<ShowFileSaved> {
     let name = name.trim().to_string();
     if name.is_empty() {
         anyhow::bail!("name must be a non-empty string");
@@ -877,9 +877,9 @@ pub async fn save_session(name: String) -> Result<SessionSaved> {
     let h = engine();
     let channels = h.state.get_channels().await;
     let cfg = h.state.config().await;
-    let sess = SessionConfig::new(&name, channels, cfg.static_peers);
-    let slug = tokio::task::spawn_blocking(move || session::save_session(&sess)).await??;
-    Ok(SessionSaved { slug, name })
+    let sf = ShowFileConfig::new(&name, channels, cfg.static_peers);
+    let slug = tokio::task::spawn_blocking(move || show_file::save_show_file(&sf)).await??;
+    Ok(ShowFileSaved { slug, name })
 }
 
 /// Export the current channel layout to an arbitrary file path (file-picker).
@@ -893,58 +893,57 @@ pub async fn export_layout(path: String, name: String) -> Result<()> {
     let h = engine();
     let channels = h.state.get_channels().await;
     let cfg = h.state.config().await;
-    let sess = SessionConfig::new(name, channels, cfg.static_peers);
-    let raw = toml::to_string_pretty(&sess)?;
+    let sf = ShowFileConfig::new(name, channels, cfg.static_peers);
+    let raw = toml::to_string_pretty(&sf)?;
     tokio::task::spawn_blocking(move || std::fs::write(&path, raw)).await??;
     Ok(())
 }
 
-/// Import a session from an arbitrary file path (file-picker) and apply it.
-pub async fn import_layout(path: String) -> Result<SessionLoaded> {
+/// Import a show file from an arbitrary file path (file-picker) and apply it.
+pub async fn import_layout(path: String) -> Result<ShowFileLoaded> {
     let read_path = path.clone();
     let raw = tokio::task::spawn_blocking(move || std::fs::read_to_string(&read_path)).await??;
-    let sess: SessionConfig = toml::from_str(&raw)?;
-    let name = sess.name.clone();
-    let channel_count = sess.channels.len() as u32;
-    // Derive a slug from the file stem or name
+    let sf: ShowFileConfig = toml::from_str(&raw)?;
+    let name = sf.name.clone();
+    let channel_count = sf.channels.len() as u32;
     let slug = std::path::Path::new(&path)
         .file_stem()
         .and_then(|s| s.to_str())
-        .map(session::slugify)
-        .unwrap_or_else(|| session::slugify(&name));
+        .map(show_file::slugify)
+        .unwrap_or_else(|| show_file::slugify(&name));
     engine()
         .state
-        .apply_session_full(sess.channels, sess.static_peers)
+        .apply_show_file_full(sf.channels, sf.static_peers)
         .await?;
-    Ok(SessionLoaded {
+    Ok(ShowFileLoaded {
         slug,
         name,
         channel_count,
     })
 }
 
-pub async fn load_session(slug: String) -> Result<SessionLoaded> {
+pub async fn load_show_file(slug: String) -> Result<ShowFileLoaded> {
     let load_slug = slug.clone();
-    let sess = tokio::task::spawn_blocking(move || session::load_session(&load_slug)).await??;
-    let name = sess.name.clone();
-    let channel_count = sess.channels.len() as u32;
+    let sf = tokio::task::spawn_blocking(move || show_file::load_show_file(&load_slug)).await??;
+    let name = sf.name.clone();
+    let channel_count = sf.channels.len() as u32;
     engine()
         .state
-        .apply_session_full(sess.channels, sess.static_peers)
+        .apply_show_file_full(sf.channels, sf.static_peers)
         .await?;
-    Ok(SessionLoaded {
+    Ok(ShowFileLoaded {
         slug,
         name,
         channel_count,
     })
 }
 
-pub fn list_sessions() -> Result<Vec<SessionMeta>> {
-    session::list_sessions()
+pub fn list_show_files() -> Result<Vec<ShowFileMeta>> {
+    show_file::list_show_files()
 }
 
-pub fn delete_session(slug: String) -> Result<()> {
-    session::delete_session(&slug)
+pub fn delete_show_file(slug: String) -> Result<()> {
+    show_file::delete_show_file(&slug)
 }
 
 // ── Event stream ─────────────────────────────────────────────────────────────

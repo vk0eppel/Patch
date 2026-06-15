@@ -254,8 +254,8 @@ const MAX_PAYLOAD_LEN: usize = 4096;
 
 /// Channel ids must match this slug rule everywhere they can reach an OSC
 /// address: inbound packets (`decode_*`), the UI (`api::upsert_channel`), and
-/// loaded/imported sessions (`AppState::apply_session`). Keeps a remote sender
-/// or a hand-edited session file from injecting arbitrary buffer keys or
+/// loaded/imported show files (`AppState::apply_show_file`). Keeps a remote sender
+/// or a hand-edited show file from injecting arbitrary buffer keys or
 /// oversized/unsafe address segments.
 pub(crate) fn valid_channel_id(id: &str) -> bool {
     !id.is_empty()

@@ -7,7 +7,7 @@ import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
 import '../theme/patch_theme.dart';
 
-/// Settings screen — identity, channels, shortcuts, and session management.
+/// Settings screen — identity, channels, shortcuts, and show file management.
 class SettingsScreen extends StatefulWidget {
   final BridgeClient bridge;
   final List<PatchChannel> channels;

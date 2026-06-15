@@ -7,26 +7,26 @@ import '../bridge/bridge_client.dart';
 import '../models/message.dart';
 import '../theme/patch_theme.dart';
 
-/// Modal sessions panel — shows named presets and file import/export.
-/// Open with: showDialog(context: ctx, builder: (_) => SessionsDialog(bridge: bridge))
-class SessionsDialog extends StatefulWidget {
+/// Modal show files panel — shows named show files and file import/export.
+/// Open with: showDialog(context: ctx, builder: (_) => ShowFilesDialog(bridge: bridge))
+class ShowFilesDialog extends StatefulWidget {
   final BridgeClient bridge;
 
-  const SessionsDialog({super.key, required this.bridge});
+  const ShowFilesDialog({super.key, required this.bridge});
 
   @override
-  State<SessionsDialog> createState() => _SessionsDialogState();
+  State<ShowFilesDialog> createState() => _ShowFilesDialogState();
 }
 
-class _SessionsDialogState extends State<SessionsDialog> {
-  List<SessionMeta> _sessions = [];
+class _ShowFilesDialogState extends State<ShowFilesDialog> {
+  List<ShowFileMeta> _showFiles = [];
   StreamSubscription<Map<String, dynamic>>? _sub;
 
   @override
   void initState() {
     super.initState();
     _sub = widget.bridge.events.listen(_handleEvent);
-    widget.bridge.listSessions();
+    widget.bridge.listShowFiles();
   }
 
   @override
@@ -37,18 +37,18 @@ class _SessionsDialogState extends State<SessionsDialog> {
 
   void _handleEvent(Map<String, dynamic> event) {
     switch (event['event'] as String?) {
-      case 'sessions':
+      case 'show_files':
         final data = event['data'] as List<dynamic>;
         if (mounted) {
           setState(() {
-            _sessions = data
-                .map((s) => SessionMeta.fromJson(s as Map<String, dynamic>))
+            _showFiles = data
+                .map((s) => ShowFileMeta.fromJson(s as Map<String, dynamic>))
                 .toList();
           });
         }
-      case 'session_saved':
-      case 'session_loaded':
-        widget.bridge.listSessions();
+      case 'show_file_saved':
+      case 'show_file_loaded':
+        widget.bridge.listShowFiles();
     }
   }
 
@@ -58,7 +58,7 @@ class _SessionsDialogState extends State<SessionsDialog> {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['toml'],
-      dialogTitle: 'Import Patch Session',
+      dialogTitle: 'Import Patch Show File',
     );
     if (result == null || result.files.isEmpty || result.files.first.path == null) return;
     final path = result.files.first.path!;
@@ -67,11 +67,11 @@ class _SessionsDialogState extends State<SessionsDialog> {
   }
 
   Future<void> _saveToFile() async {
-    final name = await _askName(context, title: 'Export Layout', hint: 'Session name');
+    final name = await _askName(context, title: 'Export Show File', hint: 'Show file name');
     if (name == null || !mounted) return;
 
     final path = await FilePicker.platform.saveFile(
-      dialogTitle: 'Export Patch Session',
+      dialogTitle: 'Export Patch Show File',
       fileName: '${name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_')}.toml',
       allowedExtensions: ['toml'],
       type: FileType.custom,
@@ -81,9 +81,9 @@ class _SessionsDialogState extends State<SessionsDialog> {
   }
 
   Future<void> _saveNew() async {
-    final name = await _askName(context, title: 'Save Session', hint: 'Session name (e.g. "Festival Day 1")');
+    final name = await _askName(context, title: 'Save Show File', hint: 'Show file name (e.g. "Festival Day 1")');
     if (name == null) return;
-    await widget.bridge.saveSession(name);
+    await widget.bridge.saveShowFile(name);
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ class _SessionsDialogState extends State<SessionsDialog> {
               child: Row(
                 children: [
                   const Text(
-                    'SESSIONS',
+                    'SHOW FILES',
                     style: TextStyle(
                       color: PatchTheme.textSecondary,
                       fontSize: PatchTheme.fontSizeSmall,
@@ -166,13 +166,13 @@ class _SessionsDialogState extends State<SessionsDialog> {
             const SizedBox(height: 12),
             const Divider(color: PatchTheme.border, height: 1),
 
-            // ── Session list ──────────────────────────────────────────────────
+            // ── Show file list ─────────────────────────────────────────────────
             Flexible(
-              child: _sessions.isEmpty
+              child: _showFiles.isEmpty
                   ? const Padding(
                       padding: EdgeInsets.all(24),
                       child: Text(
-                        'No saved sessions yet.\nTap "+ Save current layout" to create one.',
+                        'No saved show files yet.\nTap "+ Save current layout" to create one.',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: PatchTheme.textMuted, fontSize: PatchTheme.fontSizeSmall),
                       ),
@@ -180,9 +180,9 @@ class _SessionsDialogState extends State<SessionsDialog> {
                   : ListView.builder(
                       shrinkWrap: true,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      itemCount: _sessions.length,
-                      itemBuilder: (_, i) => _SessionRow(
-                        session: _sessions[i],
+                      itemCount: _showFiles.length,
+                      itemBuilder: (_, i) => _ShowFileRow(
+                        showFile: _showFiles[i],
                         bridge: widget.bridge,
                         onLoaded: () => Navigator.of(context).pop(),
                       ),
@@ -207,15 +207,15 @@ class _SessionsDialogState extends State<SessionsDialog> {
   }
 }
 
-// ── Session row ───────────────────────────────────────────────────────────────
+// ── Show file row ─────────────────────────────────────────────────────────────
 
-class _SessionRow extends StatelessWidget {
-  final SessionMeta session;
+class _ShowFileRow extends StatelessWidget {
+  final ShowFileMeta showFile;
   final BridgeClient bridge;
   final VoidCallback onLoaded;
 
-  const _SessionRow({
-    required this.session,
+  const _ShowFileRow({
+    required this.showFile,
     required this.bridge,
     required this.onLoaded,
   });
@@ -239,7 +239,7 @@ class _SessionRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  session.name,
+                  showFile.name,
                   style: const TextStyle(
                     color: PatchTheme.textPrimary,
                     fontWeight: FontWeight.w600,
@@ -247,7 +247,7 @@ class _SessionRow extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '${session.channelCount} ch · ${_fmtDate(session.createdAt)}',
+                  '${showFile.channelCount} ch · ${_fmtDate(showFile.createdAt)}',
                   style: const TextStyle(color: PatchTheme.textMuted, fontSize: 11),
                 ),
               ],
@@ -256,7 +256,7 @@ class _SessionRow extends StatelessWidget {
           TextButton(
             style: TextButton.styleFrom(foregroundColor: PatchTheme.accent),
             onPressed: () {
-              bridge.loadSession(session.slug);
+              bridge.loadShowFile(showFile.slug);
               onLoaded();
             },
             child: const Text('Load'),
@@ -280,9 +280,9 @@ class _SessionRow extends StatelessWidget {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: Text('Delete "${session.name}"?'),
+        title: Text('Delete "${showFile.name}"?'),
         content: const Text(
-          'This will permanently remove the saved session.',
+          'This will permanently remove the saved show file.',
           style: TextStyle(color: PatchTheme.textSecondary),
         ),
         actions: [
@@ -293,7 +293,7 @@ class _SessionRow extends StatelessWidget {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: PatchTheme.critical),
             onPressed: () {
-              bridge.deleteSession(session.slug);
+              bridge.deleteShowFile(showFile.slug);
               Navigator.pop(context);
             },
             child: const Text('Delete', style: TextStyle(color: Colors.white)),

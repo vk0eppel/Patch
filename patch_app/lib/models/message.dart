@@ -63,20 +63,20 @@ class MessageDeliveryStatus {
       );
 }
 
-class SessionMeta {
+class ShowFileMeta {
   final String slug;
   final String name;
   final DateTime createdAt;
   final int channelCount;
 
-  const SessionMeta({
+  const ShowFileMeta({
     required this.slug,
     required this.name,
     required this.createdAt,
     required this.channelCount,
   });
 
-  factory SessionMeta.fromJson(Map<String, dynamic> j) => SessionMeta(
+  factory ShowFileMeta.fromJson(Map<String, dynamic> j) => ShowFileMeta(
         slug: j['slug'] as String,
         name: j['name'] as String,
         createdAt: DateTime.parse(j['created_at'] as String),

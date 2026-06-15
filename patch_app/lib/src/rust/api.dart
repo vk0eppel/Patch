@@ -11,7 +11,7 @@ import 'package:uuid/uuid.dart';
 import 'state/channel.dart';
 import 'state/config.dart';
 import 'state/peer.dart';
-import 'state/session.dart';
+import 'state/show_file.dart';
 import 'transport.dart';
 part 'api.freezed.dart';
 
@@ -277,25 +277,25 @@ Future<void> reorderGlobalMacros({required List<String> orderedLabels}) =>
       orderedLabels: orderedLabels,
     );
 
-Future<SessionSaved> saveSession({required String name}) =>
-    RustLib.instance.api.crateApiSaveSession(name: name);
+Future<ShowFileSaved> saveShowFile({required String name}) =>
+    RustLib.instance.api.crateApiSaveShowFile(name: name);
 
 /// Export the current channel layout to an arbitrary file path (file-picker).
 Future<void> exportLayout({required String path, required String name}) =>
     RustLib.instance.api.crateApiExportLayout(path: path, name: name);
 
-/// Import a session from an arbitrary file path (file-picker) and apply it.
-Future<SessionLoaded> importLayout({required String path}) =>
+/// Import a show file from an arbitrary file path (file-picker) and apply it.
+Future<ShowFileLoaded> importLayout({required String path}) =>
     RustLib.instance.api.crateApiImportLayout(path: path);
 
-Future<SessionLoaded> loadSession({required String slug}) =>
-    RustLib.instance.api.crateApiLoadSession(slug: slug);
+Future<ShowFileLoaded> loadShowFile({required String slug}) =>
+    RustLib.instance.api.crateApiLoadShowFile(slug: slug);
 
-Future<List<SessionMeta>> listSessions() =>
-    RustLib.instance.api.crateApiListSessions();
+Future<List<ShowFileMeta>> listShowFiles() =>
+    RustLib.instance.api.crateApiListShowFiles();
 
-Future<void> deleteSession({required String slug}) =>
-    RustLib.instance.api.crateApiDeleteSession(slug: slug);
+Future<void> deleteShowFile({required String slug}) =>
+    RustLib.instance.api.crateApiDeleteShowFile(slug: slug);
 
 /// Subscribe to engine events. Each event is converted to a wire-friendly
 /// `PatchAppEvent` and pushed onto the sink. Codegen exposes this in Dart as
@@ -421,12 +421,12 @@ sealed class PatchAppEvent with _$PatchAppEvent {
       PatchAppEvent_PermissionDenied;
 }
 
-class SessionLoaded {
+class ShowFileLoaded {
   final String slug;
   final String name;
   final int channelCount;
 
-  const SessionLoaded({
+  const ShowFileLoaded({
     required this.slug,
     required this.name,
     required this.channelCount,
@@ -438,18 +438,18 @@ class SessionLoaded {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is SessionLoaded &&
+      other is ShowFileLoaded &&
           runtimeType == other.runtimeType &&
           slug == other.slug &&
           name == other.name &&
           channelCount == other.channelCount;
 }
 
-class SessionSaved {
+class ShowFileSaved {
   final String slug;
   final String name;
 
-  const SessionSaved({required this.slug, required this.name});
+  const ShowFileSaved({required this.slug, required this.name});
 
   @override
   int get hashCode => slug.hashCode ^ name.hashCode;
@@ -457,7 +457,7 @@ class SessionSaved {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is SessionSaved &&
+      other is ShowFileSaved &&
           runtimeType == other.runtimeType &&
           slug == other.slug &&
           name == other.name;
