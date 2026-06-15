@@ -91,9 +91,9 @@ void main() {
     });
   });
 
-  group('SessionMeta', () {
+  group('ShowFileMeta', () {
     test('fromJson parses count and date', () {
-      final s = SessionMeta.fromJson({
+      final s = ShowFileMeta.fromJson({
         'slug': 'festival-day-1',
         'name': 'Festival Day 1',
         'created_at': '2026-06-04T12:00:00Z',

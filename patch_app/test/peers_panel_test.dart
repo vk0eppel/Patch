@@ -8,7 +8,7 @@ import 'package:patch/models/message.dart';
 import 'package:patch/theme/patch_theme.dart';
 import 'package:patch/widgets/peers_panel.dart';
 
-/// Finds status dots (the only `Container`s with a coloured `BoxDecoration`).
+/// Finds containers with a specific `BoxDecoration` color (status dots).
 Finder _dotsWithColor(Color c) => find.byWidgetPredicate(
       (w) => w is Container && w.decoration is BoxDecoration && (w.decoration as BoxDecoration).color == c,
     );
@@ -32,12 +32,12 @@ PeerInfo _peer({
       discoveryMode: mode,
     );
 
-Widget _host(List<PeerInfo> peers, {Map<String, Color> channelColors = const {}}) =>
+Widget _host(List<PeerInfo> peers) =>
     MaterialApp(
       home: Scaffold(
         body: SizedBox(
           width: 200,
-          child: PeersPanel(peers: peers, channelColors: channelColors),
+          child: PeersPanel(peers: peers),
         ),
       ),
     );
@@ -76,42 +76,6 @@ void main() {
       _host([_peer(name: 'MON', mode: 'osc_beacon', seenAgo: const Duration(seconds: 20))]),
     );
     expect(_dotsWithColor(PatchTheme.warning), findsOneWidget);
-    await tester.pumpWidget(const SizedBox());
-  });
-
-  testWidgets('renders a colour dot per announced channel, "+N" past the cap',
-      (tester) async {
-    // Two distinct channel colours (kept away from the status-dot palette so the
-    // finder counts only channel dots), one unknown channel → grey fallback.
-    const rf = Color(0xFF111111);
-    const audio = Color(0xFF222222);
-    await tester.pumpWidget(_host(
-      [
-        _peer(
-          name: 'MON',
-          mode: 'osc_beacon',
-          channels: const ['rf', 'audio', 'ghost'],
-        ),
-      ],
-      channelColors: const {'rf': rf, 'audio': audio},
-    ));
-    expect(_dotsWithColor(rf), findsOneWidget);
-    expect(_dotsWithColor(audio), findsOneWidget);
-    // 'ghost' isn't in the viewer's map → grey fallback dot.
-    expect(_dotsWithColor(PatchTheme.textMuted), findsOneWidget);
-    expect(find.text('+'), findsNothing); // 3 ≤ cap, no overflow label
-
-    // Past the cap (5) the remainder collapses into a "+N" label.
-    await tester.pumpWidget(_host(
-      [
-        _peer(
-          name: 'MON',
-          mode: 'osc_beacon',
-          channels: const ['a', 'b', 'c', 'd', 'e', 'f', 'g'],
-        ),
-      ],
-    ));
-    expect(find.text('+2'), findsOneWidget); // 7 channels, 5 shown
     await tester.pumpWidget(const SizedBox());
   });
 

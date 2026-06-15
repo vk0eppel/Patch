@@ -77,8 +77,7 @@ pub fn save_show_file(show_file: &ShowFileConfig) -> Result<String> {
     }
     let path = show_file_path(&slug);
     let raw = toml::to_string_pretty(show_file).context("Failed to serialise show file")?;
-    std::fs::write(&path, raw)
-        .with_context(|| format!("Failed to write show file {:?}", path))?;
+    std::fs::write(&path, raw).with_context(|| format!("Failed to write show file {:?}", path))?;
     Ok(slug)
 }
 
