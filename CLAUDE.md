@@ -21,3 +21,17 @@ Patch is a real-time operational communication tool for live production teams (A
 - **[ERRORS.md](ERRORS.md)** — proven mistakes and traps; read before touching transport, discovery, UI flash, or the bridge
 - **[CONVENTION.md](CONVENTION.md)** — coding conventions, CI requirements, patterns to follow
 
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues (`vk0eppel/Patch`). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default label vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
