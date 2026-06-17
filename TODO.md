@@ -126,7 +126,7 @@ behavioural outcome — discovery working where it didn't before — confirms th
 is also covered locally (`usable_iface_indices_are_nonzero_and_pinnable` test; `print_iface_indices`
 diagnostic). Static peers remain the guaranteed fallback; multicast stays a separate, larger item (next).
 
-### Multicast transport option
+### Multicast transport option *(deferred — low marginal value)*
 **Files:** `patch-core/src/transport/mod.rs`, `patch-core/src/discovery/mod.rs`, `patch-core/src/state/config.rs`
 **Effort:** large
 
@@ -135,12 +135,28 @@ subnet-directed — see `transport::broadcast_targets` — LAN-only, stops at ro
 UDP unicast to known peers for messages. Multicast would allow group delivery that can be routed
 across VLANs on networks that support multicast routing.
 
-Scope is TBD — options include:
-- Multicast for presence/discovery only (replace the subnet-directed broadcast with a multicast group, e.g. `239.0.0.1:9000`), keeping unicast for messages
-- Multicast for messages too (all receivers in the group get every message, no per-peer send loop)
-- A config toggle so users can opt in on complex show networks (VLAN-segmented, multi-subnet)
+**Deferred (2026-06-17) — don't build until a concrete driver appears.** Grilled and concluded the
+marginal value is low for Patch's standard usage:
+- **Same subnet (the common case): multicast adds nothing we don't already have.** We already run three
+  auto-discovery mechanisms there — **mDNS** (which is *itself* multicast on 224.0.0.251), the **UDP
+  broadcast beacon** (`255.255.255.255` + subnet-directed, reaches every host on the subnet), and the
+  **macOS per-interface broadcast**. A custom multicast group reaches the same hosts broadcast already does;
+  the only same-subnet difference is network-layer politeness, irrelevant on a small show LAN.
+- **Multicast's one unique win is cross-VLAN/cross-subnet discovery**, but it's narrow and conditional: it
+  only helps VLAN-segmented networks, only works where the network actually has multicast routing
+  (IGMP snooping + PIM) configured — which many show networks deliberately don't, or block — and for exactly
+  those users **static peers already give a guaranteed cross-subnet fallback** that doesn't depend on the
+  network cooperating.
+- **Cost is real:** the Apple **multicast entitlement** (`com.apple.developer.networking.multicast`, needs a
+  special approval request from Apple), added socket/membership complexity (`IP_ADD_MEMBERSHIP`, bind/reuse
+  semantics), and a fourth discovery code path to maintain across five platforms. Many consumer APs block
+  multicast anyway.
 
-Considerations: multicast requires `IP_ADD_MEMBERSHIP` socket option; iOS/macOS sandbox may require additional entitlements; many consumer APs still block multicast.
+**Revisit only if** a concrete user appears on a segmented network *whose switches actually route multicast*
+and for whom static peers are genuinely insufficient. If so, the scope would be **discovery/presence only,
+additive** (alongside broadcast + mDNS, can't regress them) — never messages, since the critical-message
+ACK/retransmit reliability guarantee lives on the unicast path and multicast is unreliable (no ACK, APs drop
+it).
 
 ### ~~mDNS init panics instead of gracefully degrading~~ ✅ Done
 **File:** `patch-core/src/discovery/mod.rs`
@@ -839,10 +855,10 @@ Contextual help for crew members who won't read external docs. Remaining work:
 - Empty message list: "No messages yet / Are you on the same network as your crew?"
 
 **Still to do:**
-- First-run onboarding: name prompt on first launch if name is still the system default
-- Peers panel `?` tooltip or help text explaining discovery modes
-- Permission-denied SnackBar could link to a help page
-- Consider a `HelpTooltip` widget wrapping `IconButton(icon: Icon(Icons.help_outline))` for reuse
+- First-run onboarding: name prompt on first launch if name is still the system default — **Tracked:** [#17 (PRD)](https://github.com/vk0eppel/Patch/issues/17), [#18 implementation](https://github.com/vk0eppel/Patch/issues/18). Decided (2026-06-17): detect via engine-computed `name_is_default` (`client_name == whoami()`) — no persisted flag, no migration; skippable modal, name only, session-only skip suppression.
+- ~~Peers panel `?` tooltip or help text explaining discovery modes~~ — **dropped.** The peer tile renders no discovery-mode glyph to explain, and the mDNS-vs-beacon distinction isn't operationally useful. Replaced by a status-dot liveness tooltip ([#19](https://github.com/vk0eppel/Patch/issues/19)) — explains the green/amber/grey colours the Operator actually reads.
+- Permission-denied SnackBar could link to a help page — **deferred:** needs a help destination to link to, which doesn't exist yet.
+- Consider a `HelpTooltip` widget wrapping `IconButton(icon: Icon(Icons.help_outline))` for reuse — not needed for the current scope (only the name prompt + one status-dot tooltip).
 
 ---
 
