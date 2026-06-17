@@ -9,10 +9,12 @@ import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
 import '../models/message.dart';
 import '../theme/patch_theme.dart';
+import '../util/message_filter.dart';
 import '../widgets/channel_tab.dart';
 import '../widgets/flash_button.dart';
 import '../widgets/message_list.dart';
 import '../widgets/message_input.dart';
+import '../widgets/message_search_bar.dart';
 import '../widgets/name_prompt.dart';
 import '../widgets/peers_panel.dart';
 import '../widgets/show_files_dialog.dart';
@@ -903,7 +905,15 @@ class _ChannelStrip extends StatelessWidget {
 
 // ── Per-channel (or multi-channel) view ──────────────────────────────────────
 
-class _ChannelView extends StatelessWidget {
+/// Channel context key — identifies the viewed channel(s)/thread so a switch
+/// resets the in-channel search (never silently hide messages on a new view).
+String _channelContextKey(_ChannelView w) {
+  if (w.isDmMode) return 'dm:${w.dmPeerId}';
+  if (w.isAllMode) return '__all__';
+  return (w.selectedChannels.map((c) => c.id).toList()..sort()).join(',');
+}
+
+class _ChannelView extends StatefulWidget {
   final List<PatchChannel> selectedChannels;
 
   /// Broadcast (ALL) mode — `selectedChannels` is empty; send/flash target the
@@ -959,43 +969,78 @@ class _ChannelView extends StatelessWidget {
     this.onBroadcastSent,
   });
 
-  bool get _isMulti => selectedChannels.length > 1;
+  @override
+  State<_ChannelView> createState() => _ChannelViewState();
+}
+
+class _ChannelViewState extends State<_ChannelView> {
+  bool _searchExpanded = false;
+  String _query = '';
+  final Set<String> _priorityFilter = {};
+
+  bool get _isMulti => widget.selectedChannels.length > 1;
+  bool get _filterActive => _query.trim().isNotEmpty || _priorityFilter.isNotEmpty;
+
+  @override
+  void didUpdateWidget(_ChannelView old) {
+    super.didUpdateWidget(old);
+    // Reset search when the viewed channel(s) change — a filter left active from
+    // a previous view could otherwise hide a critical on the new one.
+    if (_channelContextKey(old) != _channelContextKey(widget) &&
+        (_searchExpanded || _filterActive)) {
+      _resetSearch();
+    }
+  }
+
+  void _resetSearch() {
+    setState(() {
+      _searchExpanded = false;
+      _query = '';
+      _priorityFilter.clear();
+    });
+  }
+
+  void _toggleCategory(String cat) {
+    setState(() {
+      if (!_priorityFilter.remove(cat)) _priorityFilter.add(cat);
+    });
+  }
 
   void _sendMessage(String text) {
-    if (isDmMode) {
-      bridge.sendDirectMessage(peerId: dmPeerId!, payload: text);
-      onDmSent();
-    } else if (isAllMode) {
-      bridge.sendMessage(channelId: kAllChannelId, payload: text);
-      onBroadcastSent?.call();
+    if (widget.isDmMode) {
+      widget.bridge.sendDirectMessage(peerId: widget.dmPeerId!, payload: text);
+      widget.onDmSent();
+    } else if (widget.isAllMode) {
+      widget.bridge.sendMessage(channelId: kAllChannelId, payload: text);
+      widget.onBroadcastSent?.call();
     } else {
-      for (final ch in selectedChannels) {
-        bridge.sendMessage(channelId: ch.id, payload: text);
+      for (final ch in widget.selectedChannels) {
+        widget.bridge.sendMessage(channelId: ch.id, payload: text);
       }
     }
   }
 
   void _sendFlash() {
-    if (isDmMode) {
-      bridge.sendDmFlash(dmPeerId!);
-      onDmSent();
-    } else if (isAllMode) {
-      bridge.sendFlash(kAllChannelId);
-      onBroadcastSent?.call();
+    if (widget.isDmMode) {
+      widget.bridge.sendDmFlash(widget.dmPeerId!);
+      widget.onDmSent();
+    } else if (widget.isAllMode) {
+      widget.bridge.sendFlash(kAllChannelId);
+      widget.onBroadcastSent?.call();
     } else {
-      for (final ch in selectedChannels) {
-        bridge.sendFlash(ch.id);
+      for (final ch in widget.selectedChannels) {
+        widget.bridge.sendFlash(ch.id);
       }
     }
   }
 
-  Future<void> _exportMessages(BuildContext context) async {
-    final label = isDmMode
-        ? 'dm_${dmPeerName ?? ''}'.toLowerCase()
-        : isAllMode
+  Future<void> _exportMessages() async {
+    final label = widget.isDmMode
+        ? 'dm_${widget.dmPeerName ?? ''}'.toLowerCase()
+        : widget.isAllMode
             ? 'all_channels'
-            : selectedChannels.length == 1
-                ? selectedChannels.first.displayName.toLowerCase()
+            : widget.selectedChannels.length == 1
+                ? widget.selectedChannels.first.displayName.toLowerCase()
                 : 'all_channels';
     final path = await FilePicker.platform.saveFile(
       dialogTitle: 'Export Messages',
@@ -1005,22 +1050,22 @@ class _ChannelView extends StatelessWidget {
     );
     if (path == null) return;
     // DM → that thread; ALL / multi-channel → everything (null); single → that one.
-    final channelId = isDmMode
-        ? 'dm:$dmPeerId'
-        : (!isAllMode && selectedChannels.length == 1)
-            ? selectedChannels.first.id
+    final channelId = widget.isDmMode
+        ? 'dm:${widget.dmPeerId}'
+        : (!widget.isAllMode && widget.selectedChannels.length == 1)
+            ? widget.selectedChannels.first.id
             : null;
-    bridge.exportMessages(channelId: channelId, path: path);
+    widget.bridge.exportMessages(channelId: channelId, path: path);
   }
 
   void _confirmClear(BuildContext context) {
-    final label = isDmMode
+    final label = widget.isDmMode
         ? 'this conversation'
-        : isAllMode
+        : widget.isAllMode
             ? 'all channels'
-            : selectedChannels.length == 1
-                ? selectedChannels.first.displayName
-                : '${selectedChannels.length} channels';
+            : widget.selectedChannels.length == 1
+                ? widget.selectedChannels.first.displayName
+                : '${widget.selectedChannels.length} channels';
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -1041,13 +1086,13 @@ class _ChannelView extends StatelessWidget {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: PatchTheme.critical),
             onPressed: () {
-              if (isDmMode) {
-                bridge.clearMessages(channelId: 'dm:$dmPeerId');
-              } else if (isAllMode) {
-                bridge.clearMessages(channelId: null); // clear everything
+              if (widget.isDmMode) {
+                widget.bridge.clearMessages(channelId: 'dm:${widget.dmPeerId}');
+              } else if (widget.isAllMode) {
+                widget.bridge.clearMessages(channelId: null); // clear everything
               } else {
-                for (final ch in selectedChannels) {
-                  bridge.clearMessages(channelId: ch.id);
+                for (final ch in widget.selectedChannels) {
+                  widget.bridge.clearMessages(channelId: ch.id);
                 }
               }
               Navigator.pop(context);
@@ -1061,6 +1106,11 @@ class _ChannelView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final filtered = filterMessages(
+      widget.messages,
+      query: _query,
+      categories: _priorityFilter,
+    );
     final content = Column(
       children: [
         // ── Header ────────────────────────────────────────────────────────
@@ -1074,16 +1124,16 @@ class _ChannelView extends StatelessWidget {
               // Peers toggle on the LEFT, mirroring the peers panel's position
               // (it opens on the left). When the panel is open it carries its own
               // hide button, so this only shows while the panel is hidden.
-              if (!showPeers)
+              if (!widget.showPeers)
                 Stack(
                   clipBehavior: Clip.none,
                   children: [
                     IconButton(
                       icon: const Icon(Icons.people, color: PatchTheme.textMuted, size: 20),
                       tooltip: 'Show peers',
-                      onPressed: onTogglePeers,
+                      onPressed: widget.onTogglePeers,
                     ),
-                    if (hasUnreadDms)
+                    if (widget.hasUnreadDms)
                       Positioned(
                         right: 8,
                         top: 8,
@@ -1099,12 +1149,12 @@ class _ChannelView extends StatelessWidget {
                   ],
                 ),
               // Channel dot(s) + name(s)
-              if (isDmMode) ...[
+              if (widget.isDmMode) ...[
                 const Text('💬', style: TextStyle(fontSize: 16)),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    dmPeerName ?? 'Direct message',
+                    widget.dmPeerName ?? 'Direct message',
                     style: const TextStyle(
                       color: PatchTheme.textPrimary,
                       fontSize: PatchTheme.fontSizeLarge,
@@ -1114,7 +1164,7 @@ class _ChannelView extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              ] else if (isAllMode) ...[
+              ] else if (widget.isAllMode) ...[
                 const Text('📢', style: TextStyle(fontSize: 16)),
                 const SizedBox(width: 10),
                 const Expanded(
@@ -1130,20 +1180,20 @@ class _ChannelView extends StatelessWidget {
                   ),
                 ),
               ] else if (_isMulti) ...[
-                Expanded(child: _MultiChannelLabel(channels: selectedChannels)),
+                Expanded(child: _MultiChannelLabel(channels: widget.selectedChannels)),
               ] else ...[
                 Container(
                   width: 10,
                   height: 10,
                   decoration: BoxDecoration(
-                    color: selectedChannels.first.color,
+                    color: widget.selectedChannels.first.color,
                     shape: BoxShape.circle,
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    selectedChannels.first.displayName,
+                    widget.selectedChannels.first.displayName,
                     style: const TextStyle(
                       color: PatchTheme.textPrimary,
                       fontSize: PatchTheme.fontSizeLarge,
@@ -1156,11 +1206,11 @@ class _ChannelView extends StatelessWidget {
               ],
               FlashButton(onFlash: _sendFlash),
               // Macros toggle stays on the RIGHT, mirroring the macros panel.
-              if (!showMacros)
+              if (!widget.showMacros)
                 IconButton(
                   icon: const Icon(Icons.keyboard_outlined, color: PatchTheme.textMuted, size: 20),
                   tooltip: 'Show macros',
-                  onPressed: onToggleMacros,
+                  onPressed: widget.onToggleMacros,
                 ),
             ],
           ),
@@ -1169,31 +1219,61 @@ class _ChannelView extends StatelessWidget {
 
         // ── Messages ──────────────────────────────────────────────────────
         Expanded(
-          child: Stack(
+          child: Column(
             children: [
-              MessageList(
-                messages: messages,
-                channelColors: (_isMulti || isAllMode) ? channelColors : null,
-                delivery: delivery,
-              ),
-              Positioned(
-                top: 4,
-                right: 40,
-                child: IconButton(
-                  icon: const Icon(Icons.download_outlined, size: 18),
-                  color: PatchTheme.textMuted,
-                  tooltip: 'Export messages',
-                  onPressed: () => _exportMessages(context),
+              if (_searchExpanded) ...[
+                MessageSearchBar(
+                  query: _query,
+                  categories: _priorityFilter,
+                  onQueryChanged: (q) => setState(() => _query = q),
+                  onToggleCategory: _toggleCategory,
+                  onClose: _resetSearch,
                 ),
-              ),
-              Positioned(
-                top: 4,
-                right: 4,
-                child: IconButton(
-                  icon: const Icon(Icons.delete_sweep_outlined, size: 18),
-                  color: PatchTheme.textMuted,
-                  tooltip: 'Clear messages',
-                  onPressed: () => _confirmClear(context),
+                const Divider(color: PatchTheme.border, height: 1),
+              ],
+              Expanded(
+                child: Stack(
+                  children: [
+                    MessageList(
+                      messages: filtered,
+                      channelColors:
+                          (_isMulti || widget.isAllMode) ? widget.channelColors : null,
+                      delivery: widget.delivery,
+                    ),
+                    // Search toggle. Tinted accent while a filter is active so the
+                    // Operator knows the feed is filtered even with the bar closed.
+                    Positioned(
+                      top: 4,
+                      right: 76,
+                      child: IconButton(
+                        icon: const Icon(Icons.search, size: 18),
+                        color: _filterActive ? PatchTheme.accent : PatchTheme.textMuted,
+                        tooltip: 'Search messages',
+                        onPressed: () =>
+                            setState(() => _searchExpanded = !_searchExpanded),
+                      ),
+                    ),
+                    Positioned(
+                      top: 4,
+                      right: 40,
+                      child: IconButton(
+                        icon: const Icon(Icons.download_outlined, size: 18),
+                        color: PatchTheme.textMuted,
+                        tooltip: 'Export messages',
+                        onPressed: _exportMessages,
+                      ),
+                    ),
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: IconButton(
+                        icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                        color: PatchTheme.textMuted,
+                        tooltip: 'Clear messages',
+                        onPressed: () => _confirmClear(context),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -1204,10 +1284,10 @@ class _ChannelView extends StatelessWidget {
         // ── Input ─────────────────────────────────────────────────────────
         MessageInput(
           onSend: _sendMessage,
-          hideKeyboard: hideKeyboard,
-          hint: isDmMode
-              ? '💬 Message ${dmPeerName ?? ''}…'
-              : isAllMode
+          hideKeyboard: widget.hideKeyboard,
+          hint: widget.isDmMode
+              ? '💬 Message ${widget.dmPeerName ?? ''}…'
+              : widget.isAllMode
                   ? '📢 Broadcast to ALL channels…'
                   : null,
         ),
@@ -1216,7 +1296,11 @@ class _ChannelView extends StatelessWidget {
 
     return Stack(children: [
       content,
-      _FlashLayer(flashNotify: flashNotify, flashColor: flashColor, pulseCount: flashPulseCount),
+      _FlashLayer(
+        flashNotify: widget.flashNotify,
+        flashColor: widget.flashColor,
+        pulseCount: widget.flashPulseCount,
+      ),
     ]);
   }
 }
