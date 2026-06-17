@@ -1,13 +1,31 @@
+import 'dart:io' show Platform;
 import 'dart:ui' show AppExitResponse;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'bridge/bridge_client.dart';
 import 'screens/home_screen.dart';
 import 'theme/patch_theme.dart';
+import 'util/orientation_lock.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Lock to landscape on iPad — the fixed-width multi-panel layout is unusable
+  // in portrait. Done before runApp so it's in effect for the first frame. No-op
+  // on desktop and iPhone (see shouldLockLandscape).
+  final isIOS = !kIsWeb && Platform.isIOS;
+  final view = WidgetsBinding.instance.platformDispatcher.views.first;
+  final shortestSide = (view.physicalSize / view.devicePixelRatio).shortestSide;
+  if (shouldLockLandscape(isIOS: isIOS, shortestSide: shortestSide)) {
+    await SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+  }
+
   runApp(const PatchApp());
 }
 
