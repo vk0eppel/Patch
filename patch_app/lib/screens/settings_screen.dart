@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
 import '../theme/patch_theme.dart';
-import '../widgets/heartbeat_field.dart';
+import '../widgets/bounded_int_field.dart';
 import '../widgets/interface_picker.dart';
 
 /// Settings screen — identity, channels, shortcuts, and show file management.
@@ -48,6 +48,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _selectedInterface; // null = auto
   bool _interfaceApplied = false;
   int _heartbeatInterval = 7;
+  int _oscPort = 9000;
 
   // Static peers
   List<Map<String, dynamic>> _staticPeers = [];
@@ -94,6 +95,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _audibleAlert = (data['audible_alert'] as bool?) ?? false;
           _macrosColumns = (data['macros_columns'] as int?) ?? 1;
           _heartbeatInterval = (data['heartbeat_interval_secs'] as int?) ?? 7;
+          _oscPort = (data['osc_port'] as int?) ?? 9000;
           _globalMacros = ((data['global_macros'] as List<dynamic>?) ?? [])
               .map((m) => MacroMessage.fromJson(m as Map<String, dynamic>))
               .toList();
@@ -503,11 +505,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               const SizedBox(width: 12),
-              HeartbeatField(
+              BoundedIntField(
                 // Key by value so an external config refresh reseeds the field.
                 key: ValueKey(_heartbeatInterval),
                 value: _heartbeatInterval,
+                min: 1,
+                max: 60,
+                suffix: 's',
                 onSubmit: (secs) => widget.bridge.setHeartbeatInterval(secs),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'OSC port',
+                      style: TextStyle(
+                        color: PatchTheme.textPrimary,
+                        fontSize: PatchTheme.fontSizeSmall,
+                      ),
+                    ),
+                    Text(
+                      'UDP port for OSC discovery + messaging. All peers must share '
+                      'it. Applies live (socket rebinds), 1024–65535.',
+                      style: TextStyle(color: PatchTheme.textSecondary, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              BoundedIntField(
+                key: ValueKey(_oscPort),
+                value: _oscPort,
+                min: 1024,
+                max: 65535,
+                onSubmit: (port) => widget.bridge.setOscPort(port),
               ),
             ],
           ),
