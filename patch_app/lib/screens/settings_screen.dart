@@ -7,6 +7,7 @@ import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
 import '../theme/patch_theme.dart';
 import '../widgets/heartbeat_field.dart';
+import '../widgets/interface_picker.dart';
 
 /// Settings screen — identity, channels, shortcuts, and show file management.
 class SettingsScreen extends StatefulWidget {
@@ -470,7 +471,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             style: TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeSmall),
           ),
           const SizedBox(height: 12),
-          _InterfacePicker(
+          InterfacePicker(
             interfaces: _interfaces,
             selected: _selectedInterface,
             applied: _interfaceApplied,
@@ -895,74 +896,6 @@ class _UsernameField extends StatelessWidget {
 }
 
 // ── Network interface picker ──────────────────────────────────────────────────
-
-class _InterfacePicker extends StatelessWidget {
-  final List<Map<String, String>> interfaces;
-  final String? selected; // null = auto
-  final bool applied;
-  final ValueChanged<String?> onSelect;
-
-  const _InterfacePicker({
-    required this.interfaces,
-    required this.selected,
-    required this.applied,
-    required this.onSelect,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // Build dropdown items: Auto + each interface
-    final items = <DropdownMenuItem<String?>>[
-      const DropdownMenuItem(
-        value: null,
-        child: Text('Auto (all interfaces)'),
-      ),
-      ...interfaces.map((iface) => DropdownMenuItem(
-            value: iface['name'],
-            child: Text('${iface['name']}  •  ${iface['ip']}'),
-          )),
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-          decoration: BoxDecoration(
-            color: PatchTheme.surface,
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: PatchTheme.border),
-          ),
-          child: DropdownButton<String?>(
-            value: selected,
-            isExpanded: true,
-            underline: const SizedBox.shrink(),
-            dropdownColor: PatchTheme.surface,
-            style: const TextStyle(
-              color: PatchTheme.textPrimary,
-              fontSize: PatchTheme.fontSizeSmall,
-            ),
-            items: items,
-            onChanged: onSelect,
-          ),
-        ),
-        if (applied) ...[
-          const SizedBox(height: 8),
-          Row(
-            children: const [
-              Icon(Icons.check_circle_outline, size: 14, color: PatchTheme.success),
-              SizedBox(width: 6),
-              Text(
-                'Applied — active within a few seconds.',
-                style: TextStyle(color: PatchTheme.success, fontSize: 11),
-              ),
-            ],
-          ),
-        ],
-      ],
-    );
-  }
-}
 
 // ── Macro helpers ─────────────────────────────────────────────────────────────
 
