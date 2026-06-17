@@ -133,6 +133,9 @@ Future<void> setMacrosColumns({required int columns}) =>
 Future<void> setHideKeyboard({required bool enabled}) =>
     RustLib.instance.api.crateApiSetHideKeyboard(enabled: enabled);
 
+Future<void> setHeartbeatInterval({required BigInt secs}) =>
+    RustLib.instance.api.crateApiSetHeartbeatInterval(secs: secs);
+
 Future<void> setAudibleAlert({required bool enabled}) =>
     RustLib.instance.api.crateApiSetAudibleAlert(enabled: enabled);
 

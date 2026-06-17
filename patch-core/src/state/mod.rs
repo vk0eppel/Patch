@@ -220,6 +220,18 @@ impl AppState {
         self.save_config().await
     }
 
+    /// Persist the presence heartbeat interval (seconds). Validated 1–60: below
+    /// floods the LAN, above makes peer detection uselessly slow. Applies live —
+    /// the discovery heartbeat loop re-reads it at the end of each cycle, so the
+    /// new cadence takes effect on the next beat with no restart.
+    pub async fn set_heartbeat_interval(&self, secs: u64) -> anyhow::Result<()> {
+        if !(1..=60).contains(&secs) {
+            anyhow::bail!("heartbeat interval must be 1–60 seconds (got {})", secs);
+        }
+        self.0.config.write().await.heartbeat_interval_secs = secs;
+        self.save_config().await
+    }
+
     /// Update per-channel flash flags. `None` means "leave unchanged".
     pub async fn set_channel_flash(
         &self,
@@ -1053,6 +1065,33 @@ mod tests {
     async fn reorder_macros_unknown_channel_errors() {
         let st = test_state();
         assert!(st.reorder_macros("nope", vec!["x".into()]).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn set_heartbeat_interval_validates_and_persists() {
+        let _guard = config::test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        config::set_data_dir(dir.clone());
+
+        let st = test_state();
+        // A valid value persists to disk.
+        st.set_heartbeat_interval(12).await.unwrap();
+        assert_eq!(
+            Config::load_or_default().unwrap().heartbeat_interval_secs,
+            12
+        );
+        // Boundaries are accepted.
+        st.set_heartbeat_interval(1).await.unwrap();
+        st.set_heartbeat_interval(60).await.unwrap();
+        // Out-of-range values are rejected and leave the stored value untouched.
+        assert!(st.set_heartbeat_interval(0).await.is_err());
+        assert!(st.set_heartbeat_interval(61).await.is_err());
+        assert_eq!(
+            Config::load_or_default().unwrap().heartbeat_interval_secs,
+            60
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]
