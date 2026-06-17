@@ -16,6 +16,7 @@ import '../widgets/message_list.dart';
 import '../widgets/message_input.dart';
 import '../widgets/message_search_bar.dart';
 import '../widgets/name_prompt.dart';
+import '../widgets/pulsing_peers_button.dart';
 import '../widgets/peers_panel.dart';
 import '../widgets/show_files_dialog.dart';
 import '../widgets/macros_panel.dart' show MacrosPanel, ChannelMacro;
@@ -105,6 +106,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// DM thread keys (`dm:<peer>`) with unread messages — cleared when viewed.
   final Set<String> _unreadDms = {};
+
+  /// Bumped on each new unread DM while the peers panel is closed; drives the
+  /// one-shot pulse on the peers toggle ([PulsingPeersButton]).
+  int _dmPulseNotify = 0;
 
   StreamSubscription<Map<String, dynamic>>? _eventSub;
 
@@ -421,7 +426,12 @@ class _HomeScreenState extends State<HomeScreen> {
           if (_flashOnCritical && msg.isCritical) {
             _triggerDmFlash(msg.channelId);
           } else if (!_selectedIds.contains(msg.channelId)) {
-            setState(() => _unreadDms.add(msg.channelId));
+            setState(() {
+              _unreadDms.add(msg.channelId);
+              // Pulse the peers toggle only when the panel is closed (open → the
+              // unread dot on the peer row is already visible).
+              if (!_showPeers) _dmPulseNotify++;
+            });
           }
         } else if (msg.channelId == kAllChannelId) {
           // Broadcast — global flags only (it isn't tied to a channel).
@@ -646,6 +656,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _flashPulseCount = _globalFlashCount;
       } else {
         _unreadDms.add(dmKey);
+        if (!_showPeers) _dmPulseNotify++;
       }
     });
   }
@@ -776,6 +787,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     onTogglePeers: () =>
                         setState(() => _showPeers = !_showPeers),
                     hasUnreadDms: _unreadDms.isNotEmpty,
+                    dmPulseNotify: _dmPulseNotify,
                     showMacros: _showMacros,
                     onToggleMacros: () =>
                         setState(() => _showMacros = !_showMacros),
@@ -937,6 +949,10 @@ class _ChannelView extends StatefulWidget {
   final bool showPeers;
   final VoidCallback onTogglePeers;
   final bool hasUnreadDms;
+
+  /// Increments on each new unread DM while the peers panel is closed — drives
+  /// the one-shot pulse on the peers toggle.
+  final int dmPulseNotify;
   final bool showMacros;
   final VoidCallback onToggleMacros;
   final int flashNotify;
@@ -960,6 +976,7 @@ class _ChannelView extends StatefulWidget {
     required this.showPeers,
     required this.onTogglePeers,
     required this.hasUnreadDms,
+    required this.dmPulseNotify,
     required this.showMacros,
     required this.onToggleMacros,
     required this.flashNotify,
@@ -1123,30 +1140,13 @@ class _ChannelViewState extends State<_ChannelView> {
             children: [
               // Peers toggle on the LEFT, mirroring the peers panel's position
               // (it opens on the left). When the panel is open it carries its own
-              // hide button, so this only shows while the panel is hidden.
+              // hide button, so this only shows while the panel is hidden — which
+              // is also why a DM pulse never fires with the panel open.
               if (!widget.showPeers)
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.people, color: PatchTheme.textMuted, size: 20),
-                      tooltip: 'Show peers',
-                      onPressed: widget.onTogglePeers,
-                    ),
-                    if (widget.hasUnreadDms)
-                      Positioned(
-                        right: 8,
-                        top: 8,
-                        child: Container(
-                          width: 7,
-                          height: 7,
-                          decoration: const BoxDecoration(
-                            color: PatchTheme.critical,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      ),
-                  ],
+                PulsingPeersButton(
+                  pulseNotify: widget.dmPulseNotify,
+                  hasUnread: widget.hasUnreadDms,
+                  onPressed: widget.onTogglePeers,
                 ),
               // Channel dot(s) + name(s)
               if (widget.isDmMode) ...[
