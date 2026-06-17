@@ -97,11 +97,9 @@ class MacrosPanel extends StatelessWidget {
               ),
             )
           else ...[
-            if (!isMulti)
-              ..._buildFlatRows(macros)
-            else
-              ..._buildGroupedRows(macros),
-            // Global macros — shown on every channel, in their own group.
+            // Global macros first — the everyday quick-sends (mirrors the
+            // Settings order: Global Macros above Channels & Macros). On a fresh
+            // install per-channel macros are empty, so the globals lead.
             if (globalMacros.isNotEmpty) ...[
               const _ChannelGroupHeader(
                 color: PatchTheme.accent,
@@ -109,6 +107,11 @@ class MacrosPanel extends StatelessWidget {
               ),
               ..._rowsFrom(globalMacros, showChannelBar: false),
             ],
+            // Per-channel macros below (absent entirely when there are none).
+            if (!isMulti)
+              ..._buildFlatRows(macros)
+            else
+              ..._buildGroupedRows(macros),
           ],
         ],
       ),
