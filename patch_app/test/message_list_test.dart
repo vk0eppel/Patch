@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:patch/models/message.dart';
+import 'package:patch/theme/patch_theme.dart';
 import 'package:patch/widgets/message_list.dart';
 
 PatchMessage _msg(String payload, {int priority = 1}) => PatchMessage(
@@ -93,5 +94,21 @@ void main() {
     // Exactly one 📢 — on the broadcast row, not the normal one.
     expect(find.text('📢'), findsOneWidget);
     expect(find.text('LUNCH BREAK'), findsOneWidget);
+  });
+
+  testWidgets('sender name colour encodes priority', (tester) async {
+    Color senderColour() => tester.widget<Text>(find.text('FOH')).style!.color!;
+
+    await tester.pumpWidget(_host([_msg('info', priority: 1)]));
+    await tester.pumpAndSettle();
+    expect(senderColour(), PatchTheme.accent); // info → blue
+
+    await tester.pumpWidget(_host([_msg('warn', priority: 2)]));
+    await tester.pumpAndSettle();
+    expect(senderColour(), PatchTheme.warning); // warning → amber
+
+    await tester.pumpWidget(_host([_msg('crit', priority: 3)]));
+    await tester.pumpAndSettle();
+    expect(senderColour(), PatchTheme.critical); // critical → red
   });
 }

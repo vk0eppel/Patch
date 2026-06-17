@@ -162,11 +162,16 @@ class _MessageTile extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
-            // Sender
+            // Sender — coloured by priority so the level reads from the name
+            // alone: critical red, warning amber, info blue.
             Text(
               message.senderName,
               style: TextStyle(
-                color: isCritical ? PatchTheme.critical : PatchTheme.accent,
+                color: isCritical
+                    ? PatchTheme.critical
+                    : isWarning
+                        ? PatchTheme.warning
+                        : PatchTheme.accent,
                 fontSize: PatchTheme.fontSizeSmall,
                 fontWeight: FontWeight.w700,
               ),
