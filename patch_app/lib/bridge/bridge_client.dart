@@ -788,6 +788,7 @@ Map<String, dynamic> _peerToMap(rust_peer.Peer p) => {
       'address': p.address,
       'osc_port': p.oscPort,
       'last_seen': p.lastSeen.toIso8601String(),
+      'departed': p.departed,
       'discovery_mode': switch (p.discoveryMode) {
         rust_peer.DiscoveryMode.mdns => 'mdns',
         rust_peer.DiscoveryMode.oscBeacon => 'osc_beacon',
@@ -807,6 +808,7 @@ Map<String, dynamic> _presenceToPeerMap(rust_osc.PeerPresence p) => {
       'address': '',
       'osc_port': 0,
       'last_seen': p.timestamp.toIso8601String(),
+      'departed': false,
       'discovery_mode': 'osc_beacon',
     };
 

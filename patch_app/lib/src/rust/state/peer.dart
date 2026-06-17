@@ -30,6 +30,12 @@ class Peer {
   final int oscPort;
   final DateTime lastSeen;
 
+  /// True when the peer announced a clean departure (`/patch/bye` or mDNS
+  /// `ServiceRemoved`) — drives a distinct "left" treatment in the UI while
+  /// keeping the real `last_seen`. Cleared the moment a real OSC packet is
+  /// received again (`touch_peer_address`).
+  final bool departed;
+
   const Peer({
     required this.peerId,
     required this.peerName,
@@ -39,6 +45,7 @@ class Peer {
     required this.address,
     required this.oscPort,
     required this.lastSeen,
+    required this.departed,
   });
 
   @override
@@ -50,7 +57,8 @@ class Peer {
       discoveryMode.hashCode ^
       address.hashCode ^
       oscPort.hashCode ^
-      lastSeen.hashCode;
+      lastSeen.hashCode ^
+      departed.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -64,5 +72,6 @@ class Peer {
           discoveryMode == other.discoveryMode &&
           address == other.address &&
           oscPort == other.oscPort &&
-          lastSeen == other.lastSeen;
+          lastSeen == other.lastSeen &&
+          departed == other.departed;
 }

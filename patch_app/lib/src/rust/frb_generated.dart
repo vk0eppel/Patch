@@ -2105,8 +2105,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Peer dco_decode_peer(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
     return Peer(
       peerId: dco_decode_Uuid(arr[0]),
       peerName: dco_decode_String(arr[1]),
@@ -2116,6 +2116,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       address: dco_decode_String(arr[5]),
       oscPort: dco_decode_u_16(arr[6]),
       lastSeen: dco_decode_Chrono_Utc(arr[7]),
+      departed: dco_decode_bool(arr[8]),
     );
   }
 
@@ -2691,6 +2692,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_address = sse_decode_String(deserializer);
     var var_oscPort = sse_decode_u_16(deserializer);
     var var_lastSeen = sse_decode_Chrono_Utc(deserializer);
+    var var_departed = sse_decode_bool(deserializer);
     return Peer(
       peerId: var_peerId,
       peerName: var_peerName,
@@ -2700,6 +2702,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       address: var_address,
       oscPort: var_oscPort,
       lastSeen: var_lastSeen,
+      departed: var_departed,
     );
   }
 
@@ -3217,6 +3220,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.address, serializer);
     sse_encode_u_16(self.oscPort, serializer);
     sse_encode_Chrono_Utc(self.lastSeen, serializer);
+    sse_encode_bool(self.departed, serializer);
   }
 
   @protected

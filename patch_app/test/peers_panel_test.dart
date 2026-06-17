@@ -23,6 +23,7 @@ PeerInfo _peer({
   String address = '192.168.1.5',
   List<String> channels = const [],
   String? role,
+  bool departed = false,
 }) =>
     PeerInfo(
       peerId: name,
@@ -33,6 +34,7 @@ PeerInfo _peer({
       oscPort: 9000,
       lastSeen: DateTime.now().subtract(seenAgo),
       discoveryMode: mode,
+      departed: departed,
     );
 
 Widget _host(List<PeerInfo> peers) =>
@@ -87,6 +89,28 @@ void main() {
     ]));
     expect(_dotsWithColor(PatchTheme.success), findsOneWidget);
     expect(_dotsWithColor(PatchTheme.textMuted), findsNWidgets(2));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('departed peer: gray dot despite a recent last_seen', (tester) async {
+    // Heard from just now, but it announced a clean departure → still gray.
+    await tester.pumpWidget(
+      _host([_peer(name: 'Gone', mode: 'osc_beacon', departed: true)]),
+    );
+    expect(_dotsWithColor(PatchTheme.success), findsNothing);
+    expect(_dotsWithColor(PatchTheme.textMuted), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('departed peer name is italic, live peer name is not', (tester) async {
+    await tester.pumpWidget(_host([
+      _peer(name: 'Gone', mode: 'osc_beacon', departed: true),
+      _peer(name: 'Here', mode: 'osc_beacon'),
+    ]));
+    final gone = tester.widget<Text>(find.text('Gone'));
+    final here = tester.widget<Text>(find.text('Here'));
+    expect(gone.style?.fontStyle, FontStyle.italic);
+    expect(here.style?.fontStyle, FontStyle.normal);
     await tester.pumpWidget(const SizedBox());
   });
 }

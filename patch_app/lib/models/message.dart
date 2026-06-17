@@ -96,6 +96,11 @@ class PeerInfo {
   final DateTime lastSeen;
   final String discoveryMode;
 
+  /// True when the peer announced a clean departure (`/patch/bye` or mDNS
+  /// removal). Rendered distinctly (grey dot + italic name); cleared the moment
+  /// the peer is heard from again.
+  final bool departed;
+
   const PeerInfo({
     required this.peerId,
     required this.peerName,
@@ -105,6 +110,7 @@ class PeerInfo {
     required this.oscPort,
     required this.lastSeen,
     required this.discoveryMode,
+    this.departed = false,
   });
 
   factory PeerInfo.fromJson(Map<String, dynamic> j) => PeerInfo(
@@ -116,5 +122,6 @@ class PeerInfo {
         oscPort: (j['osc_port'] as num).toInt(),
         lastSeen: DateTime.parse(j['last_seen'] as String),
         discoveryMode: j['discovery_mode'] as String? ?? 'unknown',
+        departed: j['departed'] as bool? ?? false,
       );
 }

@@ -20,6 +20,11 @@ pub struct Peer {
     /// OSC UDP port.
     pub osc_port: u16,
     pub last_seen: DateTime<Utc>,
+    /// True when the peer announced a clean departure (`/patch/bye` or mDNS
+    /// `ServiceRemoved`) — drives a distinct "left" treatment in the UI while
+    /// keeping the real `last_seen`. Cleared the moment a real OSC packet is
+    /// received again (`touch_peer_address`).
+    pub departed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,6 +45,7 @@ impl Peer {
             address: String::new(), // filled in by transport layer
             osc_port: 0,
             last_seen: p.timestamp,
+            departed: false,
         }
     }
 

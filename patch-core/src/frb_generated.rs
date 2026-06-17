@@ -2304,6 +2304,7 @@ impl SseDecode for crate::state::peer::Peer {
         let mut var_address = <String>::sse_decode(deserializer);
         let mut var_oscPort = <u16>::sse_decode(deserializer);
         let mut var_lastSeen = <chrono::DateTime<chrono::Utc>>::sse_decode(deserializer);
+        let mut var_departed = <bool>::sse_decode(deserializer);
         return crate::state::peer::Peer {
             peer_id: var_peerId,
             peer_name: var_peerName,
@@ -2313,6 +2314,7 @@ impl SseDecode for crate::state::peer::Peer {
             address: var_address,
             osc_port: var_oscPort,
             last_seen: var_lastSeen,
+            departed: var_departed,
         };
     }
 }
@@ -2795,6 +2797,7 @@ impl flutter_rust_bridge::IntoDart for crate::state::peer::Peer {
             self.address.into_into_dart().into_dart(),
             self.osc_port.into_into_dart().into_dart(),
             self.last_seen.into_into_dart().into_dart(),
+            self.departed.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -3299,6 +3302,7 @@ impl SseEncode for crate::state::peer::Peer {
         <String>::sse_encode(self.address, serializer);
         <u16>::sse_encode(self.osc_port, serializer);
         <chrono::DateTime<chrono::Utc>>::sse_encode(self.last_seen, serializer);
+        <bool>::sse_encode(self.departed, serializer);
     }
 }
 
