@@ -153,6 +153,10 @@ class _PeerTile extends StatelessWidget {
       peer.discoveryMode == 'manual_ip' || peer.discoveryMode == 'ManualIp';
 
   Color get _dotColor {
+    // A clean departure ('/patch/bye' / mDNS removal) reads grey regardless of
+    // the still-recent last_seen — the italic name distinguishes it from a peer
+    // that merely went quiet.
+    if (peer.departed) return PatchTheme.textMuted;
     if (_isManual) return PatchTheme.textMuted;
     final age = DateTime.now().difference(peer.lastSeen).inSeconds;
     if (age <= _healthySecs) return PatchTheme.success;
@@ -172,10 +176,14 @@ class _PeerTile extends StatelessWidget {
                 Flexible(
                   child: Text(
                     peer.peerName,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: PatchTheme.textPrimary,
                       fontSize: PatchTheme.fontSizeSmall,
                       fontWeight: FontWeight.w600,
+                      // Departed peers ('/patch/bye' / mDNS removal) render in
+                      // italic so a clean departure is told apart at a glance.
+                      fontStyle:
+                          peer.departed ? FontStyle.italic : FontStyle.normal,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
