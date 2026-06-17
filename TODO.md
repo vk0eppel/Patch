@@ -53,8 +53,8 @@ static peers). So a static peer receives our heartbeat every ~7 s, learns us, an
 its own heartbeat back — shows a real green/grey state and "last seen" instead of always-gray
 synthetic. No separate probe needed.
 
-### [Low] Departed peers have no distinct state (and a backdated "last seen")
-**Files:** `patch-core/src/state/{mod,peer}.rs`, `transport/mod.rs`, `peers_panel.dart` · **Effort:** medium · **Tracked:** [#7 (PRD)](https://github.com/vk0eppel/Patch/issues/7), [#9 engine+bridge](https://github.com/vk0eppel/Patch/issues/9), [#10 UI](https://github.com/vk0eppel/Patch/issues/10)
+### ~~[Low] Departed peers have no distinct state (and a backdated "last seen")~~ ✅ Done (2026-06-17, PR #20)
+**Files:** `patch-core/src/state/{mod,peer}.rs`, `transport/mod.rs`, `peers_panel.dart` · **Shipped:** `Peer.departed` flag set by `mark_peer_offline` (real `last_seen` kept, no backdating); cleared on any received packet (`touch_peer_address`). UI: grey dot + italic name for departed peers. Plus a status-dot liveness tooltip (#19, PR #26). Tracked [#7](https://github.com/vk0eppel/Patch/issues/7)/[#9](https://github.com/vk0eppel/Patch/issues/9)/[#10](https://github.com/vk0eppel/Patch/issues/10).
 On `/patch/bye` (and mDNS `ServiceRemoved`), `mark_peer_offline` backdates `last_seen` 60 s to force
 the dot grey while keeping the peer in the list — so a *just-departed* peer reads "1m ago" rather than
 "now", and a clean departure looks the same as one that merely went quiet. A proper fix is a `departed`
@@ -311,13 +311,10 @@ UI drops them immediately instead of waiting out the 35 s window. Dart calls `sh
 `BridgeClient.dispose()` and on `AppLifecycleState.detached`. Explicit mDNS unregister was left out
 (the daemon thread dies with the process; the `/patch/bye` broadcast is the prompt signal).
 
-### [Low] `patch.toml` has no schema version
-**File:** `patch-core/src/state/config.rs`
-**Effort:** trivial · **Tracked:** [#8 (PRD)](https://github.com/vk0eppel/Patch/issues/8), [#11 implementation](https://github.com/vk0eppel/Patch/issues/11)
+### ~~[Low] `patch.toml` has no schema version~~ ✅ Done (2026-06-17, PR #22)
+**File:** `patch-core/src/state/config.rs` · Tracked [#8](https://github.com/vk0eppel/Patch/issues/8)/[#11](https://github.com/vk0eppel/Patch/issues/11).
 
-Migrations rely entirely on `#[serde(default)]`. A `config_version` field would enable explicit,
-ordered migrations if a field ever needs renaming/removing (the recent `shortcuts`→`macros` churn
-is a good example of why).
+Shipped: `config_version: u32` (`#[serde(default)]` → existing files load as 0 = pre-versioning; `Config::default` writes `CURRENT_CONFIG_VERSION = 1`). `migrate()` runs on load — ordered per-version steps (0→1 a no-op stamp), persists if changed; a version newer than the build logs a `warn!` and proceeds rather than refusing to start.
 
 ### ~~[Low] Reliability retransmit doesn't use exponential backoff~~ ✅ Done
 **Files:** `patch-core/src/reliability/mod.rs`, `patch-core/src/api.rs`
@@ -545,18 +542,17 @@ Implementation:
 **Future (deferred):** a virtual MIDI **output** port so Patch can *send* MIDI to other software — pairs with
 the eventual macro→MIDI-out / "OSC macro shortcuts" gear-trigger feature.
 
-### Editable network settings in the UI (OSC port, heartbeat interval)
-**Files:** `patch-core/src/api.rs`, `patch-core/src/state/config.rs`, `patch_app/lib/screens/settings_screen.dart` · **Effort:** small · **Tracked:** [#12 (PRD)](https://github.com/vk0eppel/Patch/issues/12), [#13 heartbeat](https://github.com/vk0eppel/Patch/issues/13), [#14 OSC port](https://github.com/vk0eppel/Patch/issues/14)
-`osc_port`, `heartbeat_interval_secs`, and `peer_timeout_secs` are config-file-only today. Surface them in
-a Settings → Advanced/Network section. The heartbeat interval applies live (the discovery loop re-reads
-config each tick — same mechanism as the NIC change). `osc_port` needs a socket rebind, so it's the one
-setting that genuinely requires a restart — show a restart banner for that field only.
+### ~~Editable network settings in the UI (OSC port, heartbeat interval)~~ ✅ Done (2026-06-17, PRs #23 + #27)
+**Files:** `patch-core/src/{api,state/mod,state/config,discovery,transport}.rs`, `patch_app/lib/{screens/settings_screen,bridge/bridge_client}.dart`, `patch_app/lib/widgets/bounded_int_field.dart` · Tracked [#12](https://github.com/vk0eppel/Patch/issues/12)/[#13](https://github.com/vk0eppel/Patch/issues/13)/[#14](https://github.com/vk0eppel/Patch/issues/14).
 
-### Message search / filter within a channel
-**Files:** `patch_app/lib/screens/home_screen.dart`, `patch_app/lib/widgets/message_list.dart` · **Effort:** small · **Tracked:** [#15 (PRD)](https://github.com/vk0eppel/Patch/issues/15), [#16 implementation](https://github.com/vk0eppel/Patch/issues/16)
-A search field that filters the visible feed by substring (sender or payload) and/or priority. Pure
-Dart-side filter over the already-loaded `_messages` buffer — no engine change. Useful for finding a
-specific call in a busy show log before exporting.
+Both surfaced in **Settings → Network** via a reusable `BoundedIntField`.
+- **Heartbeat interval** (1–60, live): the PRD wrongly assumed it already applied live — the discovery loop's `tokio::interval` was fixed at startup, so the loop was reworked to re-read the cadence each cycle (clamped, sleep-at-end).
+- **OSC port** (1024–65535, **live rebind, no restart** — chose live over the PRD's restart-banner). The issue's "old loops drain naturally" was wrong (the receive loop holds the socket forever); instead the socket is published over a `tokio::watch` and swapped in place inside `Transport` (`rebind()`), so `EngineHandle`/discovery/send-sites are untouched. Integration test proves the receive loop follows the swap.
+
+### ~~Message search / filter within a channel~~ ✅ Done (2026-06-17, PR #28)
+**Files:** `patch_app/lib/screens/home_screen.dart` (`_ChannelView` → stateful), `patch_app/lib/util/message_filter.dart`, `patch_app/lib/widgets/message_search_bar.dart` · Tracked [#15](https://github.com/vk0eppel/Patch/issues/15)/[#16](https://github.com/vk0eppel/Patch/issues/16).
+
+A 🔍 toggle (by export/clear) expands a search bar — case-insensitive substring (sender or payload) + Info/Warning/Critical priority chips, combined. Pure Dart filter (`filterMessages`) over the loaded buffer; no engine change. Resets on channel switch (so a stale filter can't hide a critical on a new view); 🔍 tinted accent while a filter is active.
 
 ### ~~Audible alert on critical / flash (headset-friendly)~~ ✅ Done
 **Files:** `patch-core/src/state/config.rs` (`audible_alert`), `state/mod.rs`, `api.rs`, `patch_app/lib/{bridge/bridge_client,screens/home_screen,screens/settings_screen}.dart`
@@ -855,7 +851,8 @@ Bitfocus Companion — see `docs/integrations.md`.
 ### ~~Global shortcuts (shown on all channels)~~ ✅ Done
 **Files:** `state/config.rs` (`global_macros` field), `state/mod.rs` (upsert/delete/reorder), `api.rs` (+ `ConfigSnapshot.global_macros`), `bridge_client.dart`, `home_screen.dart`, `macros_panel.dart`, `settings_screen.dart`
 Implemented as a top-level `global_macros: Vec<MacroMessage>` on `Config` (chose this over a synthetic
-`__global__` channel). They render in their own **GLOBAL** group at the bottom of the macros panel on
+`__global__` channel). They render in their own **GLOBAL** group at the **top** of the macros panel (moved
+above per-channel macros — GH #3 / PR #30) on
 every channel, and firing one (tap or F-key) sends on the **currently-selected channel(s)** — i.e. it
 behaves exactly like a per-channel macro, just configured once instead of duplicated per channel (a true
 crew-wide broadcast is the separate "ALL channel" item). Per-channel macros take F-key precedence over a
@@ -877,7 +874,7 @@ Contextual help for crew members who won't read external docs. Remaining work:
 - Empty message list: "No messages yet / Are you on the same network as your crew?"
 
 **Still to do:**
-- First-run onboarding: name prompt on first launch if name is still the system default — **Tracked:** [#17 (PRD)](https://github.com/vk0eppel/Patch/issues/17), [#18 implementation](https://github.com/vk0eppel/Patch/issues/18). Decided (2026-06-17): detect via engine-computed `name_is_default` (`client_name == whoami()`) — no persisted flag, no migration; skippable modal, name only, session-only skip suppression.
+- ~~First-run onboarding: name prompt on first launch if name is still the system default~~ ✅ Done (2026-06-17, PR #25). Engine-computed `name_is_default` (`client_name == whoami()`) on `ConfigSnapshot` — no persisted flag, no migration; skippable modal (`name_prompt.dart`), name only, session-only skip suppression. Tracked [#17](https://github.com/vk0eppel/Patch/issues/17)/[#18](https://github.com/vk0eppel/Patch/issues/18). (Superseded the separate banner idea, GH #5.)
 - ~~Peers panel `?` tooltip or help text explaining discovery modes~~ — **dropped.** The peer tile renders no discovery-mode glyph to explain, and the mDNS-vs-beacon distinction isn't operationally useful. Replaced by a status-dot liveness tooltip ([#19](https://github.com/vk0eppel/Patch/issues/19)) — explains the green/amber/grey colours the Operator actually reads.
 - Permission-denied SnackBar could link to a help page — **deferred:** needs a help destination to link to, which doesn't exist yet.
 - Consider a `HelpTooltip` widget wrapping `IconButton(icon: Icon(Icons.help_outline))` for reuse — not needed for the current scope (only the name prompt + one status-dot tooltip).
