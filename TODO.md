@@ -766,12 +766,34 @@ macro). 57 engine / 23 Flutter tests pass.
   multi-arg device ever appears. Match in the `Unknown` arm; target channel id must pass `valid_channel_id`;
   re-broadcast to the crew like `/say`; consider throttle/de-dupe against a chatty device.
 
-### OSCQuery support for zero-config integration
+### OSCQuery support for zero-config integration *(deferred — speculative, low value)*
 **Effort:** large
 
 Implement [OSCQuery](https://github.com/Vidvox/OSCQueryProposal) so peers and
 external tools can discover Patch's OSC namespace automatically without manual
-address configuration.
+address configuration. (OSCQuery exposes an app's OSC address tree as HTTP + JSON,
+discoverable via mDNS `_oscjson._tcp` alongside `_osc._udp`; clients like Chataigne /
+Max / Vezér auto-populate the available addresses.)
+
+**Deferred (2026-06-17) — speculative, no concrete integration target.** Grilled and concluded the value is
+thin for Patch while the cost cuts against a core design tenet:
+- **The externally-drivable namespace is tiny.** OSCQuery earns its keep on devices with hundreds of
+  parameters. Patch's external surface is essentially **one method** — `/patch/channel/{id}/say "text"
+  [priority]` — parameterized by channel id; the rest (presence, ack, bye, dm, channels/request) is internal
+  protocol no external tool should drive. Auto-discovering a one-method surface the docs already spell out is
+  marginal convenience.
+- **It breaks "no TCP socket."** CLAUDE.md: *"Single process, single binary. No IPC, no sidecar, no TCP
+  socket."* OSCQuery needs an HTTP/TCP listener (+ a WebSocket for the full spec) — a real architectural
+  addition to a deliberately UDP-only binary, with its own iOS/macOS sandbox + Local Network permission
+  surface.
+- **The one genuinely useful dynamic bit is already solved over UDP.** The only thing lifting OSCQuery above
+  "just type the address" is that channels are dynamic (created/renamed at runtime). But Patch **already
+  enumerates channels over plain OSC** via the peer channel-pull path (`/patch/channels/request` →
+  `/patch/channels/announce`, channels as JSON) — so a tool can get the live channel list over the existing
+  UDP path, no HTTP server.
+
+**Revisit only if** a concrete tool / show-control workflow appears that consumes OSCQuery and that the
+existing `/say` + `/patch/channels/request` path genuinely can't serve.
 
 ### Optional WAN relay server
 **Effort:** large
