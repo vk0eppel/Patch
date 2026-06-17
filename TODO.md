@@ -54,7 +54,7 @@ its own heartbeat back — shows a real green/grey state and "last seen" instead
 synthetic. No separate probe needed.
 
 ### [Low] Departed peers have no distinct state (and a backdated "last seen")
-**Files:** `patch-core/src/state/{mod,peer}.rs`, `transport/mod.rs`, `peers_panel.dart` · **Effort:** medium
+**Files:** `patch-core/src/state/{mod,peer}.rs`, `transport/mod.rs`, `peers_panel.dart` · **Effort:** medium · **Tracked:** [#7 (PRD)](https://github.com/vk0eppel/Patch/issues/7), [#9 engine+bridge](https://github.com/vk0eppel/Patch/issues/9), [#10 UI](https://github.com/vk0eppel/Patch/issues/10)
 On `/patch/bye` (and mDNS `ServiceRemoved`), `mark_peer_offline` backdates `last_seen` 60 s to force
 the dot grey while keeping the peer in the list — so a *just-departed* peer reads "1m ago" rather than
 "now", and a clean departure looks the same as one that merely went quiet. A proper fix is a `departed`
@@ -64,15 +64,15 @@ which is the critical-alert colour). Needs a `Peer` field → FRB regen + `PeerI
 
 ## 🟢 General optimizations (low priority)
 
-### `get_peers()` allocates per call
+### ~~`get_peers()` allocates per call~~ wontfix
 **File:** `patch-core/src/state/mod.rs` — `get_peers()`
 Builds a `HashSet` of known addresses and clones `static_peers` on every call; invoked per send and per
-peer event. Minor, and largely mooted once the peer-event churn above is throttled.
+peer event. Minor, and largely mooted once the peer-event churn above is throttled. **Wontfix:** peer-event debounce done; call frequency is now negligible.
 
-### `_combinedMessages` re-sorts every build
+### ~~`_combinedMessages` re-sorts every build~~ wontfix
 **File:** `patch_app/lib/screens/home_screen.dart`
 The getter merges + sorts all selected channels' messages (up to 500 each) on every `setState`. Memoize
-per (selection, total count) if profiling shows jank on busy multi-channel views.
+per (selection, total count) if profiling shows jank on busy multi-channel views. **Wontfix:** no jank observed; sub-millisecond on any supported device.
 
 ---
 
@@ -297,7 +297,7 @@ UI drops them immediately instead of waiting out the 35 s window. Dart calls `sh
 
 ### [Low] `patch.toml` has no schema version
 **File:** `patch-core/src/state/config.rs`
-**Effort:** trivial
+**Effort:** trivial · **Tracked:** [#8 (PRD)](https://github.com/vk0eppel/Patch/issues/8), [#11 implementation](https://github.com/vk0eppel/Patch/issues/11)
 
 Migrations rely entirely on `#[serde(default)]`. A `config_version` field would enable explicit,
 ordered migrations if a field ever needs renaming/removing (the recent `shortcuts`→`macros` churn
@@ -357,17 +357,10 @@ Now `static const double _kPeersPanelWidth = 160.0` and `static const double _kM
 The "Shift+Enter inserts a newline (future use)" comment is gone; the doc comment now just
 describes the Enter-to-send / `hideKeyboard` behaviour.
 
-### Macros panel header may overflow in 1-column mode
+### ~~Macros panel header may overflow in 1-column mode~~ ✅ Resolved
 **File:** `patch_app/lib/widgets/macros_panel.dart` — header `Container`
-**Effort:** trivial
 
-The header `Row` contains `Text('MACROS')` (~50 px at 12 px + letterSpacing 1.5),
-a `Spacer`, and `_ColumnToggle` (56 px), inside 12 px horizontal padding → 136 px inner
-width in 1-column mode. The rename from "SHORTCUTS" (~80 px) to "MACROS" (~50 px) reduced
-pressure significantly (~6 px of breathing room). Verify in a running build — may now be
-fine. If overflow persists:
-- Wrap `Text` in `Flexible(child: Text(..., overflow: TextOverflow.ellipsis))` — minimal change
-- Reduce header horizontal padding from 12 to 6 px — gives 12 px extra breathing room
+`_ColumnToggle` has been moved out of the panel header to Settings. The current header is just an optional hide-button + `Text('MACROS')` + `Spacer`, which fits comfortably in 160 px. No action needed.
 
 ---
 
@@ -537,14 +530,14 @@ Implementation:
 the eventual macro→MIDI-out / "OSC macro shortcuts" gear-trigger feature.
 
 ### Editable network settings in the UI (OSC port, heartbeat interval)
-**Files:** `patch-core/src/api.rs`, `patch-core/src/state/config.rs`, `patch_app/lib/screens/settings_screen.dart` · **Effort:** small
+**Files:** `patch-core/src/api.rs`, `patch-core/src/state/config.rs`, `patch_app/lib/screens/settings_screen.dart` · **Effort:** small · **Tracked:** [#12 (PRD)](https://github.com/vk0eppel/Patch/issues/12), [#13 heartbeat](https://github.com/vk0eppel/Patch/issues/13), [#14 OSC port](https://github.com/vk0eppel/Patch/issues/14)
 `osc_port`, `heartbeat_interval_secs`, and `peer_timeout_secs` are config-file-only today. Surface them in
 a Settings → Advanced/Network section. The heartbeat interval applies live (the discovery loop re-reads
 config each tick — same mechanism as the NIC change). `osc_port` needs a socket rebind, so it's the one
 setting that genuinely requires a restart — show a restart banner for that field only.
 
 ### Message search / filter within a channel
-**Files:** `patch_app/lib/screens/home_screen.dart`, `patch_app/lib/widgets/message_list.dart` · **Effort:** small
+**Files:** `patch_app/lib/screens/home_screen.dart`, `patch_app/lib/widgets/message_list.dart` · **Effort:** small · **Tracked:** [#15 (PRD)](https://github.com/vk0eppel/Patch/issues/15), [#16 implementation](https://github.com/vk0eppel/Patch/issues/16)
 A search field that filters the visible feed by substring (sender or payload) and/or priority. Pure
 Dart-side filter over the already-loaded `_messages` buffer — no engine change. Useful for finding a
 specific call in a busy show log before exporting.
@@ -738,11 +731,24 @@ macro). 57 engine / 23 Flutter tests pass.
   fresh id + timestamp), relays it to the whole crew, and stores it locally. Lenient priority (default info).
   No UUIDs/timestamp/de-dupe bookkeeping for the sender. Tests: `say_decodes_payload_and_optional_priority`.
   Docs: `docs/osc-integration.md`, README. 58 engine tests pass.
-- **Arbitrary-foreign-address mapping table** *(still TODO)* · **Effort:** medium. Map an incoming OSC
-  message on an address you **can't** change (e.g. `/rf/battery_low` from a proprietary device) to a channel
-  message with a configured priority/payload. The decode side currently drops unknown addresses as
-  `PatchEvent::Unknown`; this adds a configurable rule table (match address → channel + priority + payload
-  template). `/say` already covers any sender whose output address you *can* set.
+- **Arbitrary-foreign-address mapping table** *(deferred — needs field data)* · **Effort:** medium. Map an
+  incoming OSC message on an address you **can't** change (e.g. `/rf/battery_low` from a proprietary device)
+  to a channel message with a configured priority/payload. The decode side currently drops unknown addresses
+  as `PatchEvent::Unknown` (`transport::handle_event`, which already holds the raw `OscMessage` + `config` —
+  the natural place to match a rule table). `/say` already covers any sender whose output address you *can* set.
+
+  **Deferred (2026-06-17):** parked until we have real OSC samples from the actual target software/hardware.
+  The payload model can't be chosen without knowing what those devices emit, and guessing risks the wrong
+  shape. **Capture, when revisiting:** (a) the exact addresses + arg lists real devices send; (b) whether
+  they're discrete status pokes (address = whole signal, args irrelevant) or carry a meaningful scalar value.
+
+  **Design lean so far (don't re-derive):** the foreign case is deliberately *simpler* than our own wire
+  format — our positional `args[0]`/`args[1]` convention (`decode_say`) exists only because we own that
+  schema; importing positional indexing (`{0}/{1}`) into the rule template would be over-engineering for what
+  is almost always a binary device poke. Lean: **static payload + optional single `{}` = first arg**
+  (no indexing; "{} = the value", no arg-order knowledge needed), forward-compatible to `{0}` later if a real
+  multi-arg device ever appears. Match in the `Unknown` arm; target channel id must pass `valid_channel_id`;
+  re-broadcast to the crew like `/say`; consider throttle/de-dupe against a chatty device.
 
 ### OSCQuery support for zero-config integration
 **Effort:** large
