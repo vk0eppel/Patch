@@ -662,6 +662,17 @@ class BridgeClient {
     }
   }
 
+  /// Set the presence heartbeat interval (seconds). The engine validates 1–60
+  /// and applies it live (the discovery loop re-reads the cadence each cycle).
+  Future<void> setHeartbeatInterval(int secs) async {
+    try {
+      await rust.setHeartbeatInterval(secs: BigInt.from(secs));
+      await getConfig();
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
   Future<void> setChannelFlash(
     String channelId, {
     bool? flashOnCritical,

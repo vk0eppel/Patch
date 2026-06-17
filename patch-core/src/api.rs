@@ -542,6 +542,10 @@ pub async fn set_hide_keyboard(enabled: bool) -> Result<()> {
     engine().state.set_hide_keyboard(enabled).await
 }
 
+pub async fn set_heartbeat_interval(secs: u64) -> Result<()> {
+    engine().state.set_heartbeat_interval(secs).await
+}
+
 pub async fn set_audible_alert(enabled: bool) -> Result<()> {
     engine().state.set_audible_alert(enabled).await
 }
