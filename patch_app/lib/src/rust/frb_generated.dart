@@ -1876,8 +1876,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ConfigSnapshot dco_decode_config_snapshot(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 13)
-      throw Exception('unexpected arr length: expect 13 but see ${arr.length}');
+    if (arr.length != 14)
+      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
     return ConfigSnapshot(
       clientName: dco_decode_String(arr[0]),
       role: dco_decode_opt_String(arr[1]),
@@ -1892,6 +1892,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       audibleAlert: dco_decode_bool(arr[10]),
       globalMacros: dco_decode_list_macro_message(arr[11]),
       heartbeatIntervalSecs: dco_decode_u_32(arr[12]),
+      nameIsDefault: dco_decode_bool(arr[13]),
     );
   }
 
@@ -2362,6 +2363,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_audibleAlert = sse_decode_bool(deserializer);
     var var_globalMacros = sse_decode_list_macro_message(deserializer);
     var var_heartbeatIntervalSecs = sse_decode_u_32(deserializer);
+    var var_nameIsDefault = sse_decode_bool(deserializer);
     return ConfigSnapshot(
       clientName: var_clientName,
       role: var_role,
@@ -2376,6 +2378,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       audibleAlert: var_audibleAlert,
       globalMacros: var_globalMacros,
       heartbeatIntervalSecs: var_heartbeatIntervalSecs,
+      nameIsDefault: var_nameIsDefault,
     );
   }
 
@@ -2947,6 +2950,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.audibleAlert, serializer);
     sse_encode_list_macro_message(self.globalMacros, serializer);
     sse_encode_u_32(self.heartbeatIntervalSecs, serializer);
+    sse_encode_bool(self.nameIsDefault, serializer);
   }
 
   @protected

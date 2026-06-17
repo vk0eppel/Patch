@@ -239,6 +239,7 @@ class BridgeClient {
           'audible_alert': cfg.audibleAlert,
           'global_macros': cfg.globalMacros.map(_macroToMap).toList(),
           'heartbeat_interval_secs': cfg.heartbeatIntervalSecs,
+          'name_is_default': cfg.nameIsDefault,
         },
       });
     } catch (e) {

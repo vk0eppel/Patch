@@ -179,6 +179,16 @@ impl Config {
         std::fs::write(&path, raw)?;
         Ok(())
     }
+
+    /// True while the display name is still the system-seeded default (the
+    /// `whoami()` value used on a fresh install). The UI uses this to decide
+    /// whether to show the first-run "set your name" prompt — so a crew member
+    /// who never set a name isn't seen by everyone as their login account name.
+    /// Once they pick any other name this returns false. The one false positive
+    /// — someone whose chosen name equals their login — costs a single dismiss.
+    pub fn name_is_default(&self) -> bool {
+        self.client_name == whoami()
+    }
 }
 
 fn whoami() -> String {
@@ -291,6 +301,18 @@ mod tests {
     #[test]
     fn fresh_config_seeds_globals() {
         assert_eq!(Config::default().global_macros.len(), 10);
+    }
+
+    #[test]
+    fn name_is_default_tracks_whoami() {
+        // A fresh config seeds client_name = whoami() → still the default.
+        assert!(Config::default().name_is_default());
+        // Any custom name → no longer the default.
+        let custom = Config {
+            client_name: "Alice on FOH".to_string(),
+            ..Config::default()
+        };
+        assert!(!custom.name_is_default());
     }
 
     /// A config in the documented `patch.toml` format must stay deserialisable

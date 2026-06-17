@@ -1944,6 +1944,7 @@ impl SseDecode for crate::api::ConfigSnapshot {
         let mut var_globalMacros =
             <Vec<crate::state::channel::MacroMessage>>::sse_decode(deserializer);
         let mut var_heartbeatIntervalSecs = <u32>::sse_decode(deserializer);
+        let mut var_nameIsDefault = <bool>::sse_decode(deserializer);
         return crate::api::ConfigSnapshot {
             client_name: var_clientName,
             role: var_role,
@@ -1958,6 +1959,7 @@ impl SseDecode for crate::api::ConfigSnapshot {
             audible_alert: var_audibleAlert,
             global_macros: var_globalMacros,
             heartbeat_interval_secs: var_heartbeatIntervalSecs,
+            name_is_default: var_nameIsDefault,
         };
     }
 }
@@ -2585,6 +2587,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::ConfigSnapshot {
             self.audible_alert.into_into_dart().into_dart(),
             self.global_macros.into_into_dart().into_dart(),
             self.heartbeat_interval_secs.into_into_dart().into_dart(),
+            self.name_is_default.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -3010,6 +3013,7 @@ impl SseEncode for crate::api::ConfigSnapshot {
         <bool>::sse_encode(self.audible_alert, serializer);
         <Vec<crate::state::channel::MacroMessage>>::sse_encode(self.global_macros, serializer);
         <u32>::sse_encode(self.heartbeat_interval_secs, serializer);
+        <bool>::sse_encode(self.name_is_default, serializer);
     }
 }
 
