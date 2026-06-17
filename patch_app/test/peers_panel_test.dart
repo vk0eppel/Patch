@@ -113,4 +113,19 @@ void main() {
     expect(here.style?.fontStyle, FontStyle.normal);
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('status dot carries a tooltip explaining the colours', (tester) async {
+    await tester.pumpWidget(
+      _host([_peer(name: 'MON', mode: 'osc_beacon')]),
+    );
+    final tips = tester.widgetList<Tooltip>(find.byType(Tooltip));
+    final dotTip = tips.firstWhere(
+      (t) => (t.message ?? '').contains('Green'),
+      orElse: () => fail('no status-dot tooltip found'),
+    );
+    expect(dotTip.message, contains('Amber'));
+    expect(dotTip.message, contains('Grey'));
+    expect(dotTip.message, contains('manual')); // covers the manual / offline grey case
+    await tester.pumpWidget(const SizedBox());
+  });
 }

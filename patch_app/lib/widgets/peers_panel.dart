@@ -133,6 +133,11 @@ class _PeersPanelState extends State<PeersPanel> {
 }
 
 
+/// Explains the peer status dot at a glance — the thing an Operator actually
+/// reads (liveness), not how the peer was discovered.
+const String _kDotLegend =
+    'Green: online\nAmber: going quiet\nGrey: offline, left, or manual peer';
+
 class _PeerTile extends StatelessWidget {
   final PeerInfo peer;
   final int heartbeatSecs;
@@ -207,12 +212,15 @@ class _PeerTile extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 6),
-          Container(
-            width: 7,
-            height: 7,
-            decoration: BoxDecoration(
-              color: _dotColor,
-              shape: BoxShape.circle,
+          Tooltip(
+            message: _kDotLegend,
+            child: Container(
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(
+                color: _dotColor,
+                shape: BoxShape.circle,
+              ),
             ),
           ),
         ],
