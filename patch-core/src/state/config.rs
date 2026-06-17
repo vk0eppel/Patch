@@ -53,8 +53,17 @@ fn config_path() -> PathBuf {
     data_dir().join("patch.toml")
 }
 
+/// The config schema version this build writes. Bump when adding an ordered
+/// migration step in [`migrate`].
+pub const CURRENT_CONFIG_VERSION: u32 = 1;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    /// Schema version. Absent in pre-versioning files (loads as 0 via the serde
+    /// default); [`migrate`] stamps it to [`CURRENT_CONFIG_VERSION`] on load so
+    /// the on-disk file is always current after first launch.
+    #[serde(default)]
+    pub config_version: u32,
     /// Stable client UUID — generated once and persisted.
     pub client_id: Uuid,
     /// Display name shown to other peers.
@@ -112,6 +121,7 @@ pub struct StaticPeer {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            config_version: CURRENT_CONFIG_VERSION,
             client_id: Uuid::new_v4(),
             client_name: whoami(),
             role: None,
@@ -152,13 +162,20 @@ impl Config {
         let target = config_path();
         if target.exists() {
             let raw = std::fs::read_to_string(&target)?;
-            return Ok(toml::from_str(&raw)?);
+            let mut config: Config = toml::from_str(&raw)?;
+            // Bring the schema up to date; persist if anything changed so the
+            // next load is a no-op.
+            if migrate(&mut config) {
+                config.save()?;
+            }
+            return Ok(config);
         }
 
         let legacy = Path::new("patch.toml");
         if legacy.exists() {
             let raw = std::fs::read_to_string(legacy)?;
-            let config: Config = toml::from_str(&raw)?;
+            let mut config: Config = toml::from_str(&raw)?;
+            migrate(&mut config);
             // Persist into the new location so subsequent saves don't fight CWD.
             config.save()?;
             tracing::info!("Migrated legacy patch.toml → {}", target.display());
@@ -178,6 +195,45 @@ impl Config {
         let raw = toml::to_string_pretty(self)?;
         std::fs::write(&path, raw)?;
         Ok(())
+    }
+
+    /// True while the display name is still the system-seeded default (the
+    /// `whoami()` value used on a fresh install). The UI uses this to decide
+    /// whether to show the first-run "set your name" prompt — so a crew member
+    /// who never set a name isn't seen by everyone as their login account name.
+    /// Once they pick any other name this returns false. The one false positive
+    /// — someone whose chosen name equals their login — costs a single dismiss.
+    pub fn name_is_default(&self) -> bool {
+        self.client_name == whoami()
+    }
+}
+
+/// Bring a freshly-loaded config up to [`CURRENT_CONFIG_VERSION`], running any
+/// ordered per-version migration steps. Returns `true` if the config changed and
+/// should be persisted.
+///
+/// A version *newer* than this build is left untouched (with a warning) rather
+/// than refused — serde already tolerates unknown fields, so we load what we can
+/// and never block a live show on a downgrade.
+pub fn migrate(config: &mut Config) -> bool {
+    use std::cmp::Ordering;
+    match config.config_version.cmp(&CURRENT_CONFIG_VERSION) {
+        Ordering::Equal => false,
+        Ordering::Greater => {
+            tracing::warn!(
+                "config_version {} is newer than this build ({}) — some settings may be ignored",
+                config.config_version,
+                CURRENT_CONFIG_VERSION
+            );
+            false
+        }
+        Ordering::Less => {
+            // Ordered migration steps go here, lowest version first. The 0 → 1
+            // step is intentionally a no-op (version stamp only) — it exists so
+            // future schema changes have a clear, tested home.
+            config.config_version = CURRENT_CONFIG_VERSION;
+            true
+        }
     }
 }
 
@@ -293,6 +349,18 @@ mod tests {
         assert_eq!(Config::default().global_macros.len(), 10);
     }
 
+    #[test]
+    fn name_is_default_tracks_whoami() {
+        // A fresh config seeds client_name = whoami() → still the default.
+        assert!(Config::default().name_is_default());
+        // Any custom name → no longer the default.
+        let custom = Config {
+            client_name: "Alice on FOH".to_string(),
+            ..Config::default()
+        };
+        assert!(!custom.name_is_default());
+    }
+
     /// A config in the documented `patch.toml` format must stay deserialisable
     /// into the current `Config` schema — guards against field drift (e.g. the
     /// old `shortcuts`/`bridge_port` leftovers). Kept inline rather than reading
@@ -301,6 +369,7 @@ mod tests {
     #[test]
     fn representative_config_deserializes() {
         let raw = r##"
+config_version = 1
 client_id = "00000000-0000-0000-0000-000000000000"
 client_name = "FOH Engineer"
 osc_port = 9000
@@ -341,6 +410,7 @@ flash_on_critical = true
 flash_on_message = false
 "##;
         let cfg: Config = toml::from_str(raw).expect("representative config must deserialize");
+        assert_eq!(cfg.config_version, 1);
         assert_eq!(cfg.default_channels.len(), 2);
         assert_eq!(cfg.static_peers.len(), 1);
         assert_eq!(cfg.network_interface.as_deref(), Some("en0"));
@@ -351,5 +421,54 @@ flash_on_message = false
         // The TOML omits `global_macros`, so serde fills it empty — an existing
         // config is never retro-seeded with the new defaults.
         assert!(cfg.global_macros.is_empty());
+    }
+
+    /// A pre-versioning `patch.toml` (no `config_version`) loads as version 0,
+    /// so `migrate` can recognise and stamp it.
+    #[test]
+    fn config_without_version_field_loads_as_zero() {
+        let raw = r##"
+client_id = "00000000-0000-0000-0000-000000000000"
+client_name = "X"
+osc_port = 9000
+network_interface = "en0"
+heartbeat_interval_secs = 7
+static_peers = []
+default_channels = []
+"##;
+        let cfg: Config = toml::from_str(raw).expect("must deserialize");
+        assert_eq!(cfg.config_version, 0);
+    }
+
+    #[test]
+    fn fresh_config_is_current_version() {
+        assert_eq!(Config::default().config_version, CURRENT_CONFIG_VERSION);
+    }
+
+    #[test]
+    fn migrate_stamps_pre_versioning_config() {
+        let mut cfg = Config {
+            config_version: 0,
+            ..Config::default()
+        };
+        assert!(migrate(&mut cfg)); // changed → caller should persist
+        assert_eq!(cfg.config_version, CURRENT_CONFIG_VERSION);
+    }
+
+    #[test]
+    fn migrate_is_noop_on_current_version() {
+        let mut cfg = Config::default(); // already current
+        assert!(!migrate(&mut cfg));
+        assert_eq!(cfg.config_version, CURRENT_CONFIG_VERSION);
+    }
+
+    #[test]
+    fn migrate_leaves_future_version_untouched() {
+        let mut cfg = Config {
+            config_version: 9999,
+            ..Config::default()
+        };
+        assert!(!migrate(&mut cfg)); // no change, never downgrade
+        assert_eq!(cfg.config_version, 9999);
     }
 }

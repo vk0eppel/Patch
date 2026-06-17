@@ -133,6 +133,9 @@ Future<void> setMacrosColumns({required int columns}) =>
 Future<void> setHideKeyboard({required bool enabled}) =>
     RustLib.instance.api.crateApiSetHideKeyboard(enabled: enabled);
 
+Future<void> setHeartbeatInterval({required BigInt secs}) =>
+    RustLib.instance.api.crateApiSetHeartbeatInterval(secs: secs);
+
 Future<void> setAudibleAlert({required bool enabled}) =>
     RustLib.instance.api.crateApiSetAudibleAlert(enabled: enabled);
 
@@ -326,6 +329,10 @@ class ConfigSnapshot {
   /// online/amber/grey dot thresholds from this.
   final int heartbeatIntervalSecs;
 
+  /// True while `client_name` is still the system-seeded default — drives the
+  /// first-run "set your name" prompt in the UI.
+  final bool nameIsDefault;
+
   const ConfigSnapshot({
     required this.clientName,
     this.role,
@@ -340,6 +347,7 @@ class ConfigSnapshot {
     required this.audibleAlert,
     required this.globalMacros,
     required this.heartbeatIntervalSecs,
+    required this.nameIsDefault,
   });
 
   @override
@@ -356,7 +364,8 @@ class ConfigSnapshot {
       hideKeyboard.hashCode ^
       audibleAlert.hashCode ^
       globalMacros.hashCode ^
-      heartbeatIntervalSecs.hashCode;
+      heartbeatIntervalSecs.hashCode ^
+      nameIsDefault.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -375,7 +384,8 @@ class ConfigSnapshot {
           hideKeyboard == other.hideKeyboard &&
           audibleAlert == other.audibleAlert &&
           globalMacros == other.globalMacros &&
-          heartbeatIntervalSecs == other.heartbeatIntervalSecs;
+          heartbeatIntervalSecs == other.heartbeatIntervalSecs &&
+          nameIsDefault == other.nameIsDefault;
 }
 
 @freezed

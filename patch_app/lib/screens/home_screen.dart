@@ -13,6 +13,7 @@ import '../widgets/channel_tab.dart';
 import '../widgets/flash_button.dart';
 import '../widgets/message_list.dart';
 import '../widgets/message_input.dart';
+import '../widgets/name_prompt.dart';
 import '../widgets/peers_panel.dart';
 import '../widgets/show_files_dialog.dart';
 import '../widgets/macros_panel.dart' show MacrosPanel, ChannelMacro;
@@ -76,6 +77,9 @@ class _HomeScreenState extends State<HomeScreen> {
   List<PeerInfo> _peers = [];
   bool _showPeers = false;
   bool _showMacros = false;
+  /// First-run name prompt: shown at most once per session. Reset on relaunch,
+  /// so an unnamed operator is nudged again next time but never nagged twice.
+  bool _namePromptShown = false;
   int _macrosColumns = 1;
   bool _hideKeyboard = true;
   /// Play a sound when a channel flashes (critical / page / broadcast). Off by default.
@@ -322,6 +326,30 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── Event dispatch ──────────────────────────────────────────────────────────
 
+  /// Show the first-run name prompt once per session when the display name is
+  /// still the system default. Deferred to a post-frame callback so there's a
+  /// built, mounted context to push the dialog onto.
+  void _maybeShowNamePrompt({
+    required bool nameIsDefault,
+    required String currentName,
+  }) {
+    if (!shouldShowNamePrompt(
+      nameIsDefault: nameIsDefault,
+      alreadyShown: _namePromptShown,
+    )) {
+      return;
+    }
+    _namePromptShown = true; // once per session, whatever the outcome
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showNamePrompt(
+        context,
+        currentName: currentName,
+        onSave: (name) => widget.bridge.setClientName(name),
+      );
+    });
+  }
+
   void _handleEvent(Map<String, dynamic> event) {
     try {
       _dispatch(event);
@@ -502,6 +530,11 @@ class _HomeScreenState extends State<HomeScreen> {
           _heartbeatSecs =
               (event['data']['heartbeat_interval_secs'] as int?) ?? 7;
         });
+        _maybeShowNamePrompt(
+          nameIsDefault:
+              (event['data']['name_is_default'] as bool?) ?? false,
+          currentName: event['data']['client_name'] as String? ?? '',
+        );
 
       case 'show_file_saved':
       case 'client_name_changed':

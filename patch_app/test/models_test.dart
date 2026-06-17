@@ -78,6 +78,27 @@ void main() {
       expect(p.discoveryMode, 'mdns');
     });
 
+    test('fromJson reads departed, defaulting to false when absent', () {
+      final live = PeerInfo.fromJson({
+        'peer_id': 'p1',
+        'peer_name': 'MON',
+        'channels': <String>[],
+        'osc_port': 9000,
+        'last_seen': '2026-06-04T12:00:00Z',
+      });
+      expect(live.departed, isFalse);
+
+      final gone = PeerInfo.fromJson({
+        'peer_id': 'p1',
+        'peer_name': 'MON',
+        'channels': <String>[],
+        'osc_port': 9000,
+        'last_seen': '2026-06-04T12:00:00Z',
+        'departed': true,
+      });
+      expect(gone.departed, isTrue);
+    });
+
     test('fromJson defaults a missing address and discovery mode', () {
       final p = PeerInfo.fromJson({
         'peer_id': 'p1',

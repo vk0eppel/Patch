@@ -220,6 +220,18 @@ impl AppState {
         self.save_config().await
     }
 
+    /// Persist the presence heartbeat interval (seconds). Validated 1–60: below
+    /// floods the LAN, above makes peer detection uselessly slow. Applies live —
+    /// the discovery heartbeat loop re-reads it at the end of each cycle, so the
+    /// new cadence takes effect on the next beat with no restart.
+    pub async fn set_heartbeat_interval(&self, secs: u64) -> anyhow::Result<()> {
+        if !(1..=60).contains(&secs) {
+            anyhow::bail!("heartbeat interval must be 1–60 seconds (got {})", secs);
+        }
+        self.0.config.write().await.heartbeat_interval_secs = secs;
+        self.save_config().await
+    }
+
     /// Update per-channel flash flags. `None` means "leave unchanged".
     pub async fn set_channel_flash(
         &self,
@@ -394,6 +406,8 @@ impl AppState {
             peer.address = address;
             peer.osc_port = port;
             peer.last_seen = chrono::Utc::now();
+            // A real OSC packet proves liveness — clear any prior departure.
+            peer.departed = false;
             // Build a PeerPresence to carry through the event bus.
             PeerPresence {
                 peer_id: peer.peer_id,
@@ -477,18 +491,19 @@ impl AppState {
         self.publish(AppEvent::PeerExpired(peer_id)).await;
     }
 
-    /// Mark a peer offline without removing it (e.g. on `/patch/bye`). Backdates
-    /// `last_seen` past the UI's stale threshold so the dot goes grey
-    /// immediately while the peer stays in the list. A reconnect (any received
-    /// OSC packet) refreshes `last_seen` via `touch_peer_address` and greens it
-    /// again. No-op if the peer isn't currently known.
+    /// Mark a peer offline without removing it (e.g. on `/patch/bye` or mDNS
+    /// `ServiceRemoved`). Sets the `departed` flag — which the UI renders as a
+    /// distinct "left" treatment — while **keeping the real `last_seen`**, so a
+    /// clean departure is told apart from a peer that merely went quiet. A
+    /// reconnect (any received OSC packet) clears `departed` via
+    /// `touch_peer_address`. No-op if the peer isn't currently known.
     pub async fn mark_peer_offline(&self, peer_id: Uuid) {
         let presence = {
             let mut peers = self.0.peers.write().await;
             let Some(peer) = peers.get_mut(&peer_id) else {
                 return;
             };
-            peer.last_seen = chrono::Utc::now() - chrono::Duration::seconds(60);
+            peer.departed = true;
             PeerPresence {
                 peer_id: peer.peer_id,
                 peer_name: peer.peer_name.clone(),
@@ -529,6 +544,7 @@ impl AppState {
                 address: sp.address.clone(),
                 osc_port: sp.port,
                 last_seen: chrono::Utc::now(),
+                departed: false,
             });
         }
 
@@ -1056,6 +1072,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn set_heartbeat_interval_validates_and_persists() {
+        let _guard = config::test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        config::set_data_dir(dir.clone());
+
+        let st = test_state();
+        // A valid value persists to disk.
+        st.set_heartbeat_interval(12).await.unwrap();
+        assert_eq!(
+            Config::load_or_default().unwrap().heartbeat_interval_secs,
+            12
+        );
+        // Boundaries are accepted.
+        st.set_heartbeat_interval(1).await.unwrap();
+        st.set_heartbeat_interval(60).await.unwrap();
+        // Out-of-range values are rejected and leave the stored value untouched.
+        assert!(st.set_heartbeat_interval(0).await.is_err());
+        assert!(st.set_heartbeat_interval(61).await.is_err());
+        assert_eq!(
+            Config::load_or_default().unwrap().heartbeat_interval_secs,
+            60
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
     async fn global_macros_upsert_delete_reorder_persist() {
         use channel::MacroMessage;
         let _guard = config::test_data_dir_guard().await;
@@ -1377,13 +1420,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mark_peer_offline_keeps_peer_but_makes_it_stale() {
+    async fn mark_peer_offline_sets_departed_keeps_last_seen() {
         let st = test_state();
         let pid = Uuid::new_v4();
         // A live peer (heard just now, with an address).
         st.upsert_peer(presence(pid, chrono::Utc::now())).await;
         st.touch_peer_address(pid, "10.0.0.4".into(), 9000).await;
-        // Graceful departure (e.g. /patch/bye).
+        // Graceful departure (e.g. /patch/bye or mDNS ServiceRemoved).
         st.mark_peer_offline(pid).await;
 
         let peers = st.get_peers().await;
@@ -1391,8 +1434,25 @@ mod tests {
             .iter()
             .find(|p| p.peer_id == pid)
             .expect("peer kept in the list");
-        assert!(p.is_stale(35)); // grey now
+        assert!(p.departed); // flagged as departed → UI shows "left"
+        assert!(!p.is_stale(35)); // last_seen NOT backdated — real timestamp kept
         assert!(p.has_address()); // address retained for a possible reconnect
+    }
+
+    #[tokio::test]
+    async fn received_packet_clears_departed() {
+        let st = test_state();
+        let pid = Uuid::new_v4();
+        st.upsert_peer(presence(pid, chrono::Utc::now())).await;
+        st.touch_peer_address(pid, "10.0.0.4".into(), 9000).await;
+        st.mark_peer_offline(pid).await;
+        // The peer comes back — any real OSC packet refreshes the address.
+        st.touch_peer_address(pid, "10.0.0.4".into(), 9000).await;
+
+        let peers = st.get_peers().await;
+        let p = peers.iter().find(|p| p.peer_id == pid).unwrap();
+        assert!(!p.departed); // reconnect cleared the flag
+        assert!(!p.is_stale(35));
     }
 
     /// Exercises the real save path (`save_config` → `spawn_blocking`) end to end:

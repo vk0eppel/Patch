@@ -239,6 +239,7 @@ class BridgeClient {
           'audible_alert': cfg.audibleAlert,
           'global_macros': cfg.globalMacros.map(_macroToMap).toList(),
           'heartbeat_interval_secs': cfg.heartbeatIntervalSecs,
+          'name_is_default': cfg.nameIsDefault,
         },
       });
     } catch (e) {
@@ -662,6 +663,17 @@ class BridgeClient {
     }
   }
 
+  /// Set the presence heartbeat interval (seconds). The engine validates 1–60
+  /// and applies it live (the discovery loop re-reads the cadence each cycle).
+  Future<void> setHeartbeatInterval(int secs) async {
+    try {
+      await rust.setHeartbeatInterval(secs: BigInt.from(secs));
+      await getConfig();
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
   Future<void> setChannelFlash(
     String channelId, {
     bool? flashOnCritical,
@@ -788,6 +800,7 @@ Map<String, dynamic> _peerToMap(rust_peer.Peer p) => {
       'address': p.address,
       'osc_port': p.oscPort,
       'last_seen': p.lastSeen.toIso8601String(),
+      'departed': p.departed,
       'discovery_mode': switch (p.discoveryMode) {
         rust_peer.DiscoveryMode.mdns => 'mdns',
         rust_peer.DiscoveryMode.oscBeacon => 'osc_beacon',
@@ -807,6 +820,7 @@ Map<String, dynamic> _presenceToPeerMap(rust_osc.PeerPresence p) => {
       'address': '',
       'osc_port': 0,
       'last_seen': p.timestamp.toIso8601String(),
+      'departed': false,
       'discovery_mode': 'osc_beacon',
     };
 

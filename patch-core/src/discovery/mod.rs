@@ -28,7 +28,6 @@ impl Discovery {
         let client_id = config.client_id;
         let client_name = config.client_name.clone();
         let osc_port = config.osc_port;
-        let heartbeat_secs = config.heartbeat_interval_secs;
 
         // ── mDNS (best-effort — gracefully skipped if unavailable) ───────────
         let service_type = "_patch._udp.local.";
@@ -148,10 +147,11 @@ impl Discovery {
         let hb_state = state.clone();
         let hb_transport = transport.clone();
         tokio::spawn(async move {
-            let mut interval =
-                tokio::time::interval(std::time::Duration::from_secs(heartbeat_secs));
+            // First heartbeat fires immediately (like interval's first tick);
+            // the cadence is re-read from config at the end of each iteration so
+            // a Settings change to the interval applies on the next cycle with no
+            // restart.
             loop {
-                interval.tick().await;
                 // Broadcast our presence so every peer on the LAN can discover us.
                 let channels = hb_state
                     .get_channels()
@@ -204,6 +204,12 @@ impl Discovery {
 
                 // Peers are never auto-expired — they stay in the list for the
                 // whole session. The Flutter side uses lastSeen to show green/gray.
+
+                // Wait the *currently configured* interval before the next beat.
+                // `api::set_heartbeat_interval` validates 1–60; clamp here too so
+                // a hand-edited patch.toml can't busy-loop (0) or stall forever.
+                let secs = cfg.heartbeat_interval_secs.clamp(1, 60);
+                tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
             }
         });
 

@@ -468,10 +468,15 @@ pub struct ConfigSnapshot {
     /// Presence heartbeat interval (seconds). The UI derives its peer
     /// online/amber/grey dot thresholds from this.
     pub heartbeat_interval_secs: u32,
+    /// True while `client_name` is still the system-seeded default — drives the
+    /// first-run "set your name" prompt in the UI.
+    pub name_is_default: bool,
 }
 
 pub async fn get_config() -> ConfigSnapshot {
     let cfg = engine().state.config().await;
+    // Compute before moving fields out of `cfg` below.
+    let name_is_default = cfg.name_is_default();
     ConfigSnapshot {
         client_name: cfg.client_name,
         role: cfg.role,
@@ -486,6 +491,7 @@ pub async fn get_config() -> ConfigSnapshot {
         audible_alert: cfg.audible_alert,
         global_macros: cfg.global_macros,
         heartbeat_interval_secs: cfg.heartbeat_interval_secs as u32,
+        name_is_default,
     }
 }
 
@@ -540,6 +546,10 @@ pub async fn set_macros_columns(columns: u8) -> Result<()> {
 
 pub async fn set_hide_keyboard(enabled: bool) -> Result<()> {
     engine().state.set_hide_keyboard(enabled).await
+}
+
+pub async fn set_heartbeat_interval(secs: u64) -> Result<()> {
+    engine().state.set_heartbeat_interval(secs).await
 }
 
 pub async fn set_audible_alert(enabled: bool) -> Result<()> {
