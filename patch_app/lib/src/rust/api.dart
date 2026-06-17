@@ -136,6 +136,13 @@ Future<void> setHideKeyboard({required bool enabled}) =>
 Future<void> setHeartbeatInterval({required BigInt secs}) =>
     RustLib.instance.api.crateApiSetHeartbeatInterval(secs: secs);
 
+/// Change the OSC UDP port and rebind the live socket — no restart. Validated
+/// 1024–65535. The socket is rebound **first** (so a bind failure, e.g. the port
+/// is already in use, surfaces as an error and leaves the persisted config
+/// untouched); only on success is the new port saved.
+Future<void> setOscPort({required int port}) =>
+    RustLib.instance.api.crateApiSetOscPort(port: port);
+
 Future<void> setAudibleAlert({required bool enabled}) =>
     RustLib.instance.api.crateApiSetAudibleAlert(enabled: enabled);
 

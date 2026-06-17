@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use tokio::net::UdpSocket;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, watch, Mutex};
 use tracing::{debug, error, warn};
 use uuid::Uuid;
 
@@ -45,9 +45,13 @@ enum Outgoing {
 }
 
 pub struct Transport {
-    /// Kept alive so the socket isn't dropped while the send/receive loops run.
-    #[allow(dead_code)]
-    socket: Arc<UdpSocket>,
+    /// The live socket, published over a `watch` so it can be swapped for a live
+    /// OSC-port rebind. The receive/send loops hold receivers and switch to the
+    /// new socket when it changes; once swapped, the old socket's last `Arc` drops
+    /// and the OS frees the old port. `socket_tx` also keeps the channel (and thus
+    /// the loops' `changed()` future) alive for the transport's lifetime.
+    socket_tx: watch::Sender<Arc<UdpSocket>>,
+    socket_rx: watch::Receiver<Arc<UdpSocket>>,
     /// Sender half — clone to send packets from any task.
     send_tx: mpsc::Sender<Outgoing>,
 }
@@ -59,21 +63,14 @@ impl Transport {
         reliability: Arc<Mutex<ReliabilityManager>>,
     ) -> Result<Self> {
         let bind_addr = bind_address(config);
-        let socket = UdpSocket::bind(&bind_addr)
-            .await
-            .with_context(|| format!("Failed to bind UDP socket on {}", bind_addr))?;
+        let socket = bind_socket(&bind_addr).await?;
 
-        socket
-            .set_broadcast(true)
-            .context("Failed to enable UDP broadcast")?;
-        tracing::info!("UDP socket bound on {}", bind_addr);
-
-        let socket = Arc::new(socket);
+        let (socket_tx, socket_rx) = watch::channel(socket);
         let (send_tx, send_rx) = mpsc::channel::<Outgoing>(256);
 
         // Receive loop. It also needs the send half (to emit ACKs for critical
         // messages) and the reliability manager (to clear acked retransmits).
-        let rx_socket = socket.clone();
+        let rx_socket = socket_rx.clone();
         let rx_state = state.clone();
         let rx_send_tx = send_tx.clone();
         let rx_reliability = Arc::clone(&reliability);
@@ -83,12 +80,43 @@ impl Transport {
         });
 
         // Send loop
-        let tx_socket = socket.clone();
+        let tx_socket = socket_rx.clone();
         tokio::spawn(async move {
             send_loop(tx_socket, send_rx).await;
         });
 
-        Ok(Self { socket, send_tx })
+        Ok(Self {
+            socket_tx,
+            socket_rx,
+            send_tx,
+        })
+    }
+
+    /// The current socket. Cheap (`watch::Ref` clone of an `Arc`); reflects the
+    /// latest rebind.
+    fn socket(&self) -> Arc<UdpSocket> {
+        self.socket_rx.borrow().clone()
+    }
+
+    /// The port the current socket is bound to. Test-only accessor used to assert
+    /// a live rebind actually moved the socket.
+    #[cfg(test)]
+    pub(crate) fn bound_port(&self) -> u16 {
+        self.socket().local_addr().map(|a| a.port()).unwrap_or(0)
+    }
+
+    /// Rebind the UDP socket to the port (and interface scope) in `config`,
+    /// **live** — no restart. Binds the new socket first (so a bind failure leaves
+    /// the old socket untouched), then publishes it: the receive loop switches via
+    /// `select!` on the next event, the send paths read it on their next send, and
+    /// the old socket's last `Arc` drops, freeing the old port.
+    pub async fn rebind(&self, config: &Config) -> Result<()> {
+        let bind_addr = bind_address(config);
+        let socket = bind_socket(&bind_addr).await?;
+        // Replaces the watched value; both loops observe the change.
+        let _ = self.socket_tx.send(socket);
+        tracing::info!("UDP socket rebound on {}", bind_addr);
+        Ok(())
     }
 
     /// Send raw OSC bytes to a specific address.
@@ -103,7 +131,7 @@ impl Transport {
     /// Used on shutdown so the departure packet actually flushes before the
     /// process exits (a queued send may never be drained in time).
     pub async fn send_now(&self, bytes: &[u8], addr: SocketAddr) -> Result<()> {
-        self.socket
+        self.socket()
             .send_to(bytes, addr)
             .await
             .context("Direct send failed")?;
@@ -232,34 +260,49 @@ impl Transport {
 // ── Internal loops ────────────────────────────────────────────────────────────
 
 async fn receive_loop(
-    socket: Arc<UdpSocket>,
+    mut socket_rx: watch::Receiver<Arc<UdpSocket>>,
     state: AppState,
     client_id: Uuid,
     send_tx: mpsc::Sender<Outgoing>,
     reliability: Arc<Mutex<ReliabilityManager>>,
 ) {
     let mut buf = vec![0u8; 65535];
+    let mut socket = socket_rx.borrow_and_update().clone();
     loop {
-        match socket.recv_from(&mut buf).await {
-            Ok((len, peer_addr)) => {
-                debug!("OSC packet from {} ({} bytes)", peer_addr, len);
-                match decode_packet(&buf[..len]) {
-                    Ok(event) => {
-                        handle_event(event, peer_addr, &state, client_id, &send_tx, &reliability)
-                            .await
+        tokio::select! {
+            // `recv_from` is cancel-safe, so dropping it when the socket changes
+            // loses no data (nothing was received on the cancelled branch).
+            res = socket.recv_from(&mut buf) => match res {
+                Ok((len, peer_addr)) => {
+                    debug!("OSC packet from {} ({} bytes)", peer_addr, len);
+                    match decode_packet(&buf[..len]) {
+                        Ok(event) => {
+                            handle_event(event, peer_addr, &state, client_id, &send_tx, &reliability)
+                                .await
+                        }
+                        Err(e) => warn!("Decode error from {}: {}", peer_addr, e),
                     }
-                    Err(e) => warn!("Decode error from {}: {}", peer_addr, e),
                 }
-            }
-            Err(e) => {
-                if e.kind() == std::io::ErrorKind::PermissionDenied {
-                    state
-                        .publish(crate::state::AppEvent::PermissionDenied {
-                            context: "OSC socket blocked — check Local Network permission".into(),
-                        })
-                        .await;
+                Err(e) => {
+                    if e.kind() == std::io::ErrorKind::PermissionDenied {
+                        state
+                            .publish(crate::state::AppEvent::PermissionDenied {
+                                context: "OSC socket blocked — check Local Network permission"
+                                    .into(),
+                            })
+                            .await;
+                    }
+                    error!("UDP receive error: {}", e);
                 }
-                error!("UDP receive error: {}", e);
+            },
+            // A live OSC-port rebind published a new socket — switch to it. The
+            // old `Arc` is dropped here, freeing the old port once no send holds it.
+            changed = socket_rx.changed() => {
+                if changed.is_err() {
+                    break; // transport dropped — stop the loop
+                }
+                socket = socket_rx.borrow_and_update().clone();
+                debug!("Receive loop switched to rebound socket");
             }
         }
     }
@@ -550,8 +593,10 @@ async fn handle_event(
     }
 }
 
-async fn send_loop(socket: Arc<UdpSocket>, mut rx: mpsc::Receiver<Outgoing>) {
+async fn send_loop(socket_rx: watch::Receiver<Arc<UdpSocket>>, mut rx: mpsc::Receiver<Outgoing>) {
     while let Some(item) = rx.recv().await {
+        // Read the current socket per item so sends follow a live rebind.
+        let socket = socket_rx.borrow().clone();
         match item {
             Outgoing::To(bytes, addr) => {
                 if let Err(e) = socket.send_to(&bytes, addr).await {
@@ -663,6 +708,19 @@ fn usable_iface_indices(iface_pin: Option<&str>) -> Vec<(String, u32)> {
 /// the NIC takes effect live (next heartbeat) with no rebind/restart.
 fn bind_address(config: &Config) -> String {
     format!("0.0.0.0:{}", config.osc_port)
+}
+
+/// Bind a UDP socket on `bind_addr` with broadcast enabled, returning a shared
+/// handle. Shared by initial bind and live rebind.
+async fn bind_socket(bind_addr: &str) -> Result<Arc<UdpSocket>> {
+    let socket = UdpSocket::bind(bind_addr)
+        .await
+        .with_context(|| format!("Failed to bind UDP socket on {}", bind_addr))?;
+    socket
+        .set_broadcast(true)
+        .context("Failed to enable UDP broadcast")?;
+    tracing::info!("UDP socket bound on {}", bind_addr);
+    Ok(Arc::new(socket))
 }
 
 // Name prefixes of macOS/Linux virtual or system interfaces that are never
@@ -820,5 +878,65 @@ mod tests {
         for (name, idx) in usable_iface_indices(None) {
             eprintln!("per-iface broadcast egress: {name} (ifindex {idx})");
         }
+    }
+
+    /// The live OSC-port rebind moves the socket **and** the receive loop follows
+    /// it: after rebinding to a fresh port, a packet sent to the new port is
+    /// processed (registering the sender as a peer). Guards the watch-based
+    /// hot-swap that makes the in-app OSC-port setting take effect without a
+    /// restart.
+    #[tokio::test]
+    async fn rebind_moves_socket_and_receive_loop_to_new_port() {
+        use crate::osc::codec::encode_presence;
+        use crate::reliability::ReliabilityManager;
+        use std::time::Duration;
+
+        // Port 0 → the OS assigns a free port (no flaky hard-coded ports).
+        let config = Config {
+            osc_port: 0,
+            ..Config::default()
+        };
+        let state = AppState::new(config.clone());
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+        let transport = Transport::new(&config, state.clone(), reliability)
+            .await
+            .unwrap();
+
+        let port_a = transport.bound_port();
+        assert_ne!(port_a, 0, "initial bind should have a real port");
+
+        // Rebind to another OS-assigned port.
+        transport.rebind(&config).await.unwrap();
+        let port_b = transport.bound_port();
+        assert_ne!(port_b, 0);
+        assert_ne!(port_a, port_b, "rebind should move to a different port");
+
+        // Send a presence packet to the NEW port; the receive loop must process
+        // it (registering the sender), proving it switched sockets.
+        let sender = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let presence = PeerPresence {
+            peer_id: Uuid::new_v4(), // distinct from our client_id → not self-filtered
+            peer_name: "rebind-tester".to_string(),
+            channels: Vec::new(),
+            role: None,
+            timestamp: chrono::Utc::now(),
+        };
+        let bytes = encode_presence(&presence).unwrap();
+        // Let the receive loop observe the watch change before we send.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        sender.send_to(&bytes, ("127.0.0.1", port_b)).await.unwrap();
+
+        let mut registered = false;
+        for _ in 0..40 {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+            if !state.get_peers().await.is_empty() {
+                registered = true;
+                break;
+            }
+        }
+        assert!(
+            registered,
+            "receive loop did not process a packet on the rebound port"
+        );
     }
 }

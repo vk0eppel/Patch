@@ -232,6 +232,17 @@ impl AppState {
         self.save_config().await
     }
 
+    /// Persist the OSC UDP port. Validated 1024–65535 (privileged ports < 1024
+    /// need root and would fail to bind). The live socket rebind is driven by the
+    /// caller (`api::set_osc_port`) after this persists.
+    pub async fn set_osc_port(&self, port: u16) -> anyhow::Result<()> {
+        if !(1024..=65535).contains(&port) {
+            anyhow::bail!("OSC port must be 1024–65535 (got {})", port);
+        }
+        self.0.config.write().await.osc_port = port;
+        self.save_config().await
+    }
+
     /// Update per-channel flash flags. `None` means "leave unchanged".
     pub async fn set_channel_flash(
         &self,
@@ -1095,6 +1106,27 @@ mod tests {
             Config::load_or_default().unwrap().heartbeat_interval_secs,
             60
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn set_osc_port_validates_and_persists() {
+        let _guard = config::test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        config::set_data_dir(dir.clone());
+
+        let st = test_state();
+        // A valid port persists to disk.
+        st.set_osc_port(9100).await.unwrap();
+        assert_eq!(Config::load_or_default().unwrap().osc_port, 9100);
+        // Boundaries are accepted.
+        st.set_osc_port(1024).await.unwrap();
+        st.set_osc_port(65535).await.unwrap();
+        // Privileged / zero ports are rejected and leave the stored value untouched.
+        assert!(st.set_osc_port(1023).await.is_err());
+        assert!(st.set_osc_port(0).await.is_err());
+        assert_eq!(Config::load_or_default().unwrap().osc_port, 65535);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

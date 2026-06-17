@@ -674,6 +674,18 @@ class BridgeClient {
     }
   }
 
+  /// Set the OSC UDP port (1024–65535). The engine rebinds the socket live; a
+  /// bind failure (e.g. port already in use) surfaces as an error and leaves the
+  /// persisted port unchanged.
+  Future<void> setOscPort(int port) async {
+    try {
+      await rust.setOscPort(port: port);
+      await getConfig();
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
   Future<void> setChannelFlash(
     String channelId, {
     bool? flashOnCritical,

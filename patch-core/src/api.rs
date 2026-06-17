@@ -552,6 +552,21 @@ pub async fn set_heartbeat_interval(secs: u64) -> Result<()> {
     engine().state.set_heartbeat_interval(secs).await
 }
 
+/// Change the OSC UDP port and rebind the live socket — no restart. Validated
+/// 1024–65535. The socket is rebound **first** (so a bind failure, e.g. the port
+/// is already in use, surfaces as an error and leaves the persisted config
+/// untouched); only on success is the new port saved.
+pub async fn set_osc_port(port: u16) -> Result<()> {
+    if !(1024..=65535).contains(&port) {
+        anyhow::bail!("OSC port must be 1024–65535 (got {})", port);
+    }
+    let h = engine();
+    let mut config = h.state.config().await;
+    config.osc_port = port;
+    h.transport.rebind(&config).await?;
+    h.state.set_osc_port(port).await
+}
+
 pub async fn set_audible_alert(enabled: bool) -> Result<()> {
     engine().state.set_audible_alert(enabled).await
 }
