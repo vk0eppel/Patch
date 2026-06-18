@@ -868,6 +868,34 @@ class _ChannelStrip extends StatelessWidget {
             ),
           ),
           const Divider(color: PatchTheme.border, height: 1),
+          // Show Files + Settings — compact row so they don't push the identity
+          // chip away from the bottom edge.
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.folder_outlined,
+                    color: PatchTheme.textMuted),
+                tooltip: 'Show Files',
+                onPressed: () => showDialog(
+                  context: context,
+                  builder: (_) => ShowFilesDialog(bridge: bridge),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.settings_outlined,
+                    color: PatchTheme.textMuted),
+                tooltip: 'Settings',
+                onPressed: () => Navigator.of(context)
+                    .push(MaterialPageRoute(
+                      builder: (_) =>
+                          SettingsScreen(bridge: bridge, channels: channels),
+                    ))
+                    .then((_) => bridge.getConfig()),
+              ),
+            ],
+          ),
+          const Divider(color: PatchTheme.border, height: 1),
           const SizedBox(height: 8),
           // Pinned ALL tab — crew-wide broadcast view/send. Wrapped in a
           // full-width SizedBox so its frame matches the channel tabs below
@@ -913,28 +941,6 @@ class _ChannelStrip extends StatelessWidget {
                 ))
                 .then((_) => bridge.getConfig()),
           ),
-          const Divider(color: PatchTheme.border, height: 1),
-          // Channels are created/edited/deleted in Settings → Channels & Macros
-          // (with colour); no separate quick-add here.
-          IconButton(
-            icon: const Icon(Icons.folder_outlined, color: PatchTheme.textMuted),
-            tooltip: 'Show Files',
-            onPressed: () => showDialog(
-              context: context,
-              builder: (_) => ShowFilesDialog(bridge: bridge),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined, color: PatchTheme.textMuted),
-            tooltip: 'Settings',
-            onPressed: () => Navigator.of(context)
-                .push(MaterialPageRoute(
-                  builder: (_) =>
-                      SettingsScreen(bridge: bridge, channels: channels),
-                ))
-                .then((_) => bridge.getConfig()),
-          ),
-          const SizedBox(height: 4),
         ],
       ),
     );
@@ -1159,7 +1165,7 @@ class _ChannelViewState extends State<_ChannelView> {
         // ── Header ────────────────────────────────────────────────────────
         Container(
           height: PatchTheme.headerHeight,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           color: PatchTheme.surface,
           alignment: Alignment.center,
           child: Row(
@@ -1168,12 +1174,14 @@ class _ChannelViewState extends State<_ChannelView> {
               // (it opens on the left). When the panel is open it carries its own
               // hide button, so this only shows while the panel is hidden — which
               // is also why a DM pulse never fires with the panel open.
-              if (!widget.showPeers)
+              if (!widget.showPeers) ...[
                 PulsingPeersButton(
                   pulseNotify: widget.dmPulseNotify,
                   hasUnread: widget.hasUnreadDms,
                   onPressed: widget.onTogglePeers,
                 ),
+                const SizedBox(width: 8),
+              ],
               // Channel dot(s) + name(s)
               if (widget.isDmMode) ...[
                 const Text('💬', style: TextStyle(fontSize: 16)),
@@ -1232,12 +1240,14 @@ class _ChannelViewState extends State<_ChannelView> {
               ],
               FlashButton(onFlash: _sendFlash),
               // Macros toggle stays on the RIGHT, mirroring the macros panel.
-              if (!widget.showMacros)
+              if (!widget.showMacros) ...[
+                const SizedBox(width: 8),
                 IconButton(
                   icon: const Icon(Icons.keyboard_outlined, color: PatchTheme.textMuted, size: 20),
                   tooltip: 'Show macros',
                   onPressed: widget.onToggleMacros,
                 ),
+              ],
             ],
           ),
         ),
@@ -1405,13 +1415,15 @@ class _IdentityChip extends StatelessWidget {
         onTap: onTap,
         child: Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          height: 64,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(Icons.person_outline,
                   size: 14, color: PatchTheme.textMuted),
-              const SizedBox(height: 3),
+              const SizedBox(height: 2),
               Text(
                 name.isEmpty ? '—' : name,
                 style: const TextStyle(
