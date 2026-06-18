@@ -1,0 +1,112 @@
+name: Release
+
+# Build the desktop apps and attach them to a GitHub Release.
+#
+# Trigger: push a version tag, e.g.
+#   git tag v1.0.0 && git push origin v1.0.0
+# (or run manually from the Actions tab via workflow_dispatch).
+#
+# The release is created as a DRAFT so you can review the artifacts and notes
+# before publishing. Artifacts are unsigned: macOS is ad-hoc signed
+# (CODE_SIGN_IDENTITY = "-"), so first launch shows a Gatekeeper warning
+# (right-click → Open, or `xattr -dr com.apple.quarantine Patch.app`); Windows
+# is unsigned (SmartScreen "More info → Run anyway"). Real codesigning/
+# notarization would need certs added as repo secrets — out of scope here.
+#
+# NB the release name comes from the tag. Keep the tag aligned with
+# patch_app/pubspec.yaml `version:` (which sets the in-app bundle version).
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+# Pinned to match CI (ci.yml) + the validated local toolchain.
+env:
+  RUST_VERSION: 1.95.0
+  FLUTTER_VERSION: 3.44.1
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: macos
+          - os: windows-latest
+            platform: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # cargokit compiles patch-core (cdylib/staticlib) during `flutter build`,
+      # so the Rust toolchain must be present. macOS links CoreMIDI, Windows
+      # WinMM — neither needs an extra system package (ALSA is Linux-only).
+      - name: Install Rust ${{ env.RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Flutter ${{ env.FLUTTER_VERSION }}
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Pub get
+        working-directory: patch_app
+        run: flutter pub get
+
+      # ── macOS ────────────────────────────────────────────────────────────
+      - name: Build macOS
+        if: matrix.platform == 'macos'
+        working-directory: patch_app
+        run: flutter build macos --release
+
+      - name: Package macOS
+        if: matrix.platform == 'macos'
+        working-directory: patch_app/build/macos/Build/Products/Release
+        run: ditto -c -k --keepParent Patch.app "$GITHUB_WORKSPACE/Patch-macos.zip"
+
+      # ── Windows ──────────────────────────────────────────────────────────
+      - name: Build Windows
+        if: matrix.platform == 'windows'
+        working-directory: patch_app
+        run: flutter build windows --release
+
+      - name: Package Windows
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        # Zip the whole Release folder — the .exe needs its sibling DLLs + data/.
+        run: Compress-Archive -Path patch_app/build/windows/x64/runner/Release/* -DestinationPath Patch-windows.zip
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: patch-${{ matrix.platform }}
+          path: Patch-*.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish draft release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release + upload assets
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.zip
+          generate_release_notes: true
+          draft: true
