@@ -98,6 +98,9 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Delivery status for criticals we've sent, keyed by message id.
   final Map<String, MessageDeliveryStatus> _delivery = {};
 
+  String _clientName = '';
+  String _clientRole = '';
+
   /// Peer ids with an open DM thread (so history is preserved when returning).
   final Set<String> _openDms = {};
 
@@ -352,7 +355,9 @@ class _HomeScreenState extends State<HomeScreen> {
       showNamePrompt(
         context,
         currentName: currentName,
-        onSave: (name) => widget.bridge.setClientName(name),
+        onSaveName: (name) => widget.bridge.setClientName(name),
+        onSaveRole: (role) =>
+            widget.bridge.setRole(role.isEmpty ? null : role),
       );
     });
   }
@@ -523,6 +528,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
       case 'config':
         setState(() {
+          _clientName = event['data']['client_name'] as String? ?? '';
+          _clientRole = event['data']['role'] as String? ?? '';
           _flashOnCritical =
               (event['data']['flash_on_critical'] as bool?) ?? true;
           _flashOnMessage =
@@ -549,9 +556,11 @@ class _HomeScreenState extends State<HomeScreen> {
         );
 
       case 'show_file_saved':
-      case 'client_name_changed':
       case 'interface_changed':
         break;
+
+      case 'client_name_changed':
+        setState(() => _clientName = event['name'] as String? ?? _clientName);
 
       case 'config_updated':
         // Re-fetch config (flash flags) and peers (static peer list may have changed).
@@ -745,6 +754,8 @@ class _HomeScreenState extends State<HomeScreen> {
             globalFlashCount: _globalFlashCount,
             onTap: _toggleChannel,
             bridge: widget.bridge,
+            clientName: _clientName,
+            clientRole: _clientRole,
           ),
           // Peers sit on the LEFT, beside the channel list — grouping "who/where"
           // context together (channels + peers), leaving macros on the right.
@@ -827,6 +838,8 @@ class _ChannelStrip extends StatelessWidget {
   final int globalFlashCount;
   final ValueChanged<String> onTap;
   final BridgeClient bridge;
+  final String clientName;
+  final String clientRole;
 
   const _ChannelStrip({
     required this.channels,
@@ -835,6 +848,8 @@ class _ChannelStrip extends StatelessWidget {
     required this.globalFlashCount,
     required this.onTap,
     required this.bridge,
+    required this.clientName,
+    required this.clientRole,
   });
 
   @override
@@ -888,6 +903,17 @@ class _ChannelStrip extends StatelessWidget {
             ),
           ),
           const Divider(color: PatchTheme.border, height: 1),
+          _IdentityChip(
+            name: clientName,
+            role: clientRole,
+            onTap: () => Navigator.of(context)
+                .push(MaterialPageRoute(
+                  builder: (_) =>
+                      SettingsScreen(bridge: bridge, channels: channels),
+                ))
+                .then((_) => bridge.getConfig()),
+          ),
+          const Divider(color: PatchTheme.border, height: 1),
           // Channels are created/edited/deleted in Settings → Channels & Macros
           // (with colour); no separate quick-add here.
           IconButton(
@@ -901,12 +927,12 @@ class _ChannelStrip extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.settings_outlined, color: PatchTheme.textMuted),
             tooltip: 'Settings',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) =>
-                    SettingsScreen(bridge: bridge, channels: channels),
-              ),
-            ),
+            onPressed: () => Navigator.of(context)
+                .push(MaterialPageRoute(
+                  builder: (_) =>
+                      SettingsScreen(bridge: bridge, channels: channels),
+                ))
+                .then((_) => bridge.getConfig()),
           ),
           const SizedBox(height: 4),
         ],
@@ -1354,6 +1380,64 @@ class _MultiChannelLabel extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── Identity chip — operator name + role in the channel strip ────────────────
+
+class _IdentityChip extends StatelessWidget {
+  final String name;
+  final String role;
+  final VoidCallback onTap;
+
+  const _IdentityChip({
+    required this.name,
+    required this.role,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: role.isNotEmpty ? '$name · $role' : name,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.person_outline,
+                  size: 14, color: PatchTheme.textMuted),
+              const SizedBox(height: 3),
+              Text(
+                name.isEmpty ? '—' : name,
+                style: const TextStyle(
+                  color: PatchTheme.textSecondary,
+                  fontSize: PatchTheme.fontSizeSmall,
+                  fontWeight: FontWeight.w600,
+                ),
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+              ),
+              if (role.isNotEmpty) ...[
+                const SizedBox(height: 1),
+                Text(
+                  role,
+                  style: const TextStyle(
+                    color: PatchTheme.textMuted,
+                    fontSize: 10.0,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
