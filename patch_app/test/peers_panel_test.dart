@@ -1,9 +1,10 @@
-// Widget tests for PeersPanel — name display, status dots, role badge, empty state.
-// Pure widget (no bridge/engine). PeersPanel runs a 3 s periodic timer, so each
-// test unmounts it at the end (pump an empty tree) to cancel that timer.
+// Widget tests for PeersPanel — name display, status dots, role badge, empty
+// state, IP:port subtitle. Pure widget (no bridge/engine). PeersPanel runs a
+// 3 s periodic timer, so each test unmounts it at the end (pump an empty
+// tree) to cancel that timer.
 //
-// Note: last-seen subtitle, IP address, and channel dots are intentionally omitted
-// from the redesigned panel (diagnostic clutter during a live show) — no tests for those.
+// Note: last-seen counter and channel dots are intentionally omitted from the
+// redesigned panel (diagnostic clutter during a live show) — no tests for those.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -53,6 +54,22 @@ void main() {
       _host([_peer(name: 'MON', mode: 'osc_beacon')]),
     );
     expect(find.text('MON'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('shows the IP:port subtitle', (tester) async {
+    await tester.pumpWidget(
+      _host([_peer(name: 'MON', mode: 'osc_beacon', address: '169.254.30.7')]),
+    );
+    expect(find.text('169.254.30.7:9000'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('omits the subtitle when address is unresolved', (tester) async {
+    await tester.pumpWidget(
+      _host([_peer(name: 'MON', mode: 'osc_beacon', address: '')]),
+    );
+    expect(find.textContaining(':9000'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 

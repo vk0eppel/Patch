@@ -109,7 +109,7 @@ ALL is a one-shot broadcast action, not a persistent channel selection. Tapping 
 
 ## Peers Panel
 
-The peers panel (`peers_panel.dart`) shows one tile per peer: name, role badge, status dot (green/amber/gray by heartbeat age), and a "Clear inactive" footer button. Discovery icon, IP/last-seen subtitle, and channel dots are intentionally omitted — they are diagnostic details that add clutter without operational value during a show. The panel is the hub for DM navigation (see Direct Messages above).
+The peers panel (`peers_panel.dart`) shows one tile per peer: name, role badge, status dot (green/amber/gray by heartbeat age), an IP:port subtitle, and a "Clear inactive" footer button. Discovery icon and channel dots are intentionally omitted — they're diagnostic details that add clutter without operational value during a show. The IP:port subtitle stays, despite being a diagnostic, because multi-NIC setups (e.g. a wired control/Dante network alongside Wi-Fi) can silently resolve a peer to the wrong interface — seeing the address at a glance is the fastest way to catch that during setup. The panel is the hub for DM navigation (see Direct Messages above).
 
 ## UI Layout Constants
 

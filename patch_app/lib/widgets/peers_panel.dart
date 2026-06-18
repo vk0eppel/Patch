@@ -114,15 +114,22 @@ class _PeersPanelState extends State<PeersPanel> {
           ),
           if (widget.onClearStale != null) ...[
             const Divider(color: PatchTheme.border, height: 1),
-            TextButton.icon(
-              onPressed: widget.onClearStale,
-              icon: const Icon(Icons.person_remove_outlined, size: 14),
-              label: const Text('Clear inactive'),
-              style: TextButton.styleFrom(
-                foregroundColor: PatchTheme.textMuted,
-                textStyle: const TextStyle(fontSize: 11),
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                minimumSize: const Size(double.infinity, 0),
+            // A tight SizedBox (not the button's own `minimumSize`) pins this
+            // footer to the same height as the identity chip / message input,
+            // so their top dividers line up — `minimumSize` alone isn't
+            // reliable here since `VisualDensity` (platform-adaptive on
+            // desktop) shrinks Material buttons below it.
+            SizedBox(
+              width: double.infinity,
+              height: PatchTheme.footerHeight,
+              child: TextButton.icon(
+                onPressed: widget.onClearStale,
+                icon: const Icon(Icons.person_remove_outlined, size: 14),
+                label: const Text('Clear inactive'),
+                style: TextButton.styleFrom(
+                  foregroundColor: PatchTheme.textMuted,
+                  textStyle: const TextStyle(fontSize: 11),
+                ),
               ),
             ),
           ],
@@ -173,56 +180,72 @@ class _PeerTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final tile = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Row(
-              children: [
-                Flexible(
-                  child: Text(
-                    peer.peerName,
-                    style: TextStyle(
-                      color: PatchTheme.textPrimary,
-                      fontSize: PatchTheme.fontSizeSmall,
-                      fontWeight: FontWeight.w600,
-                      // Departed peers ('/patch/bye' / mDNS removal) render in
-                      // italic so a clean departure is told apart at a glance.
-                      fontStyle:
-                          peer.departed ? FontStyle.italic : FontStyle.normal,
+          Row(
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        peer.peerName,
+                        style: TextStyle(
+                          color: PatchTheme.textPrimary,
+                          fontSize: PatchTheme.fontSizeSmall,
+                          fontWeight: FontWeight.w600,
+                          // Departed peers ('/patch/bye' / mDNS removal) render
+                          // in italic so a clean departure is told apart at a
+                          // glance.
+                          fontStyle: peer.departed
+                              ? FontStyle.italic
+                              : FontStyle.normal,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    overflow: TextOverflow.ellipsis,
+                    if (isUnread) ...[
+                      const SizedBox(width: 4),
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          color: PatchTheme.critical,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ],
+                    if (peer.role != null && peer.role!.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      _RoleBadge(peer.role!),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              Tooltip(
+                message: _kDotLegend,
+                child: Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: _dotColor,
+                    shape: BoxShape.circle,
                   ),
                 ),
-                if (isUnread) ...[
-                  const SizedBox(width: 4),
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: const BoxDecoration(
-                      color: PatchTheme.critical,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ],
-                if (peer.role != null && peer.role!.isNotEmpty) ...[
-                  const SizedBox(width: 6),
-                  _RoleBadge(peer.role!),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 6),
-          Tooltip(
-            message: _kDotLegend,
-            child: Container(
-              width: 7,
-              height: 7,
-              decoration: BoxDecoration(
-                color: _dotColor,
-                shape: BoxShape.circle,
               ),
-            ),
+            ],
           ),
+          if (peer.address.isNotEmpty)
+            Text(
+              '${peer.address}:${peer.oscPort}',
+              style: const TextStyle(
+                color: PatchTheme.textMuted,
+                fontSize: 9,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
         ],
       ),
     );

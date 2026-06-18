@@ -1407,7 +1407,7 @@ class _IdentityChip extends StatelessWidget {
         onTap: onTap,
         child: Container(
           width: double.infinity,
-          height: 64,
+          height: PatchTheme.footerHeight,
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
