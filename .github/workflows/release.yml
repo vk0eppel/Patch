@@ -63,10 +63,14 @@ jobs:
         run: flutter pub get
 
       # ── macOS ────────────────────────────────────────────────────────────
-      - name: Build macOS
+      - name: Add Rust targets (macOS universal)
+        if: matrix.platform == 'macos'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Build macOS universal
         if: matrix.platform == 'macos'
         working-directory: patch_app
-        run: flutter build macos --release
+        run: flutter build macos --release --config FLUTTER_TARGET_PLATFORM=darwin-arm64,darwin-x64
 
       - name: Package macOS
         if: matrix.platform == 'macos'
