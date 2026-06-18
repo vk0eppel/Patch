@@ -70,7 +70,8 @@ jobs:
       - name: Build macOS universal
         if: matrix.platform == 'macos'
         working-directory: patch_app
-        run: flutter build macos --release --config FLUTTER_TARGET_PLATFORM=darwin-arm64,darwin-x64
+        # Universal (arm64 + x86_64) is driven by ARCHS in Runner.xcodeproj, not a flutter CLI flag.
+        run: flutter build macos --release
 
       - name: Package macOS
         if: matrix.platform == 'macos'
@@ -81,6 +82,10 @@ jobs:
       - name: Build Windows
         if: matrix.platform == 'windows'
         working-directory: patch_app
+        # audioplayers_windows uses <experimental/coroutine>, which newer MSVC
+        # treats as a hard error (STL1011) rather than a deprecation warning.
+        env:
+          CL: /D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS
         run: flutter build windows --release
 
       - name: Package Windows
