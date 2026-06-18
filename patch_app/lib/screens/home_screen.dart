@@ -861,39 +861,31 @@ class _ChannelStrip extends StatelessWidget {
         children: [
           SizedBox(
             height: PatchTheme.headerHeight,
-            child: Image.asset(
-              'assets/icon/icon_master.png',
-              width: double.infinity,
-              fit: BoxFit.fitWidth,
-            ),
-          ),
-          const Divider(color: PatchTheme.border, height: 1),
-          // Show Files + Settings — compact row so they don't push the identity
-          // chip away from the bottom edge.
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.folder_outlined,
-                    color: PatchTheme.textMuted),
-                tooltip: 'Show Files',
-                onPressed: () => showDialog(
-                  context: context,
-                  builder: (_) => ShowFilesDialog(bridge: bridge),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.folder_outlined,
+                      color: PatchTheme.textMuted),
+                  tooltip: 'Show Files',
+                  onPressed: () => showDialog(
+                    context: context,
+                    builder: (_) => ShowFilesDialog(bridge: bridge),
+                  ),
                 ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.settings_outlined,
-                    color: PatchTheme.textMuted),
-                tooltip: 'Settings',
-                onPressed: () => Navigator.of(context)
-                    .push(MaterialPageRoute(
-                      builder: (_) =>
-                          SettingsScreen(bridge: bridge, channels: channels),
-                    ))
-                    .then((_) => bridge.getConfig()),
-              ),
-            ],
+                IconButton(
+                  icon: const Icon(Icons.settings_outlined,
+                      color: PatchTheme.textMuted),
+                  tooltip: 'Settings',
+                  onPressed: () => Navigator.of(context)
+                      .push(MaterialPageRoute(
+                        builder: (_) =>
+                            SettingsScreen(bridge: bridge, channels: channels),
+                      ))
+                      .then((_) => bridge.getConfig()),
+                ),
+              ],
+            ),
           ),
           const Divider(color: PatchTheme.border, height: 1),
           const SizedBox(height: 8),

@@ -26,9 +26,9 @@ class PatchTheme {
   static const broadcast     = Color(0xFFCCCCCC); // soft light-grey
 
   // ── Layout ────────────────────────────────────────────────────────────────
-  /// Unified header height for all top-of-screen sections (channel strip logo,
+  /// Unified header height for all top-of-screen sections (channel strip,
   /// message area header, shortcuts panel, peers panel).
-  static const double headerHeight = 80.0;
+  static const double headerHeight = 48.0;
 
   // ── Typography ────────────────────────────────────────────────────────────
   /// Large, readable timestamp / label for stage desk use
