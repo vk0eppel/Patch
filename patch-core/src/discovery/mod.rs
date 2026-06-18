@@ -7,13 +7,41 @@ use anyhow::Result;
 use chrono::Utc;
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use std::net::Ipv4Addr;
+
 use crate::osc::{codec::encode_presence, types::PeerPresence};
 use crate::state::{AppState, Config};
-use crate::transport::Transport;
+use crate::transport::{in_pinned_subnet, pinned_ipv4_subnet, Transport};
+
+/// Picks which of a resolved mDNS service's addresses to use as the peer's
+/// contact address. mDNS multicasts over every active interface, so a peer
+/// with multiple NICs (e.g. wired/Dante + Wi-Fi) can resolve with an address
+/// per interface. When we're pinned to a specific NIC, prefer the resolved
+/// address on that same subnet (`pinned_subnet` is the pinned interface's own
+/// IPv4 address + netmask); if none matches — or the pinned interface's own
+/// subnet couldn't be resolved — return `None` rather than guessing. Better
+/// to leave whatever address OSC presence already learned untouched than
+/// overwrite it with an address from an unrelated interface. With no pin
+/// configured, fall back to the first resolved address (prior behavior).
+fn pick_resolved_address(
+    addrs: &std::collections::HashSet<IpAddr>,
+    pin_configured: bool,
+    pinned_subnet: Option<(Ipv4Addr, Ipv4Addr)>,
+) -> Option<String> {
+    if pin_configured {
+        let (iface_ip, mask) = pinned_subnet?;
+        return addrs
+            .iter()
+            .find(|ip| matches!(ip, IpAddr::V4(v4) if in_pinned_subnet(*v4, iface_ip, mask)))
+            .map(|ip| ip.to_string());
+    }
+    addrs.iter().next().map(|a| a.to_string())
+}
 
 pub struct Discovery {
     /// The mDNS daemon handle, held for the engine's lifetime. Dropping the last
@@ -72,12 +100,14 @@ impl Discovery {
                                 continue;
                             }
 
-                            let addr = info
-                                .get_addresses()
-                                .iter()
-                                .next()
-                                .map(|a| a.to_string())
-                                .unwrap_or_default();
+                            let iface_pin = browse_state.config().await.network_interface.clone();
+                            let pinned_subnet = iface_pin.as_deref().and_then(pinned_ipv4_subnet);
+                            let addr = pick_resolved_address(
+                                info.get_addresses(),
+                                iface_pin.is_some(),
+                                pinned_subnet,
+                            )
+                            .unwrap_or_default();
                             let port = info.get_port();
 
                             // Prefer the peer_name TXT record; fall back to stripping
@@ -244,4 +274,50 @@ fn gethostname() -> String {
         }
     }
     "patch-node".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    fn addrs(ips: &[&str]) -> HashSet<IpAddr> {
+        ips.iter().map(|s| s.parse().unwrap()).collect()
+    }
+
+    #[test]
+    fn no_pin_falls_back_to_first_address() {
+        let set = addrs(&["10.0.2.5"]);
+        assert_eq!(
+            pick_resolved_address(&set, false, None),
+            Some("10.0.2.5".to_string())
+        );
+    }
+
+    #[test]
+    fn pin_picks_address_on_matching_subnet_over_unrelated_one() {
+        // M1 pinned to the wired Dante NIC (169.254.x.x/16); Intel's service
+        // resolved with both its Dante address and an unrelated Wi-Fi one.
+        let set = addrs(&["169.254.30.7", "10.0.2.9"]);
+        let pinned_subnet = Some(("169.254.10.1".parse().unwrap(), "255.255.0.0".parse().unwrap()));
+        assert_eq!(
+            pick_resolved_address(&set, true, pinned_subnet),
+            Some("169.254.30.7".to_string())
+        );
+    }
+
+    #[test]
+    fn pin_with_no_matching_address_returns_none_rather_than_guessing() {
+        let set = addrs(&["10.0.2.9"]); // only the unrelated Wi-Fi address resolved
+        let pinned_subnet = Some(("169.254.10.1".parse().unwrap(), "255.255.0.0".parse().unwrap()));
+        assert_eq!(pick_resolved_address(&set, true, pinned_subnet), None);
+    }
+
+    #[test]
+    fn pin_configured_but_unresolvable_returns_none_rather_than_first() {
+        // The pinned interface itself couldn't be found/resolved this tick —
+        // don't fall back to "first address", which could be the wrong NIC.
+        let set = addrs(&["10.0.2.9"]);
+        assert_eq!(pick_resolved_address(&set, true, None), None);
+    }
 }

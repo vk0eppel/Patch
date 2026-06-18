@@ -1,9 +1,9 @@
 //! UDP transport layer — OSC send/receive with network interface binding.
 
 use anyhow::{Context, Result};
-use network_interface::{NetworkInterface, NetworkInterfaceConfig};
+use network_interface::{Addr, NetworkInterface, NetworkInterfaceConfig};
 use std::collections::HashSet;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, watch, Mutex};
@@ -731,8 +731,36 @@ const SKIP_PREFIXES: &[&str] = &[
 
 /// Returns true for IPs that are usable as OSC bind addresses.
 /// Rejects loopback, link-local IPv6 (fe80::...), and the IPv6 loopback (::1).
+/// Deliberately does **not** reject IPv4 link-local (169.254.x.x) — Dante and
+/// similar AV networks use that range intentionally, and this app needs to
+/// run on them.
 fn is_usable_ip(s: &str) -> bool {
     !s.starts_with("127.") && s != "::1" && !s.to_lowercase().starts_with("fe80")
+}
+
+/// The pinned interface's own IPv4 address and netmask, if it has one.
+///
+/// Used to filter mDNS-resolved peer addresses down to the same network as
+/// our configured NIC. mDNS multicasts over every active interface, so a
+/// resolved service can carry an address per interface a peer has up (e.g.
+/// both a wired/Dante 169.254.x.x address and an unrelated Wi-Fi address) —
+/// without this, whichever the `mdns-sd` crate happens to return first wins,
+/// silently overriding the correct address the OSC presence beacon already
+/// learned (which *does* respect the pin).
+pub(crate) fn pinned_ipv4_subnet(iface_pin: &str) -> Option<(Ipv4Addr, Ipv4Addr)> {
+    let interfaces = NetworkInterface::show().ok()?;
+    let iface = interfaces.into_iter().find(|i| i.name == iface_pin)?;
+    iface.addr.into_iter().find_map(|a| match a {
+        Addr::V4(v4) if is_usable_ip(&IpAddr::V4(v4.ip).to_string()) => {
+            v4.netmask.map(|mask| (v4.ip, mask))
+        }
+        _ => None,
+    })
+}
+
+/// True if `ip` is in the same IPv4 subnet as the pinned interface's address.
+pub(crate) fn in_pinned_subnet(ip: Ipv4Addr, iface_ip: Ipv4Addr, mask: Ipv4Addr) -> bool {
+    u32::from(ip) & u32::from(mask) == u32::from(iface_ip) & u32::from(mask)
 }
 
 /// Broadcast targets for the presence/discovery beacon.
