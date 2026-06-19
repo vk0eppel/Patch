@@ -58,7 +58,12 @@ class _MessageInputState extends State<MessageInput> {
                 color: PatchTheme.textPrimary,
                 fontSize: PatchTheme.fontSizeMedium,
               ),
+              // isDense + textAlignVertical.center: without them the decorator
+              // reserves space for a floating label this field doesn't have,
+              // pushing the text up instead of centering it in the footer.
+              textAlignVertical: TextAlignVertical.center,
               decoration: InputDecoration(
+                isDense: true,
                 hintText: widget.hint ??
                     (widget.hideKeyboard ? 'Tap to type…' : 'Type a message…'),
                 border: InputBorder.none,
@@ -71,11 +76,24 @@ class _MessageInputState extends State<MessageInput> {
               textInputAction: TextInputAction.send,
               onSubmitted: (_) => _send(),
               autofocus: !widget.hideKeyboard,
+              // Crew callouts are short codes/jargon, not prose — autocorrect
+              // fights that anyway. Disabling both also removes iOS's
+              // predictive-text (QuickType) bar above the keys, which is the
+              // one real way to shrink the keyboard's footprint; the key rows
+              // themselves aren't resizable by an app.
+              autocorrect: false,
+              enableSuggestions: false,
             ),
           ),
           const SizedBox(width: 8),
           IconButton(
-            icon: const Icon(Icons.send, color: PatchTheme.accent),
+            // The send glyph's artwork sits low in its own bounding box even
+            // though that box is geometrically centered — nudge it up to
+            // compensate.
+            icon: Transform.translate(
+              offset: const Offset(0, -4),
+              child: const Icon(Icons.send, color: PatchTheme.accent),
+            ),
             onPressed: _send,
             tooltip: 'Send (Enter)',
             splashRadius: 20,

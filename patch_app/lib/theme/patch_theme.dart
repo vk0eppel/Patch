@@ -33,8 +33,9 @@ class PatchTheme {
   /// Unified footer height for the bottom-of-screen row in each side-by-side
   /// column (channel strip's identity chip, message area's input bar, peers
   /// panel's "Clear inactive" button) — keeps their top dividers aligned
-  /// across columns, the same way [headerHeight] aligns the top ones.
-  static const double footerHeight = 64.0;
+  /// across columns, the same way [headerHeight] aligns the top ones. Equal
+  /// to headerHeight so the header/footer rows match too.
+  static const double footerHeight = headerHeight;
 
   // ── Typography ────────────────────────────────────────────────────────────
   /// Large, readable timestamp / label for stage desk use

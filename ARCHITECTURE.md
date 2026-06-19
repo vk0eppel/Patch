@@ -113,11 +113,15 @@ The peers panel (`peers_panel.dart`) shows one tile per peer: name, role badge, 
 
 ## UI Layout Constants
 
-- `PatchTheme.headerHeight = 80.0` — applied to all four top-area headers so dividers align
+- `PatchTheme.headerHeight = 48.0` — applied to all top-area headers (channel strip, message area, peers panel, macros panel) so their top dividers align across columns
+- `PatchTheme.footerHeight = headerHeight` — applied to the bottom-of-screen row in each column (channel strip's identity chip, message area's `MessageInput`, peers panel's "Clear inactive" button) so the footer dividers align too, and match the header height
+- Every column boundary in the main `Row` (channel strip ↔ peers panel ↔ message area ↔ macros panel) carries the same `Border(left: BorderSide(color: PatchTheme.border))`, applied independently at each boundary so the separator is present regardless of which optional panels (peers/macros) are currently shown
 - `_kMacroColumnWidth = 160.0` — macros panel width = `160 × columns` (1–3 columns → 160–480 px)
 - `_kPeersPanelWidth = 160.0` — peers panel, sits left of message area
 - Message buffer cap: 500 per channel (`_kMaxMessagesPerChannel`, mirrors `MAX_BUFFER`)
 - `message_list.dart` auto-scrolls on tail `messageId` changing, not list length (at cap, length stops changing)
+- `HomeScreen`'s `Scaffold.body` is wrapped in `SafeArea` — the custom headers/footers are plain `Container`s, not a real `AppBar`, so nothing else insets them from the iOS status bar/notch or bottom home indicator
+- The Settings screen's `AppBar` sets `toolbarHeight: PatchTheme.headerHeight` to match the main window's header height instead of Material's default `56.0`
 
 ## Channels & Macros
 

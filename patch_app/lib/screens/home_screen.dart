@@ -783,45 +783,63 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           Expanded(
-            child: _channels.isEmpty
-                ? const Center(child: Text('No channels'))
-                : _ChannelView(
-                    selectedChannels: _selectedChannels,
-                    isAllMode: _isAllMode,
-                    isDmMode: _isDmMode,
-                    dmPeerId: _dmPeerId,
-                    dmPeerName: _dmPeerId == null ? null : _dmPeerName(_dmPeerId!),
-                    onDmSent: _warnIfDmPeerOffline,
-                    messages: _combinedMessages,
-                    channelColors: _channelColors,
-                    delivery: _delivery,
-                    aggregatedMacros: _aggregatedMacros,
-                    bridge: widget.bridge,
-                    showPeers: _showPeers,
-                    onTogglePeers: () =>
-                        setState(() => _showPeers = !_showPeers),
-                    hasUnreadDms: _unreadDms.isNotEmpty,
-                    dmPulseNotify: _dmPulseNotify,
-                    showMacros: _showMacros,
-                    onToggleMacros: () =>
-                        setState(() => _showMacros = !_showMacros),
-                    flashNotify: _flashNotify,
-                    flashColor: _flashColor,
-                    flashPulseCount: _flashPulseCount,
-                    hideKeyboard: _hideKeyboard,
-                    onBroadcastSent: _snapBackFromAll,
-                  ),
+            // Same left border as the peers panel — so there's always a
+            // separator against the channel strip (peers hidden) or against
+            // the peers panel (peers shown), keeping the footer dividers
+            // (identity chip / clear inactive / typing bar) visually
+            // consistent across the whole bottom row either way.
+            child: Container(
+              decoration: const BoxDecoration(
+                border: Border(left: BorderSide(color: PatchTheme.border)),
+              ),
+              child: _channels.isEmpty
+                  ? const Center(child: Text('No channels'))
+                  : _ChannelView(
+                      selectedChannels: _selectedChannels,
+                      isAllMode: _isAllMode,
+                      isDmMode: _isDmMode,
+                      dmPeerId: _dmPeerId,
+                      dmPeerName:
+                          _dmPeerId == null ? null : _dmPeerName(_dmPeerId!),
+                      onDmSent: _warnIfDmPeerOffline,
+                      messages: _combinedMessages,
+                      channelColors: _channelColors,
+                      delivery: _delivery,
+                      aggregatedMacros: _aggregatedMacros,
+                      bridge: widget.bridge,
+                      showPeers: _showPeers,
+                      onTogglePeers: () =>
+                          setState(() => _showPeers = !_showPeers),
+                      hasUnreadDms: _unreadDms.isNotEmpty,
+                      dmPulseNotify: _dmPulseNotify,
+                      showMacros: _showMacros,
+                      onToggleMacros: () =>
+                          setState(() => _showMacros = !_showMacros),
+                      flashNotify: _flashNotify,
+                      flashColor: _flashColor,
+                      flashPulseCount: _flashPulseCount,
+                      hideKeyboard: _hideKeyboard,
+                      onBroadcastSent: _snapBackFromAll,
+                    ),
+            ),
           ),
           if (_showMacros)
             SizedBox(
               width: _kMacroColumnWidth * _macrosColumns,
-              child: MacrosPanel(
-                macros: _aggregatedMacros,
-                globalMacros: _aggregatedGlobalMacros,
-                isMulti: _selectedIds.length > 1,
-                columns: _macrosColumns,
-                onMacro: _fireMacro,
-                onClose: () => setState(() => _showMacros = false),
+              // Same left border as the peers panel / message area — keeps
+              // the separator consistent across every column boundary.
+              child: Container(
+                decoration: const BoxDecoration(
+                  border: Border(left: BorderSide(color: PatchTheme.border)),
+                ),
+                child: MacrosPanel(
+                  macros: _aggregatedMacros,
+                  globalMacros: _aggregatedGlobalMacros,
+                  isMulti: _selectedIds.length > 1,
+                  columns: _macrosColumns,
+                  onMacro: _fireMacro,
+                  onClose: () => setState(() => _showMacros = false),
+                ),
               ),
             ),
         ],
@@ -1431,31 +1449,30 @@ class _IdentityChip extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.person_outline,
-                  size: 14, color: PatchTheme.textMuted),
-              const SizedBox(height: 2),
+              // No icon here — footerHeight now matches headerHeight (48),
+              // too tight for icon + name + role without overflowing.
               Text(
                 name.isEmpty ? '—' : name,
                 style: const TextStyle(
                   color: PatchTheme.textSecondary,
                   fontSize: PatchTheme.fontSizeSmall,
                   fontWeight: FontWeight.w600,
+                  height: 1.1,
                 ),
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
               ),
-              if (role.isNotEmpty) ...[
-                const SizedBox(height: 1),
+              if (role.isNotEmpty)
                 Text(
                   role,
                   style: const TextStyle(
                     color: PatchTheme.textMuted,
                     fontSize: 10.0,
+                    height: 1.1,
                   ),
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                 ),
-              ],
             ],
           ),
         ),

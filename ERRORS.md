@@ -38,6 +38,10 @@ Proven mistakes — these have caused real bugs. Read before touching the releva
 
 **`message_list.dart` auto-scrolls on tail `messageId` changing, not list length.** At the 500-message cap, list length stops changing — a length-based trigger silently stops following new messages.
 
+**`IconButton`'s own `constraints`/`minimumSize` styling is unreliable for forcing a size smaller than Material's default.** Material 3's default style still supplies a 48×48 `minimumSize` that wins over an explicit `constraints:` param — confirmed via a widget test (`tester.getSize` stayed 48×48 despite `BoxConstraints.tightFor(width: 36, height: 36)`). The same applies to `TextButton`'s `minimumSize`, which additionally gets shrunk by `VisualDensity.adaptivePlatformDensity` on desktop but *not* on iOS — so a button sized this way can look fine on macOS and overflow on iOS (this caused two separate RenderFlex-overflow rounds in the channel strip's header icons and the peers panel's "Clear inactive" footer). The only reliable fix is a tight outer `SizedBox`/`Container` with an explicit size — an external tight constraint always wins over the button's internal style resolution.
+
+**Material's `TextField` reserves vertical space for a floating label even when none is set**, pushing text toward the top of the box instead of centering it — set `isDense: true` on the `InputDecoration` and `textAlignVertical: TextAlignVertical.center` on the field to actually center single-line input bars.
+
 ## Architecture
 
 **Do not reintroduce the TCP bridge.** `patch-core/src/bridge/` is gone. For inter-process comms in a debug tool, build a separate binary that links `patch_core` as an rlib.
