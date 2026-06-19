@@ -299,7 +299,10 @@ mod tests {
         // M1 pinned to the wired Dante NIC (169.254.x.x/16); Intel's service
         // resolved with both its Dante address and an unrelated Wi-Fi one.
         let set = addrs(&["169.254.30.7", "10.0.2.9"]);
-        let pinned_subnet = Some(("169.254.10.1".parse().unwrap(), "255.255.0.0".parse().unwrap()));
+        let pinned_subnet = Some((
+            "169.254.10.1".parse().unwrap(),
+            "255.255.0.0".parse().unwrap(),
+        ));
         assert_eq!(
             pick_resolved_address(&set, true, pinned_subnet),
             Some("169.254.30.7".to_string())
@@ -309,7 +312,10 @@ mod tests {
     #[test]
     fn pin_with_no_matching_address_returns_none_rather_than_guessing() {
         let set = addrs(&["10.0.2.9"]); // only the unrelated Wi-Fi address resolved
-        let pinned_subnet = Some(("169.254.10.1".parse().unwrap(), "255.255.0.0".parse().unwrap()));
+        let pinned_subnet = Some((
+            "169.254.10.1".parse().unwrap(),
+            "255.255.0.0".parse().unwrap(),
+        ));
         assert_eq!(pick_resolved_address(&set, true, pinned_subnet), None);
     }
 
