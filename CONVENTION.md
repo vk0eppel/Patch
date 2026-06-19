@@ -25,6 +25,10 @@ All OSC encoding/decoding belongs in `patch-core/src/osc/codec.rs`. Add and test
 
 All blocking file I/O must be wrapped in `spawn_blocking`. Tests that touch disk use `config::test_data_dir_guard()` — a `tokio::sync::Mutex` (not std) so it can be held across `.await` without tripping `await_holding_lock`.
 
+## Releasing
+
+Bump `patch_app/pubspec.yaml`'s `version:` (keep the `+1` build-number suffix unless you have reason to change it), commit, then `git tag vX.Y.Z && git push origin vX.Y.Z` — `release.yml` builds macOS/Windows and opens a draft release. After the workflow finishes, verify the bundled version actually moved before publishing the draft — see ERRORS.md's Build/Release entry for why a clean build alone doesn't guarantee that.
+
 ## Platform (macOS)
 
 If a Rust crate emits `cargo:rustc-link-lib=framework=Foo`, add `-framework Foo` to `OTHER_LDFLAGS` in `patch_app/rust_builder/macos/patch_core.podspec` and run `pod install`. Cargokit's static `.a` doesn't carry those directives — Xcode will fail with undefined symbols.

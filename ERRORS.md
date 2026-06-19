@@ -42,6 +42,10 @@ Proven mistakes — these have caused real bugs. Read before touching the releva
 
 **Material's `TextField` reserves vertical space for a floating label even when none is set**, pushing text toward the top of the box instead of centering it — set `isDense: true` on the `InputDecoration` and `textAlignVertical: TextAlignVertical.center` on the field to actually center single-line input bars.
 
+## Build / Release
+
+**Bumping `patch_app/pubspec.yaml`'s `version:` is not sufficient on its own — verify it actually took.** `macos/Runner.xcodeproj/project.pbxproj` and `ios/Runner.xcodeproj/project.pbxproj` can have a literal `FLUTTER_BUILD_NAME = x.y.z;` baked directly into their build settings (found hardcoded at `0.1.0` long after `pubspec.yaml` had moved past it). A setting written directly in a pbxproj's `buildSettings` wins over the same key coming from the included xcconfig — so the version stayed stuck at `0.1.0` through every subsequent release, *including clean rebuilds*, because `flutter build`/`flutter run` only regenerates `Generated.xcconfig`, never the pbxproj. After any version bump, confirm with `defaults read .../Patch.app/Contents/Info.plist CFBundleShortVersionString` rather than trusting "About Patch" or assuming a clean build fixes staleness — and if it doesn't match, grep the two `project.pbxproj` files for a hardcoded `FLUTTER_BUILD_NAME` before suspecting anything else.
+
 ## Architecture
 
 **Do not reintroduce the TCP bridge.** `patch-core/src/bridge/` is gone. For inter-process comms in a debug tool, build a separate binary that links `patch_core` as an rlib.
