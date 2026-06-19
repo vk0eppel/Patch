@@ -745,7 +745,10 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Row(
+      // The custom headers (channel strip / message area / peers / macros)
+      // are plain Containers, not a real AppBar, so nothing insets them from
+      // the iOS status bar/notch or the bottom home indicator without this.
+      body: SafeArea(child: Row(
         children: [
           _ChannelStrip(
             channels: _channels,
@@ -822,7 +825,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
         ],
-      ),
+      )),
     );
   }
 }
@@ -864,25 +867,40 @@ class _ChannelStrip extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                IconButton(
-                  icon: const Icon(Icons.folder_outlined,
-                      color: PatchTheme.textMuted),
-                  tooltip: 'Show Files',
-                  onPressed: () => showDialog(
-                    context: context,
-                    builder: (_) => ShowFilesDialog(bridge: bridge),
+                // Two buttons must fit an 80 px-wide strip. IconButton's own
+                // `constraints` param is overridden by Material 3's default
+                // style (48 px minimumSize) and is silently ignored — only a
+                // tight outer SizedBox reliably caps the size, since an
+                // external tight constraint always wins.
+                SizedBox(
+                  width: 36,
+                  height: 36,
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(Icons.folder_outlined,
+                        color: PatchTheme.textMuted),
+                    tooltip: 'Show Files',
+                    onPressed: () => showDialog(
+                      context: context,
+                      builder: (_) => ShowFilesDialog(bridge: bridge),
+                    ),
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.settings_outlined,
-                      color: PatchTheme.textMuted),
-                  tooltip: 'Settings',
-                  onPressed: () => Navigator.of(context)
-                      .push(MaterialPageRoute(
-                        builder: (_) =>
-                            SettingsScreen(bridge: bridge, channels: channels),
-                      ))
-                      .then((_) => bridge.getConfig()),
+                SizedBox(
+                  width: 36,
+                  height: 36,
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(Icons.settings_outlined,
+                        color: PatchTheme.textMuted),
+                    tooltip: 'Settings',
+                    onPressed: () => Navigator.of(context)
+                        .push(MaterialPageRoute(
+                          builder: (_) => SettingsScreen(
+                              bridge: bridge, channels: channels),
+                        ))
+                        .then((_) => bridge.getConfig()),
+                  ),
                 ),
               ],
             ),
