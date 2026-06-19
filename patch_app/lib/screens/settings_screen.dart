@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
@@ -32,6 +33,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _nameSaved = false;
   bool _roleSaved = false;
   late List<PatchChannel> _channels;
+
+  /// "vX.Y.Z (build)" from the bundle's own Info.plist — null until
+  /// PackageInfo resolves (fast, but not synchronous on first build).
+  String? _versionLabel;
 
   // Behavior
   bool _flashOnCritical = true;
@@ -70,6 +75,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     widget.bridge.getConfig();
     widget.bridge.getInterfaces();
     widget.bridge.getPeers();
+    // Read the version straight from the bundle (same source as the OS-native
+    // About panel) so this label can't itself drift from what's installed.
+    PackageInfo.fromPlatform().then((info) {
+      if (!mounted) return;
+      setState(() {
+        _versionLabel = 'v${info.version} (${info.buildNumber})';
+      });
+    });
   }
 
   @override
@@ -847,6 +860,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   existingIds: _channels.map((c) => c.id).toSet(),
                 ),
               )),
+
+          const SizedBox(height: 32),
+          Center(
+            child: Text(
+              _versionLabel ?? '',
+              style: const TextStyle(
+                color: PatchTheme.textMuted,
+                fontSize: PatchTheme.fontSizeSmall,
+              ),
+            ),
+          ),
         ],
       ),
     );

@@ -66,6 +66,15 @@ class _MessageListState extends State<MessageList> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
+              'Patch',
+              style: TextStyle(
+                color: PatchTheme.textMuted,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            SizedBox(height: 10),
+            Text(
               'No messages yet',
               style: TextStyle(color: PatchTheme.textMuted),
             ),
