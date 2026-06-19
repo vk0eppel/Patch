@@ -31,6 +31,8 @@ If a Rust crate emits `cargo:rustc-link-lib=framework=Foo`, add `-framework Foo`
 
 ## Dart
 
+Every domain shape the bridge emits gets a model class with a `fromJson` factory in `patch_app/lib/models/` (`PatchChannel`, `MacroMessage`, `AppConfig`, …) — never hand-unpack a raw `Map<String, dynamic>` field-by-field in a screen. If two screens need the same event's data, that's a sign the parsing belongs in a shared model, not duplicated in both screens.
+
 `macros_panel.dart` exports both `MacrosPanel` and `ChannelMacro`. Import with `show MacrosPanel, ChannelMacro`.
 
 `Priority` serialises to/from integers (not variant name strings) via manual `Serialize`/`Deserialize` impls. The Dart façade reads `priority.index`.

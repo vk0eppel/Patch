@@ -15,6 +15,9 @@ patch/
 │   └── state/              # AppState, Config, Channel, Peer, ShowFile
 └── patch_app/lib/
     ├── bridge/bridge_client.dart  # Façade over FRB bindings
+    ├── models/                    # channel, message, config, selection —
+    │                              # fromJson model classes for every domain
+    │                              # shape the bridge emits (see CONVENTION.md)
     ├── screens/home_screen.dart   # Main UI
     ├── screens/settings_screen.dart
     └── widgets/                   # channel_tab, flash_button, message_list,
@@ -65,7 +68,9 @@ Peers never auto-expire. Liveness dot is Flutter-side from `last_seen`: green �
 
 **mDNS liveness rule:** `ServiceResolved` goes through `resolve_peer_address` (not `touch_peer_address`) — it sets address+port but never updates `last_seen`. New mDNS-only peers are inserted already-stale (backdated 60 s). Reason: `mdns-sd` replays cached resolutions for ~1–2 min after a peer quits, so bumping `last_seen` there kept departed peers green past the heartbeat window and undid `/patch/bye` expiry.
 
-Self-discovery is filtered in two places: mDNS `ServiceResolved` checks `peer_id == client_id`; `handle_event` Presence arm does the same. Both guards are necessary (see ERRORS.md).
+Self-discovery is filtered in two places: mDNS `ServiceResolved` and every `handle_event` arm that registers a sender both call the shared `state::is_self(id, client_id)` predicate (named so the rule is grep-able instead of an inline `==` that looks safe to drop — see ERRORS.md). Both call sites are necessary.
+
+New peers seen outside the presence heartbeat (a `Message`/`Flash`/DM arriving before any `/patch/presence`, e.g. under AP isolation) go through `AppState::register_if_unknown`, which no-ops if the peer is already known — collapsing what used to be a repeated upsert_peer + touch_peer_address pair at every such call site in `transport::handle_event`.
 
 `peer_updated` events are debounced (~800 ms trailing edge) in Flutter before calling `getPeers()` because `touch_peer_address` fires on every received OSC packet. `PeerPresence` carries no address — never update the peer list directly from it.
 
@@ -83,13 +88,13 @@ Show files panel opened from the folder icon in the channel strip (not Settings)
 
 DMs use a dedicated `/patch/dm` packet — not a channel message (`dm:` prefixed IDs fail `valid_channel_id`). Thread keying: sender stores under `dm:{target_id}`; receiver stores under `dm:{sender_id}`. Each side keys the thread by the other peer. The `dm:` prefix never goes on the wire.
 
-DMs are excluded from the ALL feed and `set_selected_channels`. Non-critical DMs produce a silent unread dot on the peer row; critical DMs call `_triggerDmFlash`. Firing a macro in DM mode sends its text as a DM. No ACK/retransmit for DMs (best-effort).
+DMs are excluded from the ALL feed and `set_selected_channels`. Non-critical DMs produce a silent unread dot on the peer row; critical DMs call `_triggerDmFlash`. Firing a macro in DM mode sends its text as a DM — true for a tap/F-key (`_fireMacro`) and, via `AppState::dm_target`, for a MIDI trigger too (see MIDI above). No ACK/retransmit for DMs (best-effort).
 
 **DM navigation lives in the peers panel, not the channel strip.** Tapping a peer row opens their DM thread in the main message area. DM tabs never appear in the channel strip. Threads persist while the app is open — tapping a channel exits the DM view but the thread remains accessible by tapping the peer row again. Unread state is tracked per-peer and shown as a dot on the peer row; when the peers panel is closed, the peers toggle button in the header carries a badge instead. DMs are only available for real (dynamic) peers, not synthetic `ManualIp` entries.
 
 ## MIDI
 
-Desktop-only via `midir` (`#[cfg(any(target_os = "macos", ...))]`; no-op backend on iOS/Android). Opens all physical input ports + a virtual "Patch" port on macOS/Linux. Note On (vel > 0) and CC (≥ 64) trigger macros. Routing via pure `resolve_targets`: per-channel macros fire on their own channel (absolute, engine-side); global macros fire on currently-selected channels (Flutter pushes selection via `set_selected_channels`). `MidiInputConnection`s kept alive by a parked `std::thread` (dropping one closes its callback).
+Desktop-only via `midir` (`#[cfg(any(target_os = "macos", ...))]`; no-op backend on iOS/Android). Opens all physical input ports + a virtual "Patch" port on macOS/Linux. Note On (vel > 0) and CC (≥ 64) trigger macros. Routing mirrors `_fireMacro` (the UI's tap/F-key path) and checks DM mode first: if a DM thread is open (`AppState::dm_target`, pushed from Flutter via `set_dm_target` alongside `set_selected_channels`), every matched macro — per-channel or global alike — sends as a DM (`resolve_dm_payloads`), channel-independent. Otherwise pure `resolve_targets` applies: per-channel macros fire on their own channel (absolute, engine-side); global macros fire on currently-selected channels (Flutter pushes selection via `set_selected_channels`). `MidiInputConnection`s kept alive by a parked `std::thread` (dropping one closes its callback).
 
 macOS requires CoreMIDI + CoreAudio frameworks explicitly in `patch_app/rust_builder/macos/patch_core.podspec` `OTHER_LDFLAGS` — cargokit's static `.a` doesn't carry `cargo:rustc-link-lib` directives. Run `pod install` after editing the podspec.
 
@@ -99,7 +104,7 @@ Critical (`priority=3`) messages are tracked by `ReliabilityManager`. Receivers 
 
 `dispatch_message` (`api.rs`) skips ACK-tracking for any target that `Peer::looks_offline` (`state/peer.rs`) flags — a clean departure, or quiet for 5x the heartbeat interval (the same "grey dot" threshold the peers panel and DM-offline warning use). The best-effort send itself still goes to every contacted peer regardless; only the pointless retransmit/failure-warning cycle against a peer already known to be gone is skipped. `ManualIp` (static) peers are exempt from the staleness half of this check — they never heartbeat, so silence doesn't mean anything for them.
 
-`send_to_peers` deduplicates by `SocketAddr`. Static peers are already merged in via `get_peers()` — never add a separate `config.static_peers` loop.
+`send_to_peers` deduplicates by `SocketAddr`. Static peers are already merged in via `get_peers()` — never add a separate `config.static_peers` loop. The skip-self/has-address/dedup target resolution itself lives in `AppState::reachable_peer_addrs` — shared with the `/patch/say` relay in `handle_event`, which sends the same target list a different way (queued via `send_tx` instead of direct socket send). Don't reimplement the resolution inline at a new send call site; call `reachable_peer_addrs`.
 
 ## Config I/O
 
@@ -108,6 +113,8 @@ Critical (`priority=3`) messages are tracked by `ReliabilityManager`. Receivers 
 ## ALL Mode (Broadcast)
 
 ALL is a one-shot broadcast action, not a persistent channel selection. Tapping the ALL button in the channel strip enters a temporary broadcast compose state — the message area header signals this. Sending a message (or flash) immediately snaps back to whatever channel(s) were selected before ALL was tapped. Tapping any channel tab cancels without sending. ALL never stays selected after a send.
+
+`home_screen.dart` holds this (and the DM-exclusivity rule above) as one `Selection` value (`models/selection.dart`: `ChannelSelection` | `AllSelection(previous)` | `DmSelection`) rather than a bare `Set<String>` with `__all__`/`dm:<peer>` sentinel ids — `AllSelection.previous` *is* the snap-back state, not a separately-tracked field that could drift out of sync with it.
 
 ## Peers Panel
 

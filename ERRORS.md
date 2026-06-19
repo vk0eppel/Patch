@@ -10,7 +10,7 @@ Proven mistakes — these have caused real bugs. Read before touching the releva
 
 **mDNS `ServiceResolved` carries one address per active interface a peer has up — never just `.next()` it.** A multi-homed Mac (e.g. wired Dante NIC + Wi-Fi) resolves with both addresses; whichever `mdns-sd` lists first silently overwrote the correct address the OSC presence beacon had already learned, even though presence broadcasting itself correctly respects `network_interface` pinning. Discovery still "worked" (the peer showed up) while unicast traffic — including ACKs — went to the wrong NIC and vanished, which looked like a flaky/architecture-specific bug but wasn't. Fixed via `pick_resolved_address` in `discovery/mod.rs`: when pinned, only accept a resolved address on the pinned interface's own subnet (`transport::pinned_ipv4_subnet` / `in_pinned_subnet`); otherwise leave the existing address alone rather than guess. Don't reject IPv4 link-local (`169.254.x.x`) anywhere in this path — Dante and similar AV networks use it intentionally, and pinning to it is a supported config, not a misconfiguration.
 
-**Both self-discovery guards are necessary.** `discovery/mod.rs` checks `peer_id == client_id` in `ServiceResolved`; `transport/mod.rs` checks the same in the `Presence` arm of `handle_event`. Removing either makes the device appear in its own peers panel.
+**Both self-discovery guards are necessary.** `discovery/mod.rs`'s `ServiceResolved` and `transport/mod.rs`'s `handle_event` (every arm that registers a sender, not just `Presence`) both call `state::is_self(id, client_id)`. The predicate is shared, but removing either *call site* still makes the device appear in its own peers panel — the helper doesn't make the check optional anywhere it's currently called.
 
 **Never update the peer list directly from a `PeerPresence` event.** It carries no address. Always call `getPeers()` (debounced via `_schedulePeersRefresh` in Flutter).
 
@@ -24,7 +24,7 @@ Proven mistakes — these have caused real bugs. Read before touching the releva
 
 ## FFI Bridge
 
-**Every new `ConfigSnapshot` field in Rust must be added to `bridge_client.dart::getConfig()`'s manual map.** Missing a field silently resets the Dart state variable to its `?? default` on every `getConfig()` call.
+**Every new `ConfigSnapshot` field in Rust must be added to `bridge_client.dart::getConfig()`'s manual map, and to `AppConfig.fromJson` (`patch_app/lib/models/config.dart`).** Both `home_screen.dart` and `settings_screen.dart` parse the `'config'` event through `AppConfig.fromJson` now — fixing it there fixes both screens at once, but the Rust→Map hop in `getConfig()` is still hand-listed. A Rust test (`api::tests::config_snapshot_field_set_is_pinned`) pins `ConfigSnapshot`'s serialized field set, so forgetting to update these fails `cargo test` loudly instead of silently resetting a Dart state variable to its `?? default`.
 
 **`rust-async` is a load-bearing FRB feature.** Without it, async functions in `api.rs` have no Tokio reactor and `tokio::spawn` panics with "there is no reactor running".
 
