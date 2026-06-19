@@ -13,11 +13,12 @@ use uuid::Uuid;
 use crate::osc::codec::{
     decode_packet, encode_ack, encode_channels_announce, encode_message, PatchEvent,
 };
-use crate::osc::types::{ChannelFlash, PatchMessage, PeerPresence};
+#[cfg(test)]
+use crate::osc::types::PeerPresence;
+use crate::osc::types::{ChannelFlash, PatchMessage};
 use crate::reliability::ReliabilityManager;
 use crate::state::channel::Channel;
-use crate::state::{AppEvent, AppState, Config};
-use chrono::Utc;
+use crate::state::{is_self, AppEvent, AppState, Config};
 
 /// Defensive cap on how many channels a peer may offer in one announce.
 const MAX_OFFERED_CHANNELS: usize = 64;
@@ -194,13 +195,12 @@ impl Transport {
 
     /// Unicast raw OSC bytes to every known peer.
     ///
-    /// `state.get_peers()` already merges the configured static peers in as
-    /// synthetic `ManualIp` entries, so a single pass covers both dynamic and
-    /// static targets. We dedup by resolved `SocketAddr` so a static peer that
-    /// has also been discovered dynamically isn't contacted twice (which would
-    /// double-fire flashes, since flashes carry no dedup id).
+    /// Target resolution (skip self, skip unaddressed peers, dedup by
+    /// `SocketAddr` so a static peer also seen dynamically isn't double-fired)
+    /// lives in `AppState::reachable_peer_addrs` — shared with the `/patch/say`
+    /// relay in `handle_event`, which sends the same target list a different
+    /// way (queued via `send_tx` instead of direct socket send).
     ///
-    /// Skips ourselves (by client_id) and peers without a resolved address.
     /// Returns the addresses actually contacted (used for ACK tracking). If no
     /// peers are known yet, the packet is silently dropped — no broadcast fallback.
     pub async fn send_to_peers(
@@ -209,31 +209,7 @@ impl Transport {
         state: &AppState,
         config: &Config,
     ) -> Result<Vec<SocketAddr>> {
-        let peers = state.get_peers().await;
-        let mut targets: Vec<SocketAddr> = Vec::new();
-        let mut seen: HashSet<SocketAddr> = HashSet::new();
-
-        for peer in &peers {
-            if peer.peer_id == config.client_id {
-                continue; // skip ourselves
-            }
-            if !peer.has_address() {
-                debug!("Skipping peer {} — no address yet", peer.peer_name);
-                continue;
-            }
-            // Parse the IP first so IPv6 addresses get correct `[..]:port` form.
-            let ip: IpAddr = match peer.address.parse() {
-                Ok(ip) => ip,
-                Err(e) => {
-                    warn!("Invalid peer address for {}: {}", peer.peer_name, e);
-                    continue;
-                }
-            };
-            let addr = SocketAddr::new(ip, peer.osc_port);
-            if seen.insert(addr) {
-                targets.push(addr);
-            }
-        }
+        let targets = state.reachable_peer_addrs(config.client_id).await;
 
         let mut sent = 0usize;
         for addr in &targets {
@@ -328,7 +304,7 @@ async fn handle_event(
         _ => None,
     };
     if let Some(id) = sender_id {
-        if id != client_id {
+        if !is_self(id, client_id) {
             state
                 .touch_peer_address(id, from.ip().to_string(), from.port())
                 .await;
@@ -339,20 +315,14 @@ async fn handle_event(
         PatchEvent::Message(msg) => {
             // Auto-register the sender so they appear in the peers panel
             // immediately, even when AP isolation blocks their broadcast heartbeats.
-            if !state.has_peer(msg.sender_id).await {
-                let presence = PeerPresence {
-                    peer_id: msg.sender_id,
-                    peer_name: msg.sender_name.clone(),
-                    channels: Vec::new(),
-                    role: None, // unknown until their presence heartbeat arrives
-                    timestamp: Utc::now(),
-                };
-                state.upsert_peer(presence).await;
-                // touch_peer_address was a no-op above (no entry yet); now it works.
-                state
-                    .touch_peer_address(msg.sender_id, from.ip().to_string(), from.port())
-                    .await;
-            }
+            state
+                .register_if_unknown(
+                    msg.sender_id,
+                    &msg.sender_name,
+                    from.ip().to_string(),
+                    from.port(),
+                )
+                .await;
             // ACK critical messages so the sender can stop retransmitting.
             if msg.is_critical() {
                 match encode_ack(msg.message_id, client_id) {
@@ -367,23 +337,18 @@ async fn handle_event(
         PatchEvent::DirectMessage { msg, target_id } => {
             // Only accept DMs addressed to us (they're unicast, so this should
             // always hold — defensive).
-            if target_id != client_id {
+            if !is_self(target_id, client_id) {
                 return;
             }
             // Auto-register the sender so the DM thread + peers panel show them.
-            if !state.has_peer(msg.sender_id).await {
-                let presence = PeerPresence {
-                    peer_id: msg.sender_id,
-                    peer_name: msg.sender_name.clone(),
-                    channels: Vec::new(),
-                    role: None,
-                    timestamp: Utc::now(),
-                };
-                state.upsert_peer(presence).await;
-                state
-                    .touch_peer_address(msg.sender_id, from.ip().to_string(), from.port())
-                    .await;
-            }
+            state
+                .register_if_unknown(
+                    msg.sender_id,
+                    &msg.sender_name,
+                    from.ip().to_string(),
+                    from.port(),
+                )
+                .await;
             // msg.channel_id is already `dm:{sender_id}` (set by decode_dm).
             state.store_message(msg).await;
         }
@@ -393,23 +358,13 @@ async fn handle_event(
             target_id,
         } => {
             // Only accept pings addressed to us (unicast — defensive check).
-            if target_id != client_id {
+            if !is_self(target_id, client_id) {
                 return;
             }
             // Auto-register the sender so the DM thread + peers panel show them.
-            if !state.has_peer(sender_id).await {
-                let presence = PeerPresence {
-                    peer_id: sender_id,
-                    peer_name: sender_name.clone(),
-                    channels: Vec::new(),
-                    role: None,
-                    timestamp: Utc::now(),
-                };
-                state.upsert_peer(presence).await;
-                state
-                    .touch_peer_address(sender_id, from.ip().to_string(), from.port())
-                    .await;
-            }
+            state
+                .register_if_unknown(sender_id, &sender_name, from.ip().to_string(), from.port())
+                .await;
             // Flash our DM thread with the sender (keyed by the *other* peer,
             // exactly like an inbound DM). The id is built locally, so it never
             // passes through valid_channel_id (which rejects `dm:` keys).
@@ -450,7 +405,7 @@ async fn handle_event(
         }
         PatchEvent::Presence(p) => {
             // Ignore our own presence broadcast — we receive it on the same socket.
-            if p.peer_id == client_id {
+            if is_self(p.peer_id, client_id) {
                 return;
             }
             let peer_id = p.peer_id;
@@ -466,26 +421,21 @@ async fn handle_event(
             // Graceful departure — mark the peer offline (grey) immediately
             // instead of waiting out the heartbeat timeout, but keep it in the
             // list so the operator still sees who was connected.
-            if peer_id != client_id {
+            if !is_self(peer_id, client_id) {
                 tracing::info!("Received /patch/bye from {} — marking offline", peer_id);
                 state.mark_peer_offline(peer_id).await;
             }
         }
         PatchEvent::Flash(f) => {
             // Same auto-register logic as for Message.
-            if !state.has_peer(f.sender_id).await {
-                let presence = PeerPresence {
-                    peer_id: f.sender_id,
-                    peer_name: f.sender_name.clone(),
-                    channels: Vec::new(),
-                    role: None, // unknown until their presence heartbeat arrives
-                    timestamp: Utc::now(),
-                };
-                state.upsert_peer(presence).await;
-                state
-                    .touch_peer_address(f.sender_id, from.ip().to_string(), from.port())
-                    .await;
-            }
+            state
+                .register_if_unknown(
+                    f.sender_id,
+                    &f.sender_name,
+                    from.ip().to_string(),
+                    from.port(),
+                )
+                .await;
             state.publish(AppEvent::ChannelFlash(f)).await;
         }
         PatchEvent::Say {
@@ -507,19 +457,11 @@ async fn handle_event(
             );
             match encode_message(&msg) {
                 Ok(bytes) => {
-                    let mut targets = Vec::new();
-                    let mut seen = HashSet::new();
-                    for peer in state.get_peers().await {
-                        if peer.peer_id == config.client_id || !peer.has_address() {
-                            continue;
-                        }
-                        if let Ok(ip) = peer.address.parse::<IpAddr>() {
-                            let addr = SocketAddr::new(ip, peer.osc_port);
-                            if seen.insert(addr) {
-                                let _ = send_tx.send(Outgoing::To(bytes.clone(), addr)).await;
-                                targets.push(addr);
-                            }
-                        }
+                    // Same target resolution as `Transport::send_to_peers` — this
+                    // path just queues onto `send_tx` instead of sending directly.
+                    let targets = state.reachable_peer_addrs(config.client_id).await;
+                    for addr in &targets {
+                        let _ = send_tx.send(Outgoing::To(bytes.clone(), *addr)).await;
                     }
                     // Track criticals for retransmit, like a hand-sent message.
                     if msg.is_critical() && !targets.is_empty() {
@@ -534,7 +476,7 @@ async fn handle_event(
             state.store_message(msg).await;
         }
         PatchEvent::ChannelsRequest { peer_id } => {
-            if peer_id == client_id {
+            if is_self(peer_id, client_id) {
                 return; // don't answer our own request
             }
             // Reply with our current channel layout, unicast back to the requester.
@@ -558,7 +500,7 @@ async fn handle_event(
             peer_name,
             channels_json,
         } => {
-            if peer_id == client_id {
+            if is_self(peer_id, client_id) {
                 return;
             }
             match serde_json::from_str::<Vec<Channel>>(&channels_json) {

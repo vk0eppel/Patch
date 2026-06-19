@@ -164,31 +164,37 @@ mod backend {
         }
     }
 
+    /// Whether a macro is bound to this trigger. Shared by every `resolve_*`
+    /// function below so the Note/CC match rule lives in one place.
+    fn matches(m: &crate::state::channel::MacroMessage, trigger: MidiTrigger) -> bool {
+        match trigger {
+            MidiTrigger::Note(n) => m.midi_note == Some(n),
+            MidiTrigger::Cc(c) => m.midi_cc == Some(c),
+        }
+    }
+
     /// Pure routing: which `(channel_id, payload, priority)` to send for a
-    /// trigger. **Per-channel** macros fire on their own channel (absolute);
-    /// **global** macros fire on each currently-selected channel — exactly
-    /// mirroring the UI's `_fireMacro` (a tap/F-key). Kept side-effect-free so the
-    /// routing is unit-testable without a running engine.
+    /// trigger when no DM is open. **Per-channel** macros fire on their own
+    /// channel (absolute); **global** macros fire on each currently-selected
+    /// channel — exactly mirroring the UI's `_fireMacro` (a tap/F-key) outside
+    /// DM mode. Kept side-effect-free so the routing is unit-testable without a
+    /// running engine.
     fn resolve_targets(
         channels: &[crate::state::channel::Channel],
         globals: &[crate::state::channel::MacroMessage],
         selected: &[String],
         trigger: MidiTrigger,
     ) -> Vec<(String, String, i32)> {
-        let hit = |m: &crate::state::channel::MacroMessage| match trigger {
-            MidiTrigger::Note(n) => m.midi_note == Some(n),
-            MidiTrigger::Cc(c) => m.midi_cc == Some(c),
-        };
         let mut out = Vec::new();
         for ch in channels {
             for m in &ch.macros {
-                if hit(m) {
+                if matches(m, trigger) {
                     out.push((ch.id.clone(), m.payload.clone(), m.priority));
                 }
             }
         }
         for m in globals {
-            if hit(m) {
+            if matches(m, trigger) {
                 for ch_id in selected {
                     out.push((ch_id.clone(), m.payload.clone(), m.priority));
                 }
@@ -197,21 +203,35 @@ mod backend {
         out
     }
 
+    /// Which `(payload, priority)` to send as a DM when a DM thread is open.
+    /// Mirrors `_fireMacro`'s DM-mode rule: *every* macro bound to this
+    /// trigger — per-channel or global alike — sends as a DM, ignoring the
+    /// channel/global distinction entirely (there's no channel to route to).
+    fn resolve_dm_payloads(
+        channels: &[crate::state::channel::Channel],
+        globals: &[crate::state::channel::MacroMessage],
+        trigger: MidiTrigger,
+    ) -> Vec<(String, i32)> {
+        channels
+            .iter()
+            .flat_map(|c| &c.macros)
+            .chain(globals)
+            .filter(|m| matches(m, trigger))
+            .map(|m| (m.payload.clone(), m.priority))
+            .collect()
+    }
+
     /// The OSC targets to fire for a trigger — **one per matched macro** (a global
     /// macro fires its OSC once, regardless of how many channels its message goes
-    /// to; OSC is independent of channel selection, so `selected` isn't needed).
+    /// to; OSC is independent of channel selection/DM mode).
     fn resolve_osc(
         channels: &[crate::state::channel::Channel],
         globals: &[crate::state::channel::MacroMessage],
         trigger: MidiTrigger,
     ) -> Vec<crate::state::channel::OscTarget> {
-        let hit = |m: &crate::state::channel::MacroMessage| match trigger {
-            MidiTrigger::Note(n) => m.midi_note == Some(n),
-            MidiTrigger::Cc(c) => m.midi_cc == Some(c),
-        };
         let mut out = Vec::new();
         for m in channels.iter().flat_map(|c| &c.macros).chain(globals) {
-            if hit(m) {
+            if matches(m, trigger) {
                 if let Some(o) = &m.osc {
                     out.push(o.clone());
                 }
@@ -220,8 +240,9 @@ mod backend {
         out
     }
 
-    /// Fire every macro bound to this trigger: the Patch message(s) (see
-    /// `resolve_targets`) plus any attached OSC packet (dual action).
+    /// Fire every macro bound to this trigger: the Patch message(s) — routed to
+    /// the open DM thread if one exists (`resolve_dm_payloads`), otherwise to
+    /// channels (`resolve_targets`) — plus any attached OSC packet (dual action).
     async fn fire(
         state: &AppState,
         transport: &Arc<Transport>,
@@ -231,20 +252,33 @@ mod backend {
         use crate::osc::types::Priority;
         let channels = state.get_channels().await;
         let globals = state.config().await.global_macros;
-        let selected = state.selected_channels().await;
-        for (ch_id, payload, priority) in resolve_targets(&channels, &globals, &selected, trigger) {
-            let prio = Priority::try_from(priority).unwrap_or(Priority::Info);
-            if let Err(e) = crate::api::dispatch_message(
-                state,
-                transport,
-                reliability,
-                ch_id.clone(),
-                payload,
-                prio,
-            )
-            .await
+
+        if let Some(peer_id) = state.dm_target().await {
+            for (payload, priority) in resolve_dm_payloads(&channels, &globals, trigger) {
+                if let Err(e) =
+                    crate::api::send_direct_message(peer_id.to_string(), payload, priority).await
+                {
+                    tracing::warn!("MIDI macro DM send to {} failed: {}", peer_id, e);
+                }
+            }
+        } else {
+            let selected = state.selected_channels().await;
+            for (ch_id, payload, priority) in
+                resolve_targets(&channels, &globals, &selected, trigger)
             {
-                tracing::warn!("MIDI macro send failed on {}: {}", ch_id, e);
+                let prio = Priority::try_from(priority).unwrap_or(Priority::Info);
+                if let Err(e) = crate::api::dispatch_message(
+                    state,
+                    transport,
+                    reliability,
+                    ch_id.clone(),
+                    payload,
+                    prio,
+                )
+                .await
+                {
+                    tracing::warn!("MIDI macro send failed on {}: {}", ch_id, e);
+                }
             }
         }
         // OSC macros (dual action) — once per matched macro.
@@ -335,6 +369,27 @@ mod backend {
 
             // A trigger that matches nothing yields no OSC.
             assert!(resolve_osc(&[], &globals, MidiTrigger::Note(61)).is_empty());
+        }
+
+        #[test]
+        fn dm_payloads_include_both_per_channel_and_global_macros() {
+            // Mirrors `_fireMacro`'s DM-mode rule: with a DM open, the
+            // per-channel/global distinction stops mattering — every macro
+            // bound to the trigger becomes a DM payload, channel-independent.
+            let mut rf = Channel::new("rf", "RF", "#fff");
+            rf.macros = vec![mac("A", Some(60), None)];
+            let globals = vec![mac("G", Some(60), None)];
+
+            let got = resolve_dm_payloads(&[rf], &globals, MidiTrigger::Note(60));
+            assert_eq!(got.len(), 2);
+            assert!(got.contains(&("p-A".to_string(), 2)));
+            assert!(got.contains(&("p-G".to_string(), 2)));
+        }
+
+        #[test]
+        fn dm_payloads_empty_when_trigger_matches_nothing() {
+            let globals = vec![mac("G", Some(60), None)];
+            assert!(resolve_dm_payloads(&[], &globals, MidiTrigger::Note(61)).is_empty());
         }
     }
 }

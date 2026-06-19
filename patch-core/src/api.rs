@@ -882,6 +882,19 @@ pub async fn set_selected_channels(ids: Vec<String>) -> Result<()> {
     Ok(())
 }
 
+/// Tell the engine which peer's DM thread is currently open in the UI (`None`
+/// when no DM is open), so a MIDI-triggered macro routes the same way a
+/// tap/F-key would — every macro fired while a DM is open goes to that peer
+/// instead of a channel (see `_fireMacro` in home_screen.dart).
+pub async fn set_dm_target(peer_id: Option<String>) -> Result<()> {
+    let parsed = match peer_id {
+        Some(s) => Some(Uuid::parse_str(&s).map_err(|_| anyhow::anyhow!("invalid peer id"))?),
+        None => None,
+    };
+    engine().state.set_dm_target(parsed).await;
+    Ok(())
+}
+
 pub async fn delete_global_macro(label: String) -> Result<()> {
     engine().state.delete_global_macro(&label).await
 }
@@ -1134,5 +1147,73 @@ mod tests {
     fn csv_escape_doubles_quotes_and_combines_with_guard() {
         assert_eq!(csv_escape("a\"b"), "a\"\"b");
         assert_eq!(csv_escape("=a\"b"), "'=a\"\"b");
+    }
+
+    /// `ConfigSnapshot` has no FFI-generated map — `bridge_client.dart::getConfig()`
+    /// hand-lists every field into a `Map<String, dynamic>`, and Dart's
+    /// `AppConfig.fromJson` hand-lists them again on the way back out (see
+    /// ERRORS.md: a forgotten field there silently resets UI state to its
+    /// default). Rust can't see across the FFI boundary to check Dart directly,
+    /// but it CAN refuse to compile/test silently when a field is added here and
+    /// forgotten everywhere else: `serde` always serializes every field, so if
+    /// this test's hardcoded key list drifts from the struct, the mismatch is a
+    /// hard failure — not a silent reset three hops away in Flutter.
+    ///
+    /// If this test fails after editing `ConfigSnapshot`: update the list below,
+    /// then go update `bridge_client.dart::getConfig()` and
+    /// `patch_app/lib/models/config.dart::AppConfig.fromJson` to match.
+    #[test]
+    fn config_snapshot_field_set_is_pinned() {
+        use super::{ConfigSnapshot, StaticPeer};
+
+        let snapshot = ConfigSnapshot {
+            client_name: String::new(),
+            role: None,
+            osc_port: 0,
+            network_interface: None,
+            static_peers: vec![StaticPeer {
+                address: String::new(),
+                port: 0,
+                label: None,
+            }],
+            flash_on_critical: false,
+            flash_on_message: false,
+            flash_count: 0,
+            macros_columns: 0,
+            hide_keyboard: false,
+            audible_alert: false,
+            global_macros: Vec::new(),
+            heartbeat_interval_secs: 0,
+            name_is_default: false,
+        };
+
+        let value = serde_json::to_value(&snapshot).expect("ConfigSnapshot must serialize");
+        let mut actual: Vec<&str> = value
+            .as_object()
+            .expect("ConfigSnapshot serializes to a JSON object")
+            .keys()
+            .map(|k| k.as_str())
+            .collect();
+        actual.sort_unstable();
+
+        let mut expected = vec![
+            "client_name",
+            "role",
+            "osc_port",
+            "network_interface",
+            "static_peers",
+            "flash_on_critical",
+            "flash_on_message",
+            "flash_count",
+            "macros_columns",
+            "hide_keyboard",
+            "audible_alert",
+            "global_macros",
+            "heartbeat_interval_secs",
+            "name_is_default",
+        ];
+        expected.sort_unstable();
+
+        assert_eq!(actual, expected);
     }
 }

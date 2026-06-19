@@ -456,6 +456,17 @@ class BridgeClient {
     }
   }
 
+  /// Tell the engine which peer's DM thread is open (null when none), so a
+  /// MIDI-triggered macro routes to that peer the same way a tap/F-key would.
+  /// Fire-and-forget.
+  Future<void> setDmTarget(String? peerId) async {
+    try {
+      await rust.setDmTarget(peerId: peerId);
+    } catch (e) {
+      _emitError(e);
+    }
+  }
+
   Future<void> deleteGlobalMacro(String label) async {
     try {
       await rust.deleteGlobalMacro(label: label);

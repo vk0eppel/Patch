@@ -70,6 +70,13 @@ struct Inner {
     /// so a MIDI-triggered *global* macro fires on the same channel(s) a tap/F-key
     /// would. The engine has no other view of UI selection.
     pub selected: RwLock<Vec<String>>,
+    /// The peer id of the DM thread currently open in the UI, if any. Pushed
+    /// from Flutter via `set_dm_target` alongside `selected` (see
+    /// `_syncSelection` in home_screen.dart). Read by the MIDI listener so a
+    /// macro fired while a DM is open routes to that peer instead of a channel
+    /// — mirroring `_fireMacro`'s DM-mode rule, which sends *every* macro
+    /// (per-channel or global) as a DM when one is open.
+    pub dm_target: RwLock<Option<Uuid>>,
     /// Event bus — clone a receiver to subscribe
     pub events: broadcast::Sender<AppEvent>,
     /// Serializes config persistence so concurrent mutators can't write the
@@ -92,6 +99,15 @@ struct MessageBuffer {
     seen: HashSet<Uuid>,
 }
 
+/// True when `id` is our own client_id — every event/discovery loop that
+/// receives its own broadcast back must filter it out before treating it as
+/// a peer. Naming the check gives the rule one place to grep for instead of
+/// an inline `==`/`!=` that looks safe to drop in isolation (see ERRORS.md:
+/// both self-discovery guards have been removed by accident before).
+pub fn is_self(id: Uuid, client_id: Uuid) -> bool {
+    id == client_id
+}
+
 impl AppState {
     pub fn new(config: Config) -> Self {
         let (tx, _) = broadcast::channel(256);
@@ -108,6 +124,7 @@ impl AppState {
             peers: RwLock::new(HashMap::new()),
             messages: RwLock::new(MessageBuffer::default()),
             selected: RwLock::new(Vec::new()),
+            dm_target: RwLock::new(None),
             events: tx,
             save_lock: Mutex::new(()),
         }))
@@ -144,6 +161,18 @@ impl AppState {
     /// The UI's currently-selected channel ids (empty until Flutter first syncs).
     pub async fn selected_channels(&self) -> Vec<String> {
         self.0.selected.read().await.clone()
+    }
+
+    /// Set (or clear) the peer id of the DM thread currently open in the UI
+    /// (runtime only — not persisted). Read by the MIDI listener so a macro
+    /// fired while a DM is open routes to that peer instead of a channel.
+    pub async fn set_dm_target(&self, peer_id: Option<Uuid>) {
+        *self.0.dm_target.write().await = peer_id;
+    }
+
+    /// The peer id of the open DM thread, or `None` when no DM is open.
+    pub async fn dm_target(&self) -> Option<Uuid> {
+        *self.0.dm_target.read().await
     }
 
     /// Persist the self-assigned role (None = unset). Broadcast in the next
@@ -431,6 +460,33 @@ impl AppState {
         self.publish(AppEvent::PeerUpdated(presence)).await;
     }
 
+    /// Register a peer the first time it's seen outside the presence
+    /// heartbeat — e.g. a `Message`/`Flash`/DM arriving before any
+    /// `/patch/presence` (AP isolation blocking broadcasts). No-op if the
+    /// peer is already known, so it never clobbers fields a real presence
+    /// heartbeat already filled in (role, channels). Collapses the
+    /// upsert_peer + touch_peer_address pair every such call site needs.
+    pub async fn register_if_unknown(
+        &self,
+        peer_id: Uuid,
+        peer_name: &str,
+        address: String,
+        port: u16,
+    ) {
+        if self.has_peer(peer_id).await {
+            return;
+        }
+        let presence = PeerPresence {
+            peer_id,
+            peer_name: peer_name.to_string(),
+            channels: Vec::new(),
+            role: None, // unknown until their presence heartbeat arrives
+            timestamp: chrono::Utc::now(),
+        };
+        self.upsert_peer(presence).await;
+        self.touch_peer_address(peer_id, address, port).await;
+    }
+
     /// Record a peer's mDNS-resolved address **without** refreshing liveness.
     ///
     /// mDNS resolution can be replayed from a stale cache long after a peer has
@@ -576,6 +632,25 @@ impl AppState {
                 let ip: std::net::IpAddr = p.address.parse().ok()?;
                 Some(std::net::SocketAddr::new(ip, p.osc_port))
             })
+            .collect()
+    }
+
+    /// Resolved addresses of every known peer except ourselves, deduped by
+    /// `SocketAddr` (a static peer also seen dynamically is contacted once).
+    /// Shared by `Transport::send_to_peers` (direct socket send) and the
+    /// `/patch/say` relay (queued via `send_tx`) — same target list, two
+    /// different ways of actually sending to it.
+    pub async fn reachable_peer_addrs(&self, client_id: Uuid) -> Vec<std::net::SocketAddr> {
+        let mut seen = HashSet::new();
+        self.get_peers()
+            .await
+            .into_iter()
+            .filter(|p| p.peer_id != client_id && p.has_address())
+            .filter_map(|p| {
+                let ip: std::net::IpAddr = p.address.parse().ok()?;
+                Some(std::net::SocketAddr::new(ip, p.osc_port))
+            })
+            .filter(|addr| seen.insert(*addr))
             .collect()
     }
 
@@ -1093,6 +1168,74 @@ mod tests {
         assert!(offline.contains(&"10.0.0.2:9000".parse().unwrap()));
         assert!(!offline.contains(&"10.0.0.3:9000".parse().unwrap()));
         assert!(!offline.contains(&"10.0.0.4:9000".parse().unwrap()));
+    }
+
+    #[tokio::test]
+    async fn reachable_peer_addrs_excludes_self_and_unaddressed_dedups_static() {
+        let client_id = Uuid::new_v4();
+
+        let dynamic = Uuid::new_v4();
+        let st = AppState::new(Config {
+            default_channels: Vec::new(),
+            // Same address+port as the dynamic peer below — should be merged,
+            // not contacted a second time (send_to_peers' double-fire trap).
+            static_peers: vec![config::StaticPeer {
+                address: "10.0.0.5".into(),
+                port: 9000,
+                label: None,
+            }],
+            client_id,
+            ..Config::default()
+        });
+        st.upsert_peer(presence(dynamic, chrono::Utc::now())).await;
+        st.touch_peer_address(dynamic, "10.0.0.5".into(), 9000)
+            .await;
+
+        // A peer with no address yet (presence not yet resolved) is excluded.
+        let unaddressed = Uuid::new_v4();
+        st.upsert_peer(presence(unaddressed, chrono::Utc::now()))
+            .await;
+
+        // Ourselves, if we somehow ended up in the registry, must be excluded.
+        st.upsert_peer(presence(client_id, chrono::Utc::now()))
+            .await;
+        st.touch_peer_address(client_id, "10.0.0.9".into(), 9000)
+            .await;
+
+        let targets = st.reachable_peer_addrs(client_id).await;
+        assert_eq!(targets, vec!["10.0.0.5:9000".parse().unwrap()]);
+    }
+
+    #[tokio::test]
+    async fn register_if_unknown_is_noop_for_a_peer_already_known() {
+        let st = test_state();
+        let id = Uuid::new_v4();
+        st.upsert_peer(presence(id, chrono::Utc::now())).await;
+        st.touch_peer_address(id, "10.0.0.1".into(), 9000).await;
+
+        // A later auto-register call (e.g. from a Message arriving from a
+        // different address) must not clobber the address already on file.
+        st.register_if_unknown(id, "someone-else", "10.0.0.2".into(), 9001)
+            .await;
+
+        let peers = st.get_peers().await;
+        assert_eq!(peers.len(), 1);
+        assert_eq!(peers[0].address, "10.0.0.1");
+        assert_eq!(peers[0].osc_port, 9000);
+    }
+
+    #[tokio::test]
+    async fn register_if_unknown_registers_and_addresses_a_new_peer() {
+        let st = test_state();
+        let id = Uuid::new_v4();
+        st.register_if_unknown(id, "newcomer", "10.0.0.3".into(), 9002)
+            .await;
+
+        let peers = st.get_peers().await;
+        assert_eq!(peers.len(), 1);
+        assert_eq!(peers[0].peer_name, "newcomer");
+        assert_eq!(peers[0].address, "10.0.0.3");
+        assert_eq!(peers[0].osc_port, 9002);
     }
 
     #[tokio::test]

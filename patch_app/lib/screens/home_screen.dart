@@ -7,7 +7,9 @@ import 'package:flutter/services.dart';
 
 import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
+import '../models/config.dart';
 import '../models/message.dart';
+import '../models/selection.dart';
 import '../theme/patch_theme.dart';
 import '../util/message_filter.dart';
 import '../widgets/channel_tab.dart';
@@ -37,8 +39,9 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   List<PatchChannel> _channels = [];
 
-  /// IDs of currently selected channels (at least one always).
-  Set<String> _selectedIds = {};
+  /// What the message area currently shows/targets — Channel(s), ALL compose,
+  /// or a DM thread. See models/selection.dart.
+  Selection _selection = const ChannelSelection({});
 
   final Map<String, List<PatchMessage>> _messages = {};
 
@@ -104,9 +107,6 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Peer ids with an open DM thread (so history is preserved when returning).
   final Set<String> _openDms = {};
 
-  /// Channel selection saved before entering ALL compose mode, restored on send.
-  Set<String> _preAllSelection = {};
-
   /// DM thread keys (`dm:<peer>`) with unread messages — cleared when viewed.
   final Set<String> _unreadDms = {};
 
@@ -123,23 +123,24 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── Derived state ───────────────────────────────────────────────────────────
 
-  List<PatchChannel> get _selectedChannels =>
-      _channels.where((c) => _selectedIds.contains(c.id)).toList();
+  List<PatchChannel> get _selectedChannels => switch (_selection) {
+        ChannelSelection(ids: final ids) =>
+          _channels.where((c) => ids.contains(c.id)).toList(),
+        _ => const [],
+      };
 
-  /// ALL mode — the broadcast tab is selected (it's exclusive, so it's the only
-  /// id in `_selectedIds`). Shows every channel's traffic; sends broadcasts.
-  bool get _isAllMode => _selectedIds.contains(kAllChannelId);
+  /// ALL mode — the broadcast tab is selected (exclusive). Shows every
+  /// channel's traffic; sends broadcasts.
+  bool get _isAllMode => _selection.isAllMode;
 
-  bool get _isMultiChannel => _selectedIds.length > 1;
+  bool get _isMultiChannel => _selection.isMultiChannel;
 
-  /// DM mode — a single direct-message thread (`dm:<peer>`) is selected
-  /// (exclusive, like ALL mode). Shows that one private conversation.
-  bool get _isDmMode =>
-      _selectedIds.length == 1 && _selectedIds.first.startsWith('dm:');
+  /// DM mode — a single direct-message thread is selected (exclusive, like
+  /// ALL mode). Shows that one private conversation.
+  bool get _isDmMode => _selection.isDmMode;
 
   /// The peer id of the open DM thread, or null when not in DM mode.
-  String? get _dmPeerId =>
-      _isDmMode ? _selectedIds.first.substring(3) : null;
+  String? get _dmPeerId => _selection.dmPeerId;
 
   /// Display name for a DM peer — from the live peer list, else the last message
   /// they sent in the thread, else a short fallback.
@@ -193,18 +194,19 @@ class _HomeScreenState extends State<HomeScreen> {
   /// thread; otherwise the selected channels plus any broadcasts (`__all__`).
   List<PatchMessage> get _combinedMessages {
     final all = <PatchMessage>[];
-    if (_isDmMode) {
-      all.addAll(_messages[_selectedIds.first] ?? []);
-    } else if (_isAllMode) {
-      for (final entry in _messages.entries) {
-        if (entry.key.startsWith('dm:')) continue; // DMs stay private
-        all.addAll(entry.value);
-      }
-    } else {
-      for (final id in _selectedIds) {
-        all.addAll(_messages[id] ?? []);
-      }
-      all.addAll(_messages[kAllChannelId] ?? []);
+    switch (_selection) {
+      case DmSelection(peerId: final p):
+        all.addAll(_messages['dm:$p'] ?? []);
+      case AllSelection():
+        for (final entry in _messages.entries) {
+          if (entry.key.startsWith('dm:')) continue; // DMs stay private
+          all.addAll(entry.value);
+        }
+      case ChannelSelection(ids: final ids):
+        for (final id in ids) {
+          all.addAll(_messages[id] ?? []);
+        }
+        all.addAll(_messages[kAllChannelId] ?? []);
     }
     all.sort((a, b) => a.timestamp.compareTo(b.timestamp));
     return all;
@@ -247,7 +249,11 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       _warnIfDmPeerOffline();
     } else if (cm.channelId.isEmpty) {
-      final targets = _isAllMode ? [kAllChannelId] : _selectedIds.toList();
+      final targets = switch (_selection) {
+        AllSelection() => [kAllChannelId],
+        ChannelSelection(ids: final ids) => ids.toList(),
+        DmSelection() => const <String>[], // unreachable: _isDmMode handled above
+      };
       for (final id in targets) {
         widget.bridge.sendMessage(
           channelId: id,
@@ -379,23 +385,25 @@ class _HomeScreenState extends State<HomeScreen> {
           _channels = data
               .map((c) => PatchChannel.fromJson(c as Map<String, dynamic>))
               .toList();
-          // Seed selection with first channel if nothing selected yet.
-          if (_selectedIds.isEmpty && _channels.isNotEmpty) {
-            _selectedIds = {_channels.first.id};
-            widget.bridge.getMessages(_channels.first.id);
+          // Remove stale ids (deleted channels) from a Channel selection, or
+          // seed with the first channel if nothing was selected yet. ALL/DM
+          // selections don't depend on the channel list, so a reload never
+          // kicks the user out of either (see Selection's doc comment).
+          final sel = _selection;
+          if (sel is ChannelSelection) {
+            final validIds = _channels.map((c) => c.id).toSet();
+            final kept = sel.ids.where(validIds.contains).toSet();
+            _selection = kept.isNotEmpty
+                ? ChannelSelection(kept)
+                : (_channels.isNotEmpty
+                    ? ChannelSelection({_channels.first.id})
+                    : const ChannelSelection({}));
           }
-          // Remove stale IDs (deleted channels), but keep the synthetic ALL id
-          // and any DM thread so a channel reload doesn't kick the user out of
-          // ALL / DM mode.
-          final validIds = _channels.map((c) => c.id).toSet()..add(kAllChannelId);
-          _selectedIds = _selectedIds
-              .where((id) => validIds.contains(id) || id.startsWith('dm:'))
-              .toSet();
-          if (_selectedIds.isEmpty && _channels.isNotEmpty) {
-            _selectedIds = {_channels.first.id};
-          }
-          // Load messages for any newly-selected channel we haven't fetched yet.
-          for (final id in _selectedIds) {
+          // Load messages for whatever's now selected, if not already fetched.
+          final idsNeeded = _selection.dmPeerId != null
+              ? {'dm:${_selection.dmPeerId}'}
+              : _selection.tabIds;
+          for (final id in idsNeeded) {
             if (!_messages.containsKey(id)) {
               widget.bridge.getMessages(id);
             }
@@ -430,7 +438,7 @@ class _HomeScreenState extends State<HomeScreen> {
           // when the thread isn't in view, so it covers the non-critical case.
           if (_flashOnCritical && msg.isCritical) {
             _triggerDmFlash(msg.channelId);
-          } else if (!_selectedIds.contains(msg.channelId)) {
+          } else if (!_selection.containsRawId(msg.channelId)) {
             setState(() {
               _unreadDms.add(msg.channelId);
               // Pulse the peers toggle only when the panel is closed (open → the
@@ -524,35 +532,26 @@ class _HomeScreenState extends State<HomeScreen> {
         widget.bridge.getChannels();
         // A show file also restores static peers — refresh the peers panel.
         widget.bridge.getPeers();
-        setState(() => _selectedIds = {});
+        setState(() => _selection = const ChannelSelection({}));
 
       case 'config':
+        final cfg =
+            AppConfig.fromJson(event['data'] as Map<String, dynamic>);
         setState(() {
-          _clientName = event['data']['client_name'] as String? ?? '';
-          _clientRole = event['data']['role'] as String? ?? '';
-          _flashOnCritical =
-              (event['data']['flash_on_critical'] as bool?) ?? true;
-          _flashOnMessage =
-              (event['data']['flash_on_message'] as bool?) ?? false;
-          _globalFlashCount =
-              (event['data']['flash_count'] as int?) ?? 4;
-          _macrosColumns =
-              (event['data']['macros_columns'] as int?) ?? 1;
-          _hideKeyboard =
-              (event['data']['hide_keyboard'] as bool?) ?? true;
-          _audibleAlert =
-              (event['data']['audible_alert'] as bool?) ?? false;
-          _globalMacros =
-              ((event['data']['global_macros'] as List<dynamic>?) ?? [])
-                  .map((m) => MacroMessage.fromJson(m as Map<String, dynamic>))
-                  .toList();
-          _heartbeatSecs =
-              (event['data']['heartbeat_interval_secs'] as int?) ?? 7;
+          _clientName = cfg.clientName;
+          _clientRole = cfg.role ?? '';
+          _flashOnCritical = cfg.flashOnCritical;
+          _flashOnMessage = cfg.flashOnMessage;
+          _globalFlashCount = cfg.flashCount;
+          _macrosColumns = cfg.macrosColumns;
+          _hideKeyboard = cfg.hideKeyboard;
+          _audibleAlert = cfg.audibleAlert;
+          _globalMacros = cfg.globalMacros;
+          _heartbeatSecs = cfg.heartbeatIntervalSecs;
         });
         _maybeShowNamePrompt(
-          nameIsDefault:
-              (event['data']['name_is_default'] as bool?) ?? false,
-          currentName: event['data']['client_name'] as String? ?? '',
+          nameIsDefault: cfg.nameIsDefault,
+          currentName: cfg.clientName,
         );
 
       case 'show_file_saved':
@@ -628,7 +627,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _flashCounts[channelId] = (_flashCounts[channelId] ?? 0) + 1;
       // Only pulse the main screen overlay when the channel is selected.
-      if (_selectedIds.contains(channelId)) {
+      if (_selection.containsRawId(channelId)) {
         _flashNotify++;
         _flashColor = ch.color;
         _flashPulseCount = ch.flashCount ?? _globalFlashCount;
@@ -659,7 +658,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _playAlert();
     setState(() {
       _openDms.add(peerId); // ensure the tab exists even on a first-ever ping
-      if (_selectedIds.contains(dmKey)) {
+      if (_selection.containsRawId(dmKey)) {
         _flashNotify++;
         _flashColor = PatchTheme.accent;
         _flashPulseCount = _globalFlashCount;
@@ -676,27 +675,27 @@ class _HomeScreenState extends State<HomeScreen> {
   /// ALL and DM threads are exclusive selections.
   void _toggleChannel(String id) {
     setState(() {
+      final sel = _selection;
       if (id == kAllChannelId) {
-        // Save current selection for snap-back after broadcast send.
-        _preAllSelection = Set.from(_selectedIds);
-        _selectedIds = {kAllChannelId};
+        // Stash the current Channel selection for snap-back after send.
+        _selection = AllSelection(sel is ChannelSelection ? sel.ids : {});
         if (!_messages.containsKey(kAllChannelId)) {
           widget.bridge.getMessages(kAllChannelId);
         }
       } else if (id.startsWith('dm:')) {
-        _selectedIds = {id};
-        _preAllSelection = {};
+        _selection = DmSelection(id.substring(3));
         _unreadDms.remove(id);
         if (!_messages.containsKey(id)) widget.bridge.getMessages(id);
-      } else if (_isAllMode || _isDmMode) {
+      } else if (sel is AllSelection || sel is DmSelection) {
         // Tapping a channel cancels ALL compose / DM mode.
-        _selectedIds = {id};
-        _preAllSelection = {};
+        _selection = ChannelSelection({id});
         if (!_messages.containsKey(id)) widget.bridge.getMessages(id);
-      } else if (_selectedIds.contains(id)) {
-        if (_selectedIds.length > 1) _selectedIds.remove(id);
-      } else {
-        _selectedIds.add(id);
+      } else if (sel is ChannelSelection && sel.ids.contains(id)) {
+        if (sel.ids.length > 1) {
+          _selection = ChannelSelection({...sel.ids}..remove(id));
+        }
+      } else if (sel is ChannelSelection) {
+        _selection = ChannelSelection({...sel.ids, id});
         if (!_messages.containsKey(id)) widget.bridge.getMessages(id);
       }
     });
@@ -707,12 +706,12 @@ class _HomeScreenState extends State<HomeScreen> {
   /// After a broadcast send, snap back to the channel(s) selected before ALL.
   void _snapBackFromAll() {
     setState(() {
-      if (_preAllSelection.isNotEmpty) {
-        _selectedIds = Set.from(_preAllSelection);
+      final sel = _selection;
+      if (sel is AllSelection && sel.previous.isNotEmpty) {
+        _selection = ChannelSelection(sel.previous);
       } else if (_channels.isNotEmpty) {
-        _selectedIds = {_channels.first.id};
+        _selection = ChannelSelection({_channels.first.id});
       }
-      _preAllSelection = {};
     });
     _syncSelection();
   }
@@ -722,8 +721,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final key = 'dm:$peerId';
     setState(() {
       _openDms.add(peerId);
-      _selectedIds = {key};
-      _preAllSelection = {};
+      _selection = DmSelection(peerId);
       _unreadDms.remove(key);
     });
     if (!_messages.containsKey(key)) widget.bridge.getMessages(key);
@@ -731,13 +729,15 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_hideKeyboard) FocusScope.of(context).unfocus();
   }
 
-  /// Push the current selection to the engine so a MIDI-triggered global macro
-  /// fires on the same channel(s) as a tap/F-key (the engine has no other view
-  /// of UI selection). DM keys are excluded — they aren't channels.
+  /// Push the current selection to the engine so a MIDI-triggered macro routes
+  /// the same way a tap/F-key would (the engine has no other view of UI
+  /// selection). DM keys are excluded from the channel list — they aren't
+  /// channels — but the DM peer is pushed separately via `setDmTarget` so a
+  /// MIDI macro fired while a DM thread is open goes to that peer instead of
+  /// silently matching no selected channel (see `_fireMacro`'s DM-mode rule).
   void _syncSelection() {
-    widget.bridge.setSelectedChannels(
-      _selectedIds.where((id) => !id.startsWith('dm:')).toList(),
-    );
+    widget.bridge.setSelectedChannels(_selection.tabIds.toList());
+    widget.bridge.setDmTarget(_selection.dmPeerId);
   }
 
   // ── Build ───────────────────────────────────────────────────────────────────
@@ -752,7 +752,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           _ChannelStrip(
             channels: _channels,
-            selectedIds: _selectedIds,
+            selectedIds: _selection.tabIds,
             flashCounts: _flashCounts,
             globalFlashCount: _globalFlashCount,
             onTap: _toggleChannel,
@@ -835,7 +835,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: MacrosPanel(
                   macros: _aggregatedMacros,
                   globalMacros: _aggregatedGlobalMacros,
-                  isMulti: _selectedIds.length > 1,
+                  isMulti: _isMultiChannel,
                   columns: _macrosColumns,
                   onMacro: _fireMacro,
                   onClose: () => setState(() => _showMacros = false),

@@ -15,7 +15,7 @@ use uuid::Uuid;
 use std::net::Ipv4Addr;
 
 use crate::osc::{codec::encode_presence, types::PeerPresence};
-use crate::state::{AppState, Config};
+use crate::state::{is_self, AppState, Config};
 use crate::transport::{in_pinned_subnet, pinned_ipv4_subnet, Transport};
 
 /// Picks which of a resolved mDNS service's addresses to use as the peer's
@@ -96,7 +96,7 @@ impl Discovery {
                                 .unwrap_or_else(Uuid::new_v4);
 
                             // Skip our own service — mDNS resolves it too.
-                            if peer_id == client_id {
+                            if is_self(peer_id, client_id) {
                                 continue;
                             }
 

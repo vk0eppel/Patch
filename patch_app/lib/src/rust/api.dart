@@ -274,6 +274,13 @@ Future<void> upsertGlobalMacro({
 Future<void> setSelectedChannels({required List<String> ids}) =>
     RustLib.instance.api.crateApiSetSelectedChannels(ids: ids);
 
+/// Tell the engine which peer's DM thread is currently open in the UI (`None`
+/// when no DM is open), so a MIDI-triggered macro routes the same way a
+/// tap/F-key would — every macro fired while a DM is open goes to that peer
+/// instead of a channel (see `_fireMacro` in home_screen.dart).
+Future<void> setDmTarget({String? peerId}) =>
+    RustLib.instance.api.crateApiSetDmTarget(peerId: peerId);
+
 Future<void> deleteGlobalMacro({required String label}) =>
     RustLib.instance.api.crateApiDeleteGlobalMacro(label: label);
 

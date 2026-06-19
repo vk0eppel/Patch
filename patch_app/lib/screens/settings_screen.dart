@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
+import '../models/config.dart';
 import '../theme/patch_theme.dart';
 import '../widgets/bounded_int_field.dart';
 import '../widgets/interface_picker.dart';
@@ -51,7 +52,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _oscPort = 9000;
 
   // Static peers
-  List<Map<String, dynamic>> _staticPeers = [];
+  List<StaticPeerInfo> _staticPeers = [];
 
   // Live peers (for "import channels from a peer")
   List<Map<String, dynamic>> _peers = [];
@@ -83,26 +84,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final type = event['event'] as String?;
     switch (type) {
       case 'config':
-        final data = event['data'] as Map<String, dynamic>;
+        final cfg =
+            AppConfig.fromJson(event['data'] as Map<String, dynamic>);
         setState(() {
-          _nameCtrl.text = data['client_name'] as String? ?? '';
-          _roleCtrl.text = data['role'] as String? ?? '';
-          _selectedInterface = data['network_interface'] as String?;
-          _flashOnCritical = (data['flash_on_critical'] as bool?) ?? true;
-          _flashOnMessage = (data['flash_on_message'] as bool?) ?? false;
-          _flashCount = (data['flash_count'] as int?) ?? 4;
-          _hideKeyboard = (data['hide_keyboard'] as bool?) ?? true;
-          _audibleAlert = (data['audible_alert'] as bool?) ?? false;
-          _macrosColumns = (data['macros_columns'] as int?) ?? 1;
-          _heartbeatInterval = (data['heartbeat_interval_secs'] as int?) ?? 7;
-          _oscPort = (data['osc_port'] as int?) ?? 9000;
-          _globalMacros = ((data['global_macros'] as List<dynamic>?) ?? [])
-              .map((m) => MacroMessage.fromJson(m as Map<String, dynamic>))
-              .toList();
-          _staticPeers = List<Map<String, dynamic>>.from(
-            (data['static_peers'] as List<dynamic>? ?? [])
-                .map((p) => Map<String, dynamic>.from(p as Map)),
-          );
+          _nameCtrl.text = cfg.clientName;
+          _roleCtrl.text = cfg.role ?? '';
+          _selectedInterface = cfg.networkInterface;
+          _flashOnCritical = cfg.flashOnCritical;
+          _flashOnMessage = cfg.flashOnMessage;
+          _flashCount = cfg.flashCount;
+          _hideKeyboard = cfg.hideKeyboard;
+          _audibleAlert = cfg.audibleAlert;
+          _macrosColumns = cfg.macrosColumns;
+          _heartbeatInterval = cfg.heartbeatIntervalSecs;
+          _oscPort = cfg.oscPort;
+          _globalMacros = cfg.globalMacros;
+          _staticPeers = cfg.staticPeers;
         });
       case 'config_updated':
         widget.bridge.getConfig();
@@ -564,10 +561,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               _resetButton('Static Peers', () {
                 for (final peer in List.of(_staticPeers)) {
-                  widget.bridge.removeStaticPeer(
-                    peer['address'] as String,
-                    peer['port'] as int,
-                  );
+                  widget.bridge.removeStaticPeer(peer.address, peer.port);
                 }
               }),
             ],
@@ -611,10 +605,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           else
             ..._staticPeers.map((peer) => _StaticPeerRow(
                   peer: peer,
-                  onDelete: () => widget.bridge.removeStaticPeer(
-                    peer['address'] as String,
-                    peer['port'] as int,
-                  ),
+                  onDelete: () =>
+                      widget.bridge.removeStaticPeer(peer.address, peer.port),
                 )),
 
           const SizedBox(height: 32),
@@ -1888,16 +1880,16 @@ void _showChannelDialog(
 // ── Static peer row ───────────────────────────────────────────────────────────
 
 class _StaticPeerRow extends StatelessWidget {
-  final Map<String, dynamic> peer;
+  final StaticPeerInfo peer;
   final VoidCallback onDelete;
 
   const _StaticPeerRow({required this.peer, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
-    final address = peer['address'] as String;
-    final port = peer['port'] as int;
-    final label = peer['label'] as String?;
+    final address = peer.address;
+    final port = peer.port;
+    final label = peer.label;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),

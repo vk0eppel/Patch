@@ -3,6 +3,7 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:patch/models/channel.dart';
+import 'package:patch/models/config.dart';
 import 'package:patch/models/message.dart';
 
 void main() {
@@ -160,6 +161,69 @@ void main() {
       expect(c.macros[0].keyBinding, 'F1');
       expect(c.macros[1].keyBinding, isNull);
       expect(c.macros[1].priority, 2);
+    });
+  });
+
+  group('AppConfig', () {
+    test('fromJson parses every field — both screens read this, not the raw map', () {
+      final cfg = AppConfig.fromJson({
+        'client_name': 'FOH',
+        'role': 'Audio',
+        'osc_port': 9001,
+        'network_interface': 'en0',
+        'static_peers': [
+          {'address': '192.168.1.50', 'port': 9000, 'label': 'Monitor World'},
+        ],
+        'flash_on_critical': false,
+        'flash_on_message': true,
+        'flash_count': 6,
+        'macros_columns': 2,
+        'hide_keyboard': false,
+        'audible_alert': true,
+        'global_macros': [
+          {'label': 'CLEAR', 'payload': 'Channel clear', 'priority': 1},
+        ],
+        'heartbeat_interval_secs': 10,
+        'name_is_default': true,
+      });
+
+      expect(cfg.clientName, 'FOH');
+      expect(cfg.role, 'Audio');
+      expect(cfg.oscPort, 9001);
+      expect(cfg.networkInterface, 'en0');
+      expect(cfg.staticPeers, hasLength(1));
+      expect(cfg.staticPeers[0].address, '192.168.1.50');
+      expect(cfg.staticPeers[0].port, 9000);
+      expect(cfg.staticPeers[0].label, 'Monitor World');
+      expect(cfg.flashOnCritical, isFalse);
+      expect(cfg.flashOnMessage, isTrue);
+      expect(cfg.flashCount, 6);
+      expect(cfg.macrosColumns, 2);
+      expect(cfg.hideKeyboard, isFalse);
+      expect(cfg.audibleAlert, isTrue);
+      expect(cfg.globalMacros, hasLength(1));
+      expect(cfg.globalMacros[0].label, 'CLEAR');
+      expect(cfg.heartbeatIntervalSecs, 10);
+      expect(cfg.nameIsDefault, isTrue);
+    });
+
+    test('fromJson defaults a missing role, network_interface, and empty lists', () {
+      final cfg = AppConfig.fromJson({
+        'client_name': 'FOH',
+        'osc_port': 9000,
+        'flash_on_critical': true,
+        'flash_on_message': false,
+        'flash_count': 4,
+        'macros_columns': 1,
+        'hide_keyboard': true,
+        'audible_alert': false,
+        'heartbeat_interval_secs': 7,
+        'name_is_default': false,
+      });
+      expect(cfg.role, isNull);
+      expect(cfg.networkInterface, isNull);
+      expect(cfg.staticPeers, isEmpty);
+      expect(cfg.globalMacros, isEmpty);
     });
   });
 }
