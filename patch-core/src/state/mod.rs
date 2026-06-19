@@ -562,6 +562,23 @@ impl AppState {
         peers
     }
 
+    /// Resolved addresses of peers a critical message shouldn't bother
+    /// tracking for an ACK (see `Peer::looks_offline`) — used to skip
+    /// retransmit/failure-warning noise for peers we already know are gone,
+    /// without skipping the best-effort send itself (they might still be
+    /// there despite a missed heartbeat).
+    pub async fn offline_addresses(&self, heartbeat_secs: u64) -> HashSet<std::net::SocketAddr> {
+        self.get_peers()
+            .await
+            .iter()
+            .filter(|p| p.has_address() && p.looks_offline(heartbeat_secs))
+            .filter_map(|p| {
+                let ip: std::net::IpAddr = p.address.parse().ok()?;
+                Some(std::net::SocketAddr::new(ip, p.osc_port))
+            })
+            .collect()
+    }
+
     // ── Channels & macros ────────────────────────────────────────────────────
 
     pub async fn get_channels(&self) -> Vec<channel::Channel> {
@@ -1030,6 +1047,52 @@ mod tests {
         assert!(ids.contains(&fresh_dyn));
         assert!(ids.contains(&stale_manual)); // ManualIp never removed
         assert!(!ids.contains(&stale_dyn));
+    }
+
+    #[tokio::test]
+    async fn offline_addresses_includes_departed_and_stale_excludes_fresh_and_manual() {
+        let st = test_state();
+        let heartbeat_secs = 7u64; // offline threshold = 35s (5x)
+
+        // Departed (clean bye) — offline regardless of last_seen recency.
+        let departed = Uuid::new_v4();
+        st.upsert_peer(presence(departed, chrono::Utc::now())).await;
+        st.touch_peer_address(departed, "10.0.0.1".into(), 9000)
+            .await;
+        st.mark_peer_offline(departed).await;
+
+        // Quiet well past 5x the heartbeat — offline. Set the address
+        // directly rather than via `touch_peer_address`, which always
+        // refreshes `last_seen` to now (true to how a peer that's gone
+        // quiet would actually look: heard from, with a resolved address,
+        // a long time ago — and nothing since).
+        let stale = Uuid::new_v4();
+        let old = chrono::Utc::now() - chrono::Duration::seconds(3600);
+        st.upsert_peer(presence(stale, old)).await;
+        {
+            let mut peers = st.0.peers.write().await;
+            let p = peers.get_mut(&stale).unwrap();
+            p.address = "10.0.0.2".into();
+            p.osc_port = 9000;
+        }
+
+        // Heard from recently — still online.
+        let fresh = Uuid::new_v4();
+        st.upsert_peer(presence(fresh, chrono::Utc::now())).await;
+        st.touch_peer_address(fresh, "10.0.0.3".into(), 9000).await;
+
+        // Manual/static peer — never heartbeats, so staleness can't apply
+        // even though its synthetic last_seen looks fresh.
+        let manual = Uuid::new_v4();
+        st.upsert_peer_with_mode(presence(manual, old), peer::DiscoveryMode::ManualIp)
+            .await;
+        st.touch_peer_address(manual, "10.0.0.4".into(), 9000).await;
+
+        let offline = st.offline_addresses(heartbeat_secs).await;
+        assert!(offline.contains(&"10.0.0.1:9000".parse().unwrap()));
+        assert!(offline.contains(&"10.0.0.2:9000".parse().unwrap()));
+        assert!(!offline.contains(&"10.0.0.3:9000".parse().unwrap()));
+        assert!(!offline.contains(&"10.0.0.4:9000".parse().unwrap()));
     }
 
     #[tokio::test]

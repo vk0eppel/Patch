@@ -218,11 +218,28 @@ pub(crate) async fn dispatch_message(
         .await?;
     let message_id = msg.message_id;
     let is_critical = msg.is_critical();
-    let target_count = targets.len();
     // Critical messages require ACKs — register for retransmit until every
-    // contacted peer acknowledges (or MAX_RETRIES is exceeded).
+    // contacted peer acknowledges (or MAX_RETRIES is exceeded). Skip targets
+    // that already look offline (clean departure, or quiet for 5x the
+    // heartbeat interval) — they were still sent the best-effort packet
+    // above, but tracking them for ACK only buys five rounds of pointless
+    // retransmits ending in a "failed to deliver" warning we could've
+    // skipped up front.
+    let offline = if is_critical {
+        state
+            .offline_addresses(config.heartbeat_interval_secs)
+            .await
+    } else {
+        Default::default()
+    };
+    let trackable: Vec<_> = targets
+        .iter()
+        .copied()
+        .filter(|a| !offline.contains(a))
+        .collect();
+    let target_count = trackable.len();
     if is_critical && target_count > 0 {
-        reliability.lock().await.track(message_id, bytes, targets);
+        reliability.lock().await.track(message_id, bytes, trackable);
     }
     state.store_message(msg).await;
     // A critical with no peers to send to can never be delivered — surface that

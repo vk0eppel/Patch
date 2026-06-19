@@ -60,4 +60,65 @@ impl Peer {
             .num_seconds();
         age > timeout_secs
     }
+
+    /// True when a critical message shouldn't bother tracking this peer for
+    /// an ACK: it announced a clean departure, or it's gone quiet for more
+    /// than 5x the heartbeat interval — the same "grey dot" threshold the
+    /// peers panel and DM-offline warning already use in the Flutter UI.
+    /// `ManualIp` (static) peers are exempt — they never heartbeat, so
+    /// staleness can't tell us anything about them either way.
+    pub fn looks_offline(&self, heartbeat_secs: u64) -> bool {
+        if self.departed {
+            return true;
+        }
+        if matches!(self.discovery_mode, DiscoveryMode::ManualIp) {
+            return false;
+        }
+        self.is_stale(heartbeat_secs.saturating_mul(5) as i64)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::osc::types::PeerPresence;
+
+    fn peer_at(last_seen: DateTime<Utc>, mode: DiscoveryMode) -> Peer {
+        let mut p = Peer::from_presence(PeerPresence {
+            peer_id: Uuid::new_v4(),
+            peer_name: "p".into(),
+            channels: Vec::new(),
+            role: None,
+            timestamp: last_seen,
+        });
+        p.discovery_mode = mode;
+        p
+    }
+
+    #[test]
+    fn departed_looks_offline_regardless_of_last_seen() {
+        let mut p = peer_at(Utc::now(), DiscoveryMode::OscBeacon);
+        p.departed = true;
+        assert!(p.looks_offline(7));
+    }
+
+    #[test]
+    fn quiet_past_5x_heartbeat_looks_offline() {
+        let old = Utc::now() - chrono::Duration::seconds(36);
+        let p = peer_at(old, DiscoveryMode::OscBeacon);
+        assert!(p.looks_offline(7)); // threshold is 35s
+    }
+
+    #[test]
+    fn recently_seen_does_not_look_offline() {
+        let p = peer_at(Utc::now(), DiscoveryMode::OscBeacon);
+        assert!(!p.looks_offline(7));
+    }
+
+    #[test]
+    fn manual_peer_never_looks_offline_from_staleness() {
+        let old = Utc::now() - chrono::Duration::seconds(36000);
+        let p = peer_at(old, DiscoveryMode::ManualIp);
+        assert!(!p.looks_offline(7));
+    }
 }

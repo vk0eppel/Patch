@@ -97,6 +97,8 @@ macOS requires CoreMIDI + CoreAudio frameworks explicitly in `patch_app/rust_bui
 
 Critical (`priority=3`) messages are tracked by `ReliabilityManager`. Receivers ACK via `/patch/ack`. A 100ms poller retransmits unacked messages per-target with exponential backoff (2^retries ticks × 100ms, up to `MAX_RETRIES = 5`). ACKs are matched by source `SocketAddr`, not `peer_id`. Delivery progress emitted as `MessageDelivery` events to Flutter (amber N/M → green ✓ → red ⚠).
 
+`dispatch_message` (`api.rs`) skips ACK-tracking for any target that `Peer::looks_offline` (`state/peer.rs`) flags — a clean departure, or quiet for 5x the heartbeat interval (the same "grey dot" threshold the peers panel and DM-offline warning use). The best-effort send itself still goes to every contacted peer regardless; only the pointless retransmit/failure-warning cycle against a peer already known to be gone is skipped. `ManualIp` (static) peers are exempt from the staleness half of this check — they never heartbeat, so silence doesn't mean anything for them.
+
 `send_to_peers` deduplicates by `SocketAddr`. Static peers are already merged in via `get_peers()` — never add a separate `config.static_peers` loop.
 
 ## Config I/O
