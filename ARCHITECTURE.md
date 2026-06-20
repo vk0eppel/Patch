@@ -80,6 +80,8 @@ Heartbeat re-reads `client_name` and `role` from config on every tick, so rename
 
 Static peers always appear in the peers panel: `get_peers()` merges `config.static_peers` as synthetic `ManualIp` entries. A synthetic entry disappears once a real packet arrives and creates a dynamic entry for the same address.
 
+A `StaticPeer` is only ever legal if its address parses and its port is non-zero — `config::validate_static_peer` (called by `StaticPeer::new`) owns that rule, mirroring `Channel::validate_channel_id`. `api::add_static_peer` constructs through `StaticPeer::new` and hard-fails on a bad address/port; `apply_show_file_full` calls `validate_static_peer` directly on already-deserialized show-file peers and skips-with-warning instead, since a show file is untrusted input and one bad entry shouldn't block the whole import. Don't re-derive the address/port check inline at a new construction site.
+
 ## Show Files
 
 `apply_show_file_full` (load/import) replaces channels **and** static peers. `apply_show_file` (reset_channels) replaces channels only — factory reset never wipes configured peers. Channel IDs are validated atomically upfront; the whole show file is rejected if any ID is invalid.
@@ -107,6 +109,8 @@ Critical (`priority=3`) messages are tracked by `ReliabilityManager`. Receivers 
 `reliability::track_critical` skips ACK-tracking for any target that `Peer::looks_offline` (`state/peer.rs`) flags — a clean departure, or quiet for 5x the heartbeat interval (the same "grey dot" threshold the peers panel and DM-offline warning use). The best-effort send itself still goes to every contacted peer regardless; only the pointless retransmit/failure-warning cycle against a peer already known to be gone is skipped. `ManualIp` (static) peers are exempt from the staleness half of this check — they never heartbeat, so silence doesn't mean anything for them. Both `dispatch_message` (`api.rs`, typed/macro/MIDI sends) and the `/patch/say` external-OSC relay (`transport::handle_event`) call `track_critical` — a critical injected via Say gets the same offline filter as a hand-sent one. `reliability::report_delivery_failure` is the other shared half: the only two places a Critical Message's delivery is ever declared failed (no peers to send to; exceeded `MAX_RETRIES`) both publish through it, so they can't drift on field shape.
 
 `send_to_peers` deduplicates by `SocketAddr`. Static peers are already merged in via `get_peers()` — never add a separate `config.static_peers` loop. The skip-self/has-address/dedup target resolution itself lives in `AppState::reachable_peer_addrs` — shared with the `/patch/say` relay in `handle_event`, which sends the same target list a different way (queued via `send_tx` instead of direct socket send). Don't reimplement the resolution inline at a new send call site; call `reachable_peer_addrs`.
+
+Resolving a single peer's address (DM send, DM flash, channels-request, shutdown's `/patch/bye` unicast) goes through `Peer::socket_addr() -> Option<SocketAddr>` (`state/peer.rs`) — the one place that turns `address`/`osc_port` into something sendable, `None` covering both "no address yet" and "unparseable address". Don't re-parse `peer.address` inline; call `socket_addr()`.
 
 ## Config I/O
 

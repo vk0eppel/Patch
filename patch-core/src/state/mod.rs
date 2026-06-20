@@ -329,27 +329,17 @@ impl AppState {
         port: u16,
         label: Option<String>,
     ) -> anyhow::Result<()> {
-        // Validate the IP address before storing.
-        address
-            .parse::<std::net::IpAddr>()
-            .map_err(|_| anyhow::anyhow!("Invalid IP address: '{}'", address))?;
-        if port == 0 {
-            anyhow::bail!("Port 0 is not valid for a static peer");
-        }
+        let peer = config::StaticPeer::new(address, port, label)?;
         {
             let mut cfg = self.0.config.write().await;
             if cfg
                 .static_peers
                 .iter()
-                .any(|p| p.address == address && p.port == port)
+                .any(|p| p.address == peer.address && p.port == peer.port)
             {
-                anyhow::bail!("Peer {}:{} is already configured", address, port);
+                anyhow::bail!("Peer {}:{} is already configured", peer.address, peer.port);
             }
-            cfg.static_peers.push(config::StaticPeer {
-                address,
-                port,
-                label,
-            });
+            cfg.static_peers.push(peer);
         }
         self.save_config().await
     }
@@ -622,11 +612,8 @@ impl AppState {
         self.get_peers()
             .await
             .iter()
-            .filter(|p| p.has_address() && p.looks_offline(heartbeat_secs))
-            .filter_map(|p| {
-                let ip: std::net::IpAddr = p.address.parse().ok()?;
-                Some(std::net::SocketAddr::new(ip, p.osc_port))
-            })
+            .filter(|p| p.looks_offline(heartbeat_secs))
+            .filter_map(|p| p.socket_addr())
             .collect()
     }
 
@@ -640,11 +627,8 @@ impl AppState {
         self.get_peers()
             .await
             .into_iter()
-            .filter(|p| p.peer_id != client_id && p.has_address())
-            .filter_map(|p| {
-                let ip: std::net::IpAddr = p.address.parse().ok()?;
-                Some(std::net::SocketAddr::new(ip, p.osc_port))
-            })
+            .filter(|p| p.peer_id != client_id)
+            .filter_map(|p| p.socket_addr())
             .filter(|addr| seen.insert(*addr))
             .collect()
     }
@@ -700,15 +684,13 @@ impl AppState {
         let mut validated_peers: Vec<config::StaticPeer> = Vec::with_capacity(static_peers.len());
         let mut seen: HashSet<(String, u16)> = HashSet::new();
         for sp in static_peers {
-            if sp.address.parse::<std::net::IpAddr>().is_err() {
+            if let Err(e) = config::validate_static_peer(&sp.address, sp.port) {
                 tracing::warn!(
-                    "show_file: skipping static peer with invalid address {:?}",
-                    sp.address
+                    "show_file: skipping static peer {:?}:{} — {}",
+                    sp.address,
+                    sp.port,
+                    e
                 );
-                continue;
-            }
-            if sp.port == 0 {
-                tracing::warn!("show_file: skipping static peer {} with port 0", sp.address);
                 continue;
             }
             if seen.insert((sp.address.clone(), sp.port)) {

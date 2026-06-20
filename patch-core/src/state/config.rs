@@ -118,6 +118,36 @@ pub struct StaticPeer {
     pub label: Option<String>,
 }
 
+/// True when `address`/`port` are legal for a StaticPeer: `address` must parse
+/// as an `IpAddr` and `port` must be non-zero.
+///
+/// Single source of truth for "is this StaticPeer legal" — mirrors
+/// `Channel::validate_channel_id`. [`StaticPeer::new`] calls it for the one
+/// path that constructs a `StaticPeer` from raw FFI args (`api::add_static_peer`);
+/// `apply_show_file_full` validates already-deserialized show-file peers
+/// directly with this function instead of re-deriving the rule.
+pub fn validate_static_peer(address: &str, port: u16) -> anyhow::Result<()> {
+    address
+        .parse::<std::net::IpAddr>()
+        .map_err(|_| anyhow::anyhow!("Invalid IP address: '{}'", address))?;
+    if port == 0 {
+        anyhow::bail!("Port 0 is not valid for a static peer");
+    }
+    Ok(())
+}
+
+impl StaticPeer {
+    pub fn new(address: impl Into<String>, port: u16, label: Option<String>) -> anyhow::Result<Self> {
+        let address = address.into();
+        validate_static_peer(&address, port)?;
+        Ok(Self {
+            address,
+            port,
+            label,
+        })
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {

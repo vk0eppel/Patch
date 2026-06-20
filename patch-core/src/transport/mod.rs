@@ -284,6 +284,26 @@ async fn receive_loop(
     }
 }
 
+/// Records that `peer_id`/`peer_name` was just heard from at `from` — the
+/// sighting every inbound Message/DirectMessage/DirectFlash/Flash arm needs to
+/// log so the sender appears in the peers panel (and an already-known
+/// sender's address stays current), even when AP isolation blocks their
+/// broadcast heartbeats.
+async fn record_sender_sighting(
+    state: &AppState,
+    peer_id: Uuid,
+    peer_name: String,
+    from: SocketAddr,
+) {
+    state
+        .record_sighting(
+            PeerSighting::Heartbeat { peer_id, peer_name },
+            from.ip().to_string(),
+            from.port(),
+        )
+        .await;
+}
+
 async fn handle_event(
     event: PatchEvent,
     from: SocketAddr,
@@ -301,16 +321,7 @@ async fn handle_event(
             // practice (Messages are unicast-only, never broadcast), but the
             // guard costs nothing and matches every other sender-recording arm.
             if !is_self(msg.sender_id, client_id) {
-                state
-                    .record_sighting(
-                        PeerSighting::Heartbeat {
-                            peer_id: msg.sender_id,
-                            peer_name: msg.sender_name.clone(),
-                        },
-                        from.ip().to_string(),
-                        from.port(),
-                    )
-                    .await;
+                record_sender_sighting(state, msg.sender_id, msg.sender_name.clone(), from).await;
             }
             // ACK critical messages so the sender can stop retransmitting.
             if msg.is_critical() {
@@ -330,16 +341,7 @@ async fn handle_event(
                 return;
             }
             // Record the sighting so the DM thread + peers panel show them.
-            state
-                .record_sighting(
-                    PeerSighting::Heartbeat {
-                        peer_id: msg.sender_id,
-                        peer_name: msg.sender_name.clone(),
-                    },
-                    from.ip().to_string(),
-                    from.port(),
-                )
-                .await;
+            record_sender_sighting(state, msg.sender_id, msg.sender_name.clone(), from).await;
             // msg.channel_id is already `dm:{sender_id}` (set by decode_dm).
             state.store_message(msg).await;
         }
@@ -353,16 +355,7 @@ async fn handle_event(
                 return;
             }
             // Record the sighting so the DM thread + peers panel show them.
-            state
-                .record_sighting(
-                    PeerSighting::Heartbeat {
-                        peer_id: sender_id,
-                        peer_name: sender_name.clone(),
-                    },
-                    from.ip().to_string(),
-                    from.port(),
-                )
-                .await;
+            record_sender_sighting(state, sender_id, sender_name.clone(), from).await;
             // Flash our DM thread with the sender (keyed by the *other* peer,
             // exactly like an inbound DM). The id is built locally, so it never
             // passes through valid_channel_id (which rejects `dm:` keys).
@@ -421,16 +414,7 @@ async fn handle_event(
         }
         PatchEvent::Flash(f) => {
             // Same sighting as for Message.
-            state
-                .record_sighting(
-                    PeerSighting::Heartbeat {
-                        peer_id: f.sender_id,
-                        peer_name: f.sender_name.clone(),
-                    },
-                    from.ip().to_string(),
-                    from.port(),
-                )
-                .await;
+            record_sender_sighting(state, f.sender_id, f.sender_name.clone(), from).await;
             state.publish(AppEvent::ChannelFlash(f)).await;
         }
         PatchEvent::Say {

@@ -54,6 +54,21 @@ impl Peer {
         !self.address.is_empty() && self.osc_port > 0
     }
 
+    /// Resolved unicast address for this peer, or `None` if it has no address
+    /// yet or `address` isn't a parseable `IpAddr` (e.g. still empty, just
+    /// like `has_address`). Single place that turns the raw `address`/`osc_port`
+    /// fields into something actually sendable — every unicast send path should
+    /// go through this instead of re-deriving the parse-and-check.
+    pub fn socket_addr(&self) -> Option<std::net::SocketAddr> {
+        if !self.has_address() {
+            return None;
+        }
+        self.address
+            .parse::<std::net::IpAddr>()
+            .ok()
+            .map(|ip| std::net::SocketAddr::new(ip, self.osc_port))
+    }
+
     pub fn is_stale(&self, timeout_secs: i64) -> bool {
         let age = Utc::now()
             .signed_duration_since(self.last_seen)

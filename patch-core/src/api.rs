@@ -294,13 +294,9 @@ pub async fn send_direct_message(
         .into_iter()
         .find(|p| p.peer_id == target)
         .ok_or_else(|| anyhow::anyhow!("peer not found"))?;
-    if peer.has_address() {
-        if let Ok(ip) = peer.address.parse::<IpAddr>() {
-            let bytes = encode_dm(&msg, target)?;
-            h.transport
-                .send_to(bytes, SocketAddr::new(ip, peer.osc_port))
-                .await?;
-        }
+    if let Some(addr) = peer.socket_addr() {
+        let bytes = encode_dm(&msg, target)?;
+        h.transport.send_to(bytes, addr).await?;
     } else {
         tracing::warn!(
             "DM target {} has no address yet — stored locally only",
@@ -348,13 +344,9 @@ pub async fn send_dm_flash(peer_id: String) -> Result<()> {
         .into_iter()
         .find(|p| p.peer_id == target)
         .ok_or_else(|| anyhow::anyhow!("peer not found"))?;
-    if peer.has_address() {
-        if let Ok(ip) = peer.address.parse::<IpAddr>() {
-            let bytes = encode_dm_flash(&flash, target)?;
-            h.transport
-                .send_to(bytes, SocketAddr::new(ip, peer.osc_port))
-                .await?;
-        }
+    if let Some(addr) = peer.socket_addr() {
+        let bytes = encode_dm_flash(&flash, target)?;
+        h.transport.send_to(bytes, addr).await?;
     } else {
         tracing::warn!(
             "DM flash target {} has no address yet — local flash only",
@@ -379,14 +371,11 @@ pub async fn shutdown() -> Result<()> {
 
     // Unicast to resolved peers (covers static / AP-isolated).
     for peer in h.state.get_peers().await {
-        if peer.peer_id == config.client_id || !peer.has_address() {
+        if peer.peer_id == config.client_id {
             continue;
         }
-        if let Ok(ip) = peer.address.parse::<IpAddr>() {
-            let _ = h
-                .transport
-                .send_now(&bytes, SocketAddr::new(ip, peer.osc_port))
-                .await;
+        if let Some(addr) = peer.socket_addr() {
+            let _ = h.transport.send_now(&bytes, addr).await;
         }
     }
     // Broadcast (per-interface) for anyone we haven't resolved yet.
@@ -698,14 +687,9 @@ pub async fn request_channels(peer_id: String) -> Result<()> {
         .into_iter()
         .find(|p| p.peer_id == pid)
         .ok_or_else(|| anyhow::anyhow!("peer not found"))?;
-    if !peer.has_address() {
-        anyhow::bail!("peer has no resolved address yet — try again once it's online");
-    }
-    let ip: IpAddr = peer
-        .address
-        .parse()
-        .map_err(|_| anyhow::anyhow!("peer has an invalid address"))?;
-    let addr = SocketAddr::new(ip, peer.osc_port);
+    let addr = peer
+        .socket_addr()
+        .ok_or_else(|| anyhow::anyhow!("peer has no resolved address yet — try again once it's online"))?;
     let config = h.state.config().await;
     let bytes = encode_channels_request(config.client_id)?;
     h.transport.send_to(bytes, addr).await?;
