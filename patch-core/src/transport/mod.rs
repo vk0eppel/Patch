@@ -400,7 +400,11 @@ async fn handle_event(
                 return;
             }
             state
-                .record_sighting(PeerSighting::Presence(p), from.ip().to_string(), from.port())
+                .record_sighting(
+                    PeerSighting::Presence(p),
+                    from.ip().to_string(),
+                    from.port(),
+                )
                 .await;
         }
         PatchEvent::Bye { peer_id } => {

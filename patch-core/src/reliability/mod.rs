@@ -193,7 +193,10 @@ pub async fn track_critical(
     targets: Vec<SocketAddr>,
 ) -> usize {
     let offline = state.offline_addresses(heartbeat_secs).await;
-    let trackable: Vec<_> = targets.into_iter().filter(|a| !offline.contains(a)).collect();
+    let trackable: Vec<_> = targets
+        .into_iter()
+        .filter(|a| !offline.contains(a))
+        .collect();
     let count = trackable.len();
     if count > 0 {
         reliability.lock().await.track(message_id, bytes, trackable);
@@ -383,15 +386,8 @@ mod tests {
         let reliability = Mutex::new(ReliabilityManager::new());
         let id = Uuid::new_v4();
 
-        let tracked = track_critical(
-            &reliability,
-            &state,
-            7,
-            id,
-            vec![0],
-            vec![addr(1), addr(2)],
-        )
-        .await;
+        let tracked =
+            track_critical(&reliability, &state, 7, id, vec![0], vec![addr(1), addr(2)]).await;
 
         assert_eq!(tracked, 1); // only the online target
         let mut r = reliability.lock().await;
@@ -405,8 +401,15 @@ mod tests {
         add_offline_peer(&state, "10.0.0.1").await;
         let reliability = Mutex::new(ReliabilityManager::new());
 
-        let tracked =
-            track_critical(&reliability, &state, 7, Uuid::new_v4(), vec![0], vec![addr(1)]).await;
+        let tracked = track_critical(
+            &reliability,
+            &state,
+            7,
+            Uuid::new_v4(),
+            vec![0],
+            vec![addr(1)],
+        )
+        .await;
 
         assert_eq!(tracked, 0);
     }

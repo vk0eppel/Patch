@@ -137,7 +137,11 @@ pub fn validate_static_peer(address: &str, port: u16) -> anyhow::Result<()> {
 }
 
 impl StaticPeer {
-    pub fn new(address: impl Into<String>, port: u16, label: Option<String>) -> anyhow::Result<Self> {
+    pub fn new(
+        address: impl Into<String>,
+        port: u16,
+        label: Option<String>,
+    ) -> anyhow::Result<Self> {
         let address = address.into();
         validate_static_peer(&address, port)?;
         Ok(Self {

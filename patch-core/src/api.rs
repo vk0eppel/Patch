@@ -161,7 +161,6 @@ pub fn engine() -> &'static EngineHandle {
         .expect("patch_core::api::init() must be called before any other API function")
 }
 
-
 // ── Messaging ────────────────────────────────────────────────────────────────
 
 /// Core send path, shared by the FFI `send_message` and the engine-internal MIDI
@@ -687,9 +686,9 @@ pub async fn request_channels(peer_id: String) -> Result<()> {
         .into_iter()
         .find(|p| p.peer_id == pid)
         .ok_or_else(|| anyhow::anyhow!("peer not found"))?;
-    let addr = peer
-        .socket_addr()
-        .ok_or_else(|| anyhow::anyhow!("peer has no resolved address yet — try again once it's online"))?;
+    let addr = peer.socket_addr().ok_or_else(|| {
+        anyhow::anyhow!("peer has no resolved address yet — try again once it's online")
+    })?;
     let config = h.state.config().await;
     let bytes = encode_channels_request(config.client_id)?;
     h.transport.send_to(bytes, addr).await?;

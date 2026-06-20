@@ -678,8 +678,9 @@ impl AppState {
         static_peers: Vec<config::StaticPeer>,
     ) -> anyhow::Result<()> {
         for ch in &channels {
-            channel::validate_channel_id(&ch.id)
-                .map_err(|e| anyhow::anyhow!("show file contains invalid channel id {:?} — {}", ch.id, e))?;
+            channel::validate_channel_id(&ch.id).map_err(|e| {
+                anyhow::anyhow!("show file contains invalid channel id {:?} — {}", ch.id, e)
+            })?;
         }
         let mut validated_peers: Vec<config::StaticPeer> = Vec::with_capacity(static_peers.len());
         let mut seen: HashSet<(String, u16)> = HashSet::new();
@@ -743,7 +744,11 @@ impl AppState {
             let mut map = self.0.channels.write().await;
             for mut ch in channels {
                 if let Err(e) = channel::validate_channel_id(&ch.id) {
-                    tracing::warn!("merge_channels: skipping invalid/reserved id {:?}: {}", ch.id, e);
+                    tracing::warn!(
+                        "merge_channels: skipping invalid/reserved id {:?}: {}",
+                        ch.id,
+                        e
+                    );
                     continue;
                 }
                 if map.contains_key(&ch.id) {
@@ -772,8 +777,9 @@ impl AppState {
         // verbatim in `/patch/channel/{id}/...` on the next send. Reject the whole
         // show file atomically so a single bad entry can't half-apply.
         for ch in &channels {
-            channel::validate_channel_id(&ch.id)
-                .map_err(|e| anyhow::anyhow!("show file contains invalid channel id {:?} — {}", ch.id, e))?;
+            channel::validate_channel_id(&ch.id).map_err(|e| {
+                anyhow::anyhow!("show file contains invalid channel id {:?} — {}", ch.id, e)
+            })?;
         }
         {
             let mut ch_map = self.0.channels.write().await;
@@ -1121,11 +1127,19 @@ mod tests {
         let now = chrono::Utc::now();
 
         let stale_dyn = Uuid::new_v4();
-        st.record_sighting(PeerSighting::Presence(presence(stale_dyn, old)), String::new(), 0)
-            .await;
+        st.record_sighting(
+            PeerSighting::Presence(presence(stale_dyn, old)),
+            String::new(),
+            0,
+        )
+        .await;
         let fresh_dyn = Uuid::new_v4();
-        st.record_sighting(PeerSighting::Presence(presence(fresh_dyn, now)), String::new(), 0)
-            .await;
+        st.record_sighting(
+            PeerSighting::Presence(presence(fresh_dyn, now)),
+            String::new(),
+            0,
+        )
+        .await;
         let stale_manual = Uuid::new_v4();
         insert_peer_for_test(&st, stale_manual, old, peer::DiscoveryMode::ManualIp, "", 0).await;
 
@@ -1180,8 +1194,15 @@ mod tests {
         // Manual/static peer — never heartbeats, so staleness can't apply
         // even though its synthetic last_seen looks fresh.
         let manual = Uuid::new_v4();
-        insert_peer_for_test(&st, manual, old, peer::DiscoveryMode::ManualIp, "10.0.0.4", 9000)
-            .await;
+        insert_peer_for_test(
+            &st,
+            manual,
+            old,
+            peer::DiscoveryMode::ManualIp,
+            "10.0.0.4",
+            9000,
+        )
+        .await;
 
         let offline = st.offline_addresses(heartbeat_secs).await;
         assert!(offline.contains(&"10.0.0.1:9000".parse().unwrap()));
