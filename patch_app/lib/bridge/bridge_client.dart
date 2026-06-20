@@ -567,7 +567,7 @@ class BridgeClient {
   Future<void> importLayout(String path) async {
     try {
       final s = await rust.importLayout(path: path);
-      _emit({'event': 'show_file_loaded', 'slug': s.slug, 'name': s.name, 'channel_count': s.channelCount});
+      _emit({'event': 'show_file_loaded', 'name': s.name, 'channel_count': s.channelCount});
     } catch (e) {
       _emitError(e);
     }
@@ -578,7 +578,6 @@ class BridgeClient {
       final s = await rust.loadShowFile(slug: slug);
       _emit({
         'event': 'show_file_loaded',
-        'slug': s.slug,
         'name': s.name,
         'channel_count': s.channelCount,
       });

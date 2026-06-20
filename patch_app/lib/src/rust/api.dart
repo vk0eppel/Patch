@@ -340,8 +340,9 @@ class ConfigSnapshot {
   final bool audibleAlert;
   final List<MacroMessage> globalMacros;
 
-  /// Presence heartbeat interval (seconds). The UI derives its peer
-  /// online/amber/grey dot thresholds from this.
+  /// Presence heartbeat interval (seconds). Editable in Settings; the
+  /// online/amber/grey dot thresholds derived from it live engine-side in
+  /// `Peer::status` (see `PeerSnapshot`), not in the UI.
   final int heartbeatIntervalSecs;
 
   /// True while `client_name` is still the system-seeded default — drives the
@@ -505,25 +506,19 @@ class PeerSnapshot {
 }
 
 class ShowFileLoaded {
-  final String slug;
   final String name;
   final int channelCount;
 
-  const ShowFileLoaded({
-    required this.slug,
-    required this.name,
-    required this.channelCount,
-  });
+  const ShowFileLoaded({required this.name, required this.channelCount});
 
   @override
-  int get hashCode => slug.hashCode ^ name.hashCode ^ channelCount.hashCode;
+  int get hashCode => name.hashCode ^ channelCount.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is ShowFileLoaded &&
           runtimeType == other.runtimeType &&
-          slug == other.slug &&
           name == other.name &&
           channelCount == other.channelCount;
 }

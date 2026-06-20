@@ -2246,12 +2246,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ShowFileLoaded dco_decode_show_file_loaded(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
     return ShowFileLoaded(
-      slug: dco_decode_String(arr[0]),
-      name: dco_decode_String(arr[1]),
-      channelCount: dco_decode_u_32(arr[2]),
+      name: dco_decode_String(arr[0]),
+      channelCount: dco_decode_u_32(arr[1]),
     );
   }
 
@@ -2847,14 +2846,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   ShowFileLoaded sse_decode_show_file_loaded(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_slug = sse_decode_String(deserializer);
     var var_name = sse_decode_String(deserializer);
     var var_channelCount = sse_decode_u_32(deserializer);
-    return ShowFileLoaded(
-      slug: var_slug,
-      name: var_name,
-      channelCount: var_channelCount,
-    );
+    return ShowFileLoaded(name: var_name, channelCount: var_channelCount);
   }
 
   @protected
@@ -3370,7 +3364,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(self.slug, serializer);
     sse_encode_String(self.name, serializer);
     sse_encode_u_32(self.channelCount, serializer);
   }

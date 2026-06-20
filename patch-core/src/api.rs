@@ -884,7 +884,6 @@ pub struct ShowFileSaved {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShowFileLoaded {
-    pub slug: String,
     pub name: String,
     pub channel_count: u32,
 }
@@ -926,25 +925,18 @@ pub async fn import_layout(path: String) -> Result<ShowFileLoaded> {
     let sf: ShowFileConfig = toml::from_str(&raw)?;
     let name = sf.name.clone();
     let channel_count = sf.channels.len() as u32;
-    let slug = std::path::Path::new(&path)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .map(show_file::slugify)
-        .unwrap_or_else(|| show_file::slugify(&name));
     engine()
         .state
         .apply_show_file_full(sf.channels, sf.static_peers)
         .await?;
     Ok(ShowFileLoaded {
-        slug,
         name,
         channel_count,
     })
 }
 
 pub async fn load_show_file(slug: String) -> Result<ShowFileLoaded> {
-    let load_slug = slug.clone();
-    let sf = tokio::task::spawn_blocking(move || show_file::load_show_file(&load_slug)).await??;
+    let sf = tokio::task::spawn_blocking(move || show_file::load_show_file(&slug)).await??;
     let name = sf.name.clone();
     let channel_count = sf.channels.len() as u32;
     engine()
@@ -952,7 +944,6 @@ pub async fn load_show_file(slug: String) -> Result<ShowFileLoaded> {
         .apply_show_file_full(sf.channels, sf.static_peers)
         .await?;
     Ok(ShowFileLoaded {
-        slug,
         name,
         channel_count,
     })
