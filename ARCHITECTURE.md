@@ -70,6 +70,8 @@ Peers never auto-expire. Liveness classification (`Peer::status` in `state/peer.
 
 **mDNS liveness rule:** a `PeerSighting::Mdns` sighting sets address+port but never updates `last_seen`. New mDNS-only peers are inserted already-stale (backdated 60 s). Reason: `mdns-sd` replays cached resolutions for ~1–2 min after a peer quits, so bumping `last_seen` there kept departed peers green past the heartbeat window and undid `/patch/bye` expiry.
 
+**An empty `address` (`pick_resolved_address` returning `None` — pinned interface, unresolved subnet) must never overwrite a peer's address, for an already-known peer *or* a brand-new one.** `record_sighting`'s `Mdns` arm applies the same `if !address.is_empty()` guard in both its `Some` and `None` branches — a brand-new peer with no resolved address keeps `Peer::from_presence`'s empty-address default rather than getting one explicitly set, so `has_address()`/`socket_addr()` read it as unreachable instead of address == `""`.
+
 Self-discovery is filtered in two places: mDNS `ServiceResolved` and every `handle_event` arm that registers a sender both call the shared `state::is_self(id, client_id)` predicate (named so the rule is grep-able instead of an inline `==` that looks safe to drop — see ERRORS.md). Both call sites are necessary.
 
 New peers seen outside the presence heartbeat (a `Message`/`Flash`/DM arriving before any `/patch/presence`, e.g. under AP isolation) go through a `PeerSighting::Heartbeat` sighting, which creates a minimal entry (role/channels unknown until a presence heartbeat arrives) if the peer isn't already known, or just refreshes its address/last_seen if it is.

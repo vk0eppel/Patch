@@ -494,8 +494,15 @@ impl AppState {
                     None => {
                         let mut new_peer = peer::Peer::from_presence(presence.clone());
                         new_peer.discovery_mode = peer::DiscoveryMode::Mdns;
-                        new_peer.address = address;
-                        new_peer.osc_port = port;
+                        // Same rule as the `Some` branch above: an unresolved pinned
+                        // subnet means `address` is empty — leave the peer with no
+                        // address (its `from_presence` default) rather than store an
+                        // empty one, so `Peer::has_address`/`socket_addr` correctly
+                        // read it as unreachable instead of address == "".
+                        if !address.is_empty() {
+                            new_peer.address = address;
+                            new_peer.osc_port = port;
+                        }
                         // Backdate past the UI's stale threshold so the dot starts grey.
                         new_peer.last_seen = chrono::Utc::now() - chrono::Duration::seconds(60);
                         peers.insert(presence.peer_id, new_peer);
@@ -1762,6 +1769,30 @@ mod tests {
             .unwrap();
         assert_eq!(p.address, "10.0.0.3");
         assert!(p.is_stale(35)); // grey until a real OSC packet arrives
+    }
+
+    #[tokio::test]
+    async fn mdns_only_peer_with_unresolved_address_has_no_address() {
+        // Mirrors `mdns_resolution_does_not_refresh_liveness`'s known-peer guard
+        // (state/mod.rs's `Mdns` arm, `Some` branch): an empty address — e.g.
+        // `pick_resolved_address` returning `None` for a pinned interface whose
+        // subnet didn't resolve — must not be stored, for a brand-new peer too.
+        let st = test_state();
+        let pid = Uuid::new_v4();
+        st.record_sighting(
+            PeerSighting::Mdns(presence(pid, chrono::Utc::now())),
+            String::new(),
+            0,
+        )
+        .await;
+
+        let p = st
+            .get_peers()
+            .await
+            .into_iter()
+            .find(|p| p.peer_id == pid)
+            .unwrap();
+        assert!(!p.has_address());
     }
 
     #[tokio::test]
