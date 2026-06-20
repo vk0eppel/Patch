@@ -98,8 +98,6 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Macros shown on every channel (configured once); fired on the currently-
   /// selected channel(s). Sourced from the engine config via `getConfig`.
   List<MacroMessage> _globalMacros = [];
-  /// Presence heartbeat interval (s) from config — drives the peer dot thresholds.
-  int _heartbeatSecs = 7;
   /// Delivery status for criticals we've sent, keyed by message id.
   final DeliveryTracker _delivery = DeliveryTracker();
 
@@ -159,10 +157,10 @@ class _HomeScreenState extends State<HomeScreen> {
     return 'Unknown';
   }
 
-  /// Whether the open DM peer looks offline — no resolved address, or not heard
-  /// from within the peers-panel "offline" window (beyond 5× the heartbeat, the
-  /// same threshold as the grey dot). DMs are best-effort with no delivery
-  /// receipt, so we warn before one that probably won't arrive.
+  /// Whether the open DM peer looks offline — no resolved address, or its
+  /// engine-classified status (`PeerInfo.status`, same source as the peers
+  /// panel's grey dot) has reached `offline`. DMs are best-effort with no
+  /// delivery receipt, so we warn before one that probably won't arrive.
   bool get _isDmPeerOffline {
     final id = _dmPeerId;
     if (id == null) return false;
@@ -170,8 +168,7 @@ class _HomeScreenState extends State<HomeScreen> {
         .cast<PeerInfo?>()
         .firstWhere((p) => p?.peerId == id, orElse: () => null);
     if (peer == null || peer.address.isEmpty) return true;
-    return DateTime.now().difference(peer.lastSeen).inSeconds >
-        _heartbeatSecs * 5;
+    return peer.status == PeerStatus.offline;
   }
 
   /// Warn (once) when a DM has just been sent to a peer that appears offline.
@@ -542,7 +539,6 @@ class _HomeScreenState extends State<HomeScreen> {
           _hideKeyboard = cfg.hideKeyboard;
           _audibleAlert = cfg.audibleAlert;
           _globalMacros = cfg.globalMacros;
-          _heartbeatSecs = cfg.heartbeatIntervalSecs;
         });
         _maybeShowNamePrompt(
           nameIsDefault: cfg.nameIsDefault,
@@ -752,13 +748,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 child: PeersPanel(
                   peers: _peers,
-                  heartbeatSecs: _heartbeatSecs,
                   onClearStale: () => widget.bridge.clearStalePeers(),
                   onClose: () => setState(() => _showPeers = false),
                   onDm: _openDm,
                   unreadPeerIds: {
                     for (final k in _unreadDms) k.substring(3),
                   },
+                  onRefresh: () => widget.bridge.getPeers(),
                 ),
               ),
             ),

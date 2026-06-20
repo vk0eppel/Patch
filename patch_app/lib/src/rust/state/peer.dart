@@ -5,73 +5,7 @@
 
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
-import 'package:uuid/uuid.dart';
 
 enum DiscoveryMode { mdns, oscBeacon, manualIp }
 
-/// A discovered or manually-added peer on the network.
-class Peer {
-  final UuidValue peerId;
-  final String peerName;
-
-  /// Channels this peer is currently subscribed to.
-  final List<String> channels;
-
-  /// Optional self-assigned production role (free text, e.g. "FOH", "PM").
-  final String? role;
-
-  /// How we found this peer.
-  final DiscoveryMode discoveryMode;
-
-  /// IP address (v4 or v6).
-  final String address;
-
-  /// OSC UDP port.
-  final int oscPort;
-  final DateTime lastSeen;
-
-  /// True when the peer announced a clean departure (`/patch/bye` or mDNS
-  /// `ServiceRemoved`) — drives a distinct "left" treatment in the UI while
-  /// keeping the real `last_seen`. Cleared the moment a real OSC packet is
-  /// received again (`touch_peer_address`).
-  final bool departed;
-
-  const Peer({
-    required this.peerId,
-    required this.peerName,
-    required this.channels,
-    this.role,
-    required this.discoveryMode,
-    required this.address,
-    required this.oscPort,
-    required this.lastSeen,
-    required this.departed,
-  });
-
-  @override
-  int get hashCode =>
-      peerId.hashCode ^
-      peerName.hashCode ^
-      channels.hashCode ^
-      role.hashCode ^
-      discoveryMode.hashCode ^
-      address.hashCode ^
-      oscPort.hashCode ^
-      lastSeen.hashCode ^
-      departed.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is Peer &&
-          runtimeType == other.runtimeType &&
-          peerId == other.peerId &&
-          peerName == other.peerName &&
-          channels == other.channels &&
-          role == other.role &&
-          discoveryMode == other.discoveryMode &&
-          address == other.address &&
-          oscPort == other.oscPort &&
-          lastSeen == other.lastSeen &&
-          departed == other.departed;
-}
+enum PeerStatus { online, stale, offline }

@@ -62,54 +62,21 @@ void main() {
   });
 
   group('PeerInfo', () {
-    test('fromJson maps fields including discovery mode', () {
-      final p = PeerInfo.fromJson({
-        'peer_id': 'p1',
-        'peer_name': 'MON',
-        'channels': ['rf', 'audio'],
-        'address': '192.168.1.5',
-        'osc_port': 9000,
-        'last_seen': '2026-06-04T12:00:00Z',
-        'discovery_mode': 'mdns',
-      });
-      expect(p.peerName, 'MON');
-      expect(p.channels, ['rf', 'audio']);
-      expect(p.address, '192.168.1.5');
-      expect(p.oscPort, 9000);
-      expect(p.discoveryMode, 'mdns');
-    });
-
-    test('fromJson reads departed, defaulting to false when absent', () {
-      final live = PeerInfo.fromJson({
-        'peer_id': 'p1',
-        'peer_name': 'MON',
-        'channels': <String>[],
-        'osc_port': 9000,
-        'last_seen': '2026-06-04T12:00:00Z',
-      });
-      expect(live.departed, isFalse);
-
-      final gone = PeerInfo.fromJson({
-        'peer_id': 'p1',
-        'peer_name': 'MON',
-        'channels': <String>[],
-        'osc_port': 9000,
-        'last_seen': '2026-06-04T12:00:00Z',
-        'departed': true,
-      });
-      expect(gone.departed, isTrue);
-    });
-
-    test('fromJson defaults a missing address and discovery mode', () {
-      final p = PeerInfo.fromJson({
-        'peer_id': 'p1',
-        'peer_name': 'MON',
-        'channels': <String>[],
-        'osc_port': 9000,
-        'last_seen': '2026-06-04T12:00:00Z',
-      });
-      expect(p.address, '');
-      expect(p.discoveryMode, 'unknown');
+    // PeerInfo is constructed directly from the bridge (bridge_client.dart's
+    // _peerFromRust), not parsed from a raw map — these just pin down the
+    // constructor's defaults.
+    test('departed defaults to false', () {
+      final p = PeerInfo(
+        peerId: 'p1',
+        peerName: 'MON',
+        channels: const [],
+        address: '',
+        oscPort: 9000,
+        lastSeen: DateTime.parse('2026-06-04T12:00:00Z'),
+        discoveryMode: 'mdns',
+        status: PeerStatus.online,
+      );
+      expect(p.departed, isFalse);
     });
   });
 

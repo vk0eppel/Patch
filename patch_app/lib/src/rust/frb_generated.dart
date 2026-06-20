@@ -129,7 +129,7 @@ abstract class RustLibApi extends BaseApi {
 
   Future<List<String>> crateApiGetMidiPorts();
 
-  Future<List<Peer>> crateApiGetPeers();
+  Future<List<PeerSnapshot>> crateApiGetPeers();
 
   Future<ShowFileLoaded> crateApiImportLayout({required String path});
 
@@ -710,7 +710,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "get_midi_ports", argNames: []);
 
   @override
-  Future<List<Peer>> crateApiGetPeers() {
+  Future<List<PeerSnapshot>> crateApiGetPeers() {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
@@ -723,7 +723,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_list_peer,
+          decodeSuccessData: sse_decode_list_peer_snapshot,
           decodeErrorData: null,
         ),
         constMeta: kCrateApiGetPeersConstMeta,
@@ -2050,9 +2050,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  List<Peer> dco_decode_list_peer(dynamic raw) {
+  List<PeerSnapshot> dco_decode_list_peer_snapshot(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
-    return (raw as List<dynamic>).map(dco_decode_peer).toList();
+    return (raw as List<dynamic>).map(dco_decode_peer_snapshot).toList();
   }
 
   @protected
@@ -2196,25 +2196,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  Peer dco_decode_peer(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 9)
-      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
-    return Peer(
-      peerId: dco_decode_Uuid(arr[0]),
-      peerName: dco_decode_String(arr[1]),
-      channels: dco_decode_list_String(arr[2]),
-      role: dco_decode_opt_String(arr[3]),
-      discoveryMode: dco_decode_discovery_mode(arr[4]),
-      address: dco_decode_String(arr[5]),
-      oscPort: dco_decode_u_16(arr[6]),
-      lastSeen: dco_decode_Chrono_Utc(arr[7]),
-      departed: dco_decode_bool(arr[8]),
-    );
-  }
-
-  @protected
   PeerPresence dco_decode_peer_presence(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -2227,6 +2208,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       role: dco_decode_opt_String(arr[3]),
       timestamp: dco_decode_Chrono_Utc(arr[4]),
     );
+  }
+
+  @protected
+  PeerSnapshot dco_decode_peer_snapshot(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    return PeerSnapshot(
+      peerId: dco_decode_Uuid(arr[0]),
+      peerName: dco_decode_String(arr[1]),
+      channels: dco_decode_list_String(arr[2]),
+      role: dco_decode_opt_String(arr[3]),
+      discoveryMode: dco_decode_discovery_mode(arr[4]),
+      address: dco_decode_String(arr[5]),
+      oscPort: dco_decode_u_16(arr[6]),
+      lastSeen: dco_decode_Chrono_Utc(arr[7]),
+      departed: dco_decode_bool(arr[8]),
+      status: dco_decode_peer_status(arr[9]),
+    );
+  }
+
+  @protected
+  PeerStatus dco_decode_peer_status(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return PeerStatus.values[raw as int];
   }
 
   @protected
@@ -2570,13 +2577,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  List<Peer> sse_decode_list_peer(SseDeserializer deserializer) {
+  List<PeerSnapshot> sse_decode_list_peer_snapshot(
+    SseDeserializer deserializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
     var len_ = sse_decode_i_32(deserializer);
-    var ans_ = <Peer>[];
+    var ans_ = <PeerSnapshot>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
-      ans_.add(sse_decode_peer(deserializer));
+      ans_.add(sse_decode_peer_snapshot(deserializer));
     }
     return ans_;
   }
@@ -2778,31 +2787,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  Peer sse_decode_peer(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_peerId = sse_decode_Uuid(deserializer);
-    var var_peerName = sse_decode_String(deserializer);
-    var var_channels = sse_decode_list_String(deserializer);
-    var var_role = sse_decode_opt_String(deserializer);
-    var var_discoveryMode = sse_decode_discovery_mode(deserializer);
-    var var_address = sse_decode_String(deserializer);
-    var var_oscPort = sse_decode_u_16(deserializer);
-    var var_lastSeen = sse_decode_Chrono_Utc(deserializer);
-    var var_departed = sse_decode_bool(deserializer);
-    return Peer(
-      peerId: var_peerId,
-      peerName: var_peerName,
-      channels: var_channels,
-      role: var_role,
-      discoveryMode: var_discoveryMode,
-      address: var_address,
-      oscPort: var_oscPort,
-      lastSeen: var_lastSeen,
-      departed: var_departed,
-    );
-  }
-
-  @protected
   PeerPresence sse_decode_peer_presence(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_peerId = sse_decode_Uuid(deserializer);
@@ -2817,6 +2801,40 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       role: var_role,
       timestamp: var_timestamp,
     );
+  }
+
+  @protected
+  PeerSnapshot sse_decode_peer_snapshot(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_peerId = sse_decode_Uuid(deserializer);
+    var var_peerName = sse_decode_String(deserializer);
+    var var_channels = sse_decode_list_String(deserializer);
+    var var_role = sse_decode_opt_String(deserializer);
+    var var_discoveryMode = sse_decode_discovery_mode(deserializer);
+    var var_address = sse_decode_String(deserializer);
+    var var_oscPort = sse_decode_u_16(deserializer);
+    var var_lastSeen = sse_decode_Chrono_Utc(deserializer);
+    var var_departed = sse_decode_bool(deserializer);
+    var var_status = sse_decode_peer_status(deserializer);
+    return PeerSnapshot(
+      peerId: var_peerId,
+      peerName: var_peerName,
+      channels: var_channels,
+      role: var_role,
+      discoveryMode: var_discoveryMode,
+      address: var_address,
+      oscPort: var_oscPort,
+      lastSeen: var_lastSeen,
+      departed: var_departed,
+      status: var_status,
+    );
+  }
+
+  @protected
+  PeerStatus sse_decode_peer_status(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return PeerStatus.values[inner];
   }
 
   @protected
@@ -3129,11 +3147,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_list_peer(List<Peer> self, SseSerializer serializer) {
+  void sse_encode_list_peer_snapshot(
+    List<PeerSnapshot> self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
-      sse_encode_peer(item, serializer);
+      sse_encode_peer_snapshot(item, serializer);
     }
   }
 
@@ -3307,7 +3328,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_peer(Peer self, SseSerializer serializer) {
+  void sse_encode_peer_presence(PeerPresence self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_Uuid(self.peerId, serializer);
+    sse_encode_String(self.peerName, serializer);
+    sse_encode_list_String(self.channels, serializer);
+    sse_encode_opt_String(self.role, serializer);
+    sse_encode_Chrono_Utc(self.timestamp, serializer);
+  }
+
+  @protected
+  void sse_encode_peer_snapshot(PeerSnapshot self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_Uuid(self.peerId, serializer);
     sse_encode_String(self.peerName, serializer);
@@ -3318,16 +3349,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_16(self.oscPort, serializer);
     sse_encode_Chrono_Utc(self.lastSeen, serializer);
     sse_encode_bool(self.departed, serializer);
+    sse_encode_peer_status(self.status, serializer);
   }
 
   @protected
-  void sse_encode_peer_presence(PeerPresence self, SseSerializer serializer) {
+  void sse_encode_peer_status(PeerStatus self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_Uuid(self.peerId, serializer);
-    sse_encode_String(self.peerName, serializer);
-    sse_encode_list_String(self.channels, serializer);
-    sse_encode_opt_String(self.role, serializer);
-    sse_encode_Chrono_Utc(self.timestamp, serializer);
+    sse_encode_i_32(self.index, serializer);
   }
 
   @protected

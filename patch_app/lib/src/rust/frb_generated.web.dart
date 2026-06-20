@@ -102,7 +102,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<PatchMessage> dco_decode_list_patch_message(dynamic raw);
 
   @protected
-  List<Peer> dco_decode_list_peer(dynamic raw);
+  List<PeerSnapshot> dco_decode_list_peer_snapshot(dynamic raw);
 
   @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
@@ -138,10 +138,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PatchMessage dco_decode_patch_message(dynamic raw);
 
   @protected
-  Peer dco_decode_peer(dynamic raw);
+  PeerPresence dco_decode_peer_presence(dynamic raw);
 
   @protected
-  PeerPresence dco_decode_peer_presence(dynamic raw);
+  PeerSnapshot dco_decode_peer_snapshot(dynamic raw);
+
+  @protected
+  PeerStatus dco_decode_peer_status(dynamic raw);
 
   @protected
   Priority dco_decode_priority(dynamic raw);
@@ -263,7 +266,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  List<Peer> sse_decode_list_peer(SseDeserializer deserializer);
+  List<PeerSnapshot> sse_decode_list_peer_snapshot(
+    SseDeserializer deserializer,
+  );
 
   @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
@@ -303,10 +308,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PatchMessage sse_decode_patch_message(SseDeserializer deserializer);
 
   @protected
-  Peer sse_decode_peer(SseDeserializer deserializer);
+  PeerPresence sse_decode_peer_presence(SseDeserializer deserializer);
 
   @protected
-  PeerPresence sse_decode_peer_presence(SseDeserializer deserializer);
+  PeerSnapshot sse_decode_peer_snapshot(SseDeserializer deserializer);
+
+  @protected
+  PeerStatus sse_decode_peer_status(SseDeserializer deserializer);
 
   @protected
   Priority sse_decode_priority(SseDeserializer deserializer);
@@ -444,7 +452,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_list_peer(List<Peer> self, SseSerializer serializer);
+  void sse_encode_list_peer_snapshot(
+    List<PeerSnapshot> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_prim_u_8_strict(
@@ -492,10 +503,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_patch_message(PatchMessage self, SseSerializer serializer);
 
   @protected
-  void sse_encode_peer(Peer self, SseSerializer serializer);
+  void sse_encode_peer_presence(PeerPresence self, SseSerializer serializer);
 
   @protected
-  void sse_encode_peer_presence(PeerPresence self, SseSerializer serializer);
+  void sse_encode_peer_snapshot(PeerSnapshot self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_peer_status(PeerStatus self, SseSerializer serializer);
 
   @protected
   void sse_encode_priority(Priority self, SseSerializer serializer);

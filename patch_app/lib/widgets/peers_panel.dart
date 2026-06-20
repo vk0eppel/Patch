@@ -6,15 +6,15 @@ import '../theme/patch_theme.dart';
 
 /// Collapsible right panel showing online peers.
 ///
-/// Rebuilds every 3 s so dot colours and the "last seen" counter (both based on
-/// DateTime.now()) stay accurate without waiting for an external event to
-/// trigger a Flutter rebuild.
+/// Each peer's dot colour comes straight from `PeerInfo.status` — classified
+/// engine-side (`Peer::status`) against the configured heartbeat interval, not
+/// recomputed here. A peer that goes quiet with no new packets won't trigger a
+/// `peer_updated` event on its own, so this still polls — every 3 s while the
+/// panel is visible, it asks the parent to re-fetch peers via [onRefresh]
+/// (wired to `bridge.getPeers()`) so a quiet peer's status ages from
+/// online → stale → offline even without fresh traffic.
 class PeersPanel extends StatefulWidget {
   final List<PeerInfo> peers;
-
-  /// Presence heartbeat interval (s) — the dot thresholds derive from it
-  /// (healthy ≤ 2×, amber ≤ 5×) so they track the configured interval.
-  final int heartbeatSecs;
 
   final VoidCallback? onClearStale;
   final VoidCallback? onClose;
@@ -27,14 +27,18 @@ class PeersPanel extends StatefulWidget {
   /// Peer ids that have an unread DM — shown as a dot on the peer row.
   final Set<String> unreadPeerIds;
 
+  /// Called every 3 s while this panel is mounted, so the caller can re-fetch
+  /// peers and keep status dots current. No-op if omitted (e.g. in tests).
+  final VoidCallback? onRefresh;
+
   const PeersPanel({
     super.key,
     required this.peers,
-    this.heartbeatSecs = 7,
     this.onClearStale,
     this.onClose,
     this.onDm,
     this.unreadPeerIds = const {},
+    this.onRefresh,
   });
 
   @override
@@ -47,9 +51,8 @@ class _PeersPanelState extends State<PeersPanel> {
   @override
   void initState() {
     super.initState();
-    // 3 s so the per-peer "last seen" counter stays visibly current.
     _ticker = Timer.periodic(const Duration(seconds: 3), (_) {
-      if (mounted) setState(() {});
+      widget.onRefresh?.call();
     });
   }
 
@@ -106,7 +109,6 @@ class _PeersPanelState extends State<PeersPanel> {
                     itemCount: widget.peers.length,
                     itemBuilder: (ctx, i) => _PeerTile(
                       peer: widget.peers[i],
-                      heartbeatSecs: widget.heartbeatSecs,
                       onDm: widget.onDm,
                       isUnread: widget.unreadPeerIds.contains(widget.peers[i].peerId),
                     ),
@@ -147,34 +149,23 @@ const String _kDotLegend =
 
 class _PeerTile extends StatelessWidget {
   final PeerInfo peer;
-  final int heartbeatSecs;
   final ValueChanged<String>? onDm;
   final bool isUnread;
 
   const _PeerTile({
     required this.peer,
-    required this.heartbeatSecs,
     this.onDm,
     this.isUnread = false,
   });
 
-  int get _healthySecs => heartbeatSecs * 2;
-  int get _staleSecs => heartbeatSecs * 5;
-
   bool get _isManual =>
       peer.discoveryMode == 'manual_ip' || peer.discoveryMode == 'ManualIp';
 
-  Color get _dotColor {
-    // A clean departure ('/patch/bye' / mDNS removal) reads grey regardless of
-    // the still-recent last_seen — the italic name distinguishes it from a peer
-    // that merely went quiet.
-    if (peer.departed) return PatchTheme.textMuted;
-    if (_isManual) return PatchTheme.textMuted;
-    final age = DateTime.now().difference(peer.lastSeen).inSeconds;
-    if (age <= _healthySecs) return PatchTheme.success;
-    if (age <= _staleSecs) return PatchTheme.warning;
-    return PatchTheme.textMuted;
-  }
+  Color get _dotColor => switch (peer.status) {
+        PeerStatus.online => PatchTheme.success,
+        PeerStatus.stale => PatchTheme.warning,
+        PeerStatus.offline => PatchTheme.textMuted,
+      };
 
   @override
   Widget build(BuildContext context) {

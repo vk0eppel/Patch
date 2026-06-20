@@ -20,6 +20,7 @@ Finder _dotsWithColor(Color c) => find.byWidgetPredicate(
 PeerInfo _peer({
   required String name,
   required String mode,
+  PeerStatus status = PeerStatus.online,
   Duration seenAgo = Duration.zero,
   String address = '192.168.1.5',
   List<String> channels = const [],
@@ -35,6 +36,7 @@ PeerInfo _peer({
       oscPort: 9000,
       lastSeen: DateTime.now().subtract(seenAgo),
       discoveryMode: mode,
+      status: status,
       departed: departed,
     );
 
@@ -81,7 +83,7 @@ void main() {
 
   testWidgets('dot is amber when a heartbeat or more has been missed', (tester) async {
     await tester.pumpWidget(
-      _host([_peer(name: 'MON', mode: 'osc_beacon', seenAgo: const Duration(seconds: 20))]),
+      _host([_peer(name: 'MON', mode: 'osc_beacon', status: PeerStatus.stale)]),
     );
     expect(_dotsWithColor(PatchTheme.warning), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
@@ -101,8 +103,8 @@ void main() {
   testWidgets('dot is green when healthy, gray when stale or manual', (tester) async {
     await tester.pumpWidget(_host([
       _peer(name: 'FOH', mode: 'mdns'), // fresh → green
-      _peer(name: 'Old', mode: 'osc_beacon', seenAgo: const Duration(seconds: 90)), // stale → gray
-      _peer(name: 'Booth', mode: 'manual_ip'), // configured → gray
+      _peer(name: 'Old', mode: 'osc_beacon', status: PeerStatus.offline), // quiet → gray
+      _peer(name: 'Booth', mode: 'manual_ip', status: PeerStatus.offline), // configured → gray
     ]));
     expect(_dotsWithColor(PatchTheme.success), findsOneWidget);
     expect(_dotsWithColor(PatchTheme.textMuted), findsNWidgets(2));
@@ -112,7 +114,7 @@ void main() {
   testWidgets('departed peer: gray dot despite a recent last_seen', (tester) async {
     // Heard from just now, but it announced a clean departure → still gray.
     await tester.pumpWidget(
-      _host([_peer(name: 'Gone', mode: 'osc_beacon', departed: true)]),
+      _host([_peer(name: 'Gone', mode: 'osc_beacon', departed: true, status: PeerStatus.offline)]),
     );
     expect(_dotsWithColor(PatchTheme.success), findsNothing);
     expect(_dotsWithColor(PatchTheme.textMuted), findsOneWidget);

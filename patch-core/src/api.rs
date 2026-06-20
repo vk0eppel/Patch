@@ -27,7 +27,7 @@ use crate::osc::types::{ChannelFlash, PatchMessage, Priority};
 use crate::reliability::ReliabilityManager;
 use crate::state::channel::{Channel, MacroMessage, OscTarget};
 use crate::state::show_file::{self, ShowFileConfig, ShowFileMeta};
-use crate::state::{config::StaticPeer, AppEvent, AppState, Config};
+use crate::state::{config::StaticPeer, peer, AppEvent, AppState, Config};
 use crate::transport::{list_interfaces, InterfaceInfo, Transport};
 
 // ── Engine handle (singleton) ────────────────────────────────────────────────
@@ -390,8 +390,43 @@ pub async fn get_channels() -> Vec<Channel> {
     engine().state.get_channels().await
 }
 
-pub async fn get_peers() -> Vec<crate::state::peer::Peer> {
-    engine().state.get_peers().await
+/// A [`crate::state::peer::Peer`] plus its display [`PeerStatus`] (Online /
+/// Stale / Offline), computed against the configured heartbeat interval so
+/// the UI never has to re-derive the staleness thresholds itself.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerSnapshot {
+    pub peer_id: Uuid,
+    pub peer_name: String,
+    pub channels: Vec<String>,
+    pub role: Option<String>,
+    pub discovery_mode: peer::DiscoveryMode,
+    pub address: String,
+    pub osc_port: u16,
+    pub last_seen: chrono::DateTime<chrono::Utc>,
+    pub departed: bool,
+    pub status: peer::PeerStatus,
+}
+
+pub async fn get_peers() -> Vec<PeerSnapshot> {
+    let h = engine();
+    let heartbeat_secs = h.state.config().await.heartbeat_interval_secs;
+    h.state
+        .get_peers()
+        .await
+        .into_iter()
+        .map(|p| PeerSnapshot {
+            status: p.status(heartbeat_secs),
+            peer_id: p.peer_id,
+            peer_name: p.peer_name,
+            channels: p.channels,
+            role: p.role,
+            discovery_mode: p.discovery_mode,
+            address: p.address,
+            osc_port: p.osc_port,
+            last_seen: p.last_seen,
+            departed: p.departed,
+        })
+        .collect()
 }
 
 pub async fn get_messages(channel_id: String, limit: u32) -> Vec<PatchMessage> {
@@ -427,8 +462,9 @@ pub struct ConfigSnapshot {
     pub hide_keyboard: bool,
     pub audible_alert: bool,
     pub global_macros: Vec<MacroMessage>,
-    /// Presence heartbeat interval (seconds). The UI derives its peer
-    /// online/amber/grey dot thresholds from this.
+    /// Presence heartbeat interval (seconds). Editable in Settings; the
+    /// online/amber/grey dot thresholds derived from it live engine-side in
+    /// `Peer::status` (see `PeerSnapshot`), not in the UI.
     pub heartbeat_interval_secs: u32,
     /// True while `client_name` is still the system-seeded default — drives the
     /// first-run "set your name" prompt in the UI.

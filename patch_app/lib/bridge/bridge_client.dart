@@ -802,7 +802,7 @@ PatchMessage _messageFromRust(rust_osc.PatchMessage m) => PatchMessage(
       payload: m.payload,
     );
 
-PeerInfo _peerFromRust(rust_peer.Peer p) => PeerInfo(
+PeerInfo _peerFromRust(rust.PeerSnapshot p) => PeerInfo(
       peerId: p.peerId.toString(),
       peerName: p.peerName,
       role: p.role,
@@ -815,6 +815,11 @@ PeerInfo _peerFromRust(rust_peer.Peer p) => PeerInfo(
         rust_peer.DiscoveryMode.mdns => 'mdns',
         rust_peer.DiscoveryMode.oscBeacon => 'osc_beacon',
         rust_peer.DiscoveryMode.manualIp => 'manual_ip',
+      },
+      status: switch (p.status) {
+        rust_peer.PeerStatus.online => PeerStatus.online,
+        rust_peer.PeerStatus.stale => PeerStatus.stale,
+        rust_peer.PeerStatus.offline => PeerStatus.offline,
       },
     );
 

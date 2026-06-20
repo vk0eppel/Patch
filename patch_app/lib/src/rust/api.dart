@@ -15,9 +15,9 @@ import 'state/show_file.dart';
 import 'transport.dart';
 part 'api.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `csv_escape`, `dispatch_message`, `dispatch_osc`, `init_tracing`, `resolve_peer_names`, `validate_osc`
+// These functions are ignored because they are not marked as `pub`: `csv_escape`, `dispatch_message`, `dispatch_osc`, `init_tracing`, `validate_osc`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `EngineHandle`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `engine`
 
 /// Initialize the engine. Idempotent — subsequent calls are no-ops.
@@ -86,7 +86,8 @@ Future<void> shutdown() => RustLib.instance.api.crateApiShutdown();
 Future<List<Channel>> getChannels() =>
     RustLib.instance.api.crateApiGetChannels();
 
-Future<List<Peer>> getPeers() => RustLib.instance.api.crateApiGetPeers();
+Future<List<PeerSnapshot>> getPeers() =>
+    RustLib.instance.api.crateApiGetPeers();
 
 Future<List<PatchMessage>> getMessages({
   required String channelId,
@@ -443,6 +444,64 @@ sealed class PatchAppEvent with _$PatchAppEvent {
   /// The OS denied network access (iOS/macOS Local Network permission).
   const factory PatchAppEvent.permissionDenied({required String context}) =
       PatchAppEvent_PermissionDenied;
+}
+
+/// A [`crate::state::peer::Peer`] plus its display [`PeerStatus`] (Online /
+/// Stale / Offline), computed against the configured heartbeat interval so
+/// the UI never has to re-derive the staleness thresholds itself.
+class PeerSnapshot {
+  final UuidValue peerId;
+  final String peerName;
+  final List<String> channels;
+  final String? role;
+  final DiscoveryMode discoveryMode;
+  final String address;
+  final int oscPort;
+  final DateTime lastSeen;
+  final bool departed;
+  final PeerStatus status;
+
+  const PeerSnapshot({
+    required this.peerId,
+    required this.peerName,
+    required this.channels,
+    this.role,
+    required this.discoveryMode,
+    required this.address,
+    required this.oscPort,
+    required this.lastSeen,
+    required this.departed,
+    required this.status,
+  });
+
+  @override
+  int get hashCode =>
+      peerId.hashCode ^
+      peerName.hashCode ^
+      channels.hashCode ^
+      role.hashCode ^
+      discoveryMode.hashCode ^
+      address.hashCode ^
+      oscPort.hashCode ^
+      lastSeen.hashCode ^
+      departed.hashCode ^
+      status.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PeerSnapshot &&
+          runtimeType == other.runtimeType &&
+          peerId == other.peerId &&
+          peerName == other.peerName &&
+          channels == other.channels &&
+          role == other.role &&
+          discoveryMode == other.discoveryMode &&
+          address == other.address &&
+          oscPort == other.oscPort &&
+          lastSeen == other.lastSeen &&
+          departed == other.departed &&
+          status == other.status;
 }
 
 class ShowFileLoaded {

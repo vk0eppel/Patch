@@ -91,6 +91,33 @@ impl Peer {
         }
         self.is_stale(heartbeat_secs.saturating_mul(5) as i64)
     }
+
+    /// Three-way liveness classification for display (peers panel dot,
+    /// DM-offline warning): `Online` (healthy, ≤2x heartbeat), `Stale`
+    /// (heartbeat missed but not yet written off, ≤5x), or `Offline`
+    /// (departed, quiet past 5x, or a `ManualIp` static peer — which never
+    /// heartbeats, so it can't read as healthy even though `looks_offline`
+    /// exempts it from the ACK-skip rule for a different reason: best-effort
+    /// sends to it should never be skipped just because it's quiet).
+    pub fn status(&self, heartbeat_secs: u64) -> PeerStatus {
+        if self.departed || matches!(self.discovery_mode, DiscoveryMode::ManualIp) {
+            return PeerStatus::Offline;
+        }
+        if self.is_stale(heartbeat_secs.saturating_mul(5) as i64) {
+            PeerStatus::Offline
+        } else if self.is_stale(heartbeat_secs.saturating_mul(2) as i64) {
+            PeerStatus::Stale
+        } else {
+            PeerStatus::Online
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PeerStatus {
+    Online,
+    Stale,
+    Offline,
 }
 
 #[cfg(test)]
@@ -135,5 +162,40 @@ mod tests {
         let old = Utc::now() - chrono::Duration::seconds(36000);
         let p = peer_at(old, DiscoveryMode::ManualIp);
         assert!(!p.looks_offline(7));
+    }
+
+    #[test]
+    fn status_departed_is_offline_regardless_of_last_seen() {
+        let mut p = peer_at(Utc::now(), DiscoveryMode::OscBeacon);
+        p.departed = true;
+        assert_eq!(p.status(7), PeerStatus::Offline);
+    }
+
+    #[test]
+    fn status_manual_peer_is_always_offline() {
+        // Manual peers never heartbeat, so they can't read as healthy even
+        // though `looks_offline` exempts them from the ACK-skip rule.
+        let p = peer_at(Utc::now(), DiscoveryMode::ManualIp);
+        assert_eq!(p.status(7), PeerStatus::Offline);
+    }
+
+    #[test]
+    fn status_recently_seen_is_online() {
+        let p = peer_at(Utc::now(), DiscoveryMode::OscBeacon);
+        assert_eq!(p.status(7), PeerStatus::Online);
+    }
+
+    #[test]
+    fn status_quiet_past_2x_but_within_5x_is_stale() {
+        let old = Utc::now() - chrono::Duration::seconds(20);
+        let p = peer_at(old, DiscoveryMode::OscBeacon); // 2x=14s, 5x=35s
+        assert_eq!(p.status(7), PeerStatus::Stale);
+    }
+
+    #[test]
+    fn status_quiet_past_5x_is_offline() {
+        let old = Utc::now() - chrono::Duration::seconds(36);
+        let p = peer_at(old, DiscoveryMode::OscBeacon);
+        assert_eq!(p.status(7), PeerStatus::Offline);
     }
 }

@@ -84,6 +84,11 @@ class ShowFileMeta {
       );
 }
 
+/// Online/Stale/Offline mirrors `patch_core::state::peer::PeerStatus` — the
+/// engine owns the heartbeat-multiplier thresholds (2x/5x) behind this
+/// classification so the UI never re-derives them from raw `lastSeen`.
+enum PeerStatus { online, stale, offline }
+
 class PeerInfo {
   final String peerId;
   final String peerName;
@@ -95,6 +100,7 @@ class PeerInfo {
   final int oscPort;
   final DateTime lastSeen;
   final String discoveryMode;
+  final PeerStatus status;
 
   /// True when the peer announced a clean departure (`/patch/bye` or mDNS
   /// removal). Rendered distinctly (grey dot + italic name); cleared the moment
@@ -110,18 +116,7 @@ class PeerInfo {
     required this.oscPort,
     required this.lastSeen,
     required this.discoveryMode,
+    required this.status,
     this.departed = false,
   });
-
-  factory PeerInfo.fromJson(Map<String, dynamic> j) => PeerInfo(
-        peerId: j['peer_id'] as String,
-        peerName: j['peer_name'] as String,
-        role: j['role'] as String?,
-        channels: List<String>.from(j['channels'] as List),
-        address: j['address'] as String? ?? '',
-        oscPort: (j['osc_port'] as num).toInt(),
-        lastSeen: DateTime.parse(j['last_seen'] as String),
-        discoveryMode: j['discovery_mode'] as String? ?? 'unknown',
-        departed: j['departed'] as bool? ?? false,
-      );
 }

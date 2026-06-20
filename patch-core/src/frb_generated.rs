@@ -2173,13 +2173,13 @@ impl SseDecode for Vec<crate::osc::types::PatchMessage> {
     }
 }
 
-impl SseDecode for Vec<crate::state::peer::Peer> {
+impl SseDecode for Vec<crate::api::PeerSnapshot> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut len_ = <i32>::sse_decode(deserializer);
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
-            ans_.push(<crate::state::peer::Peer>::sse_decode(deserializer));
+            ans_.push(<crate::api::PeerSnapshot>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -2403,32 +2403,6 @@ impl SseDecode for crate::osc::types::PatchMessage {
     }
 }
 
-impl SseDecode for crate::state::peer::Peer {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_peerId = <uuid::Uuid>::sse_decode(deserializer);
-        let mut var_peerName = <String>::sse_decode(deserializer);
-        let mut var_channels = <Vec<String>>::sse_decode(deserializer);
-        let mut var_role = <Option<String>>::sse_decode(deserializer);
-        let mut var_discoveryMode = <crate::state::peer::DiscoveryMode>::sse_decode(deserializer);
-        let mut var_address = <String>::sse_decode(deserializer);
-        let mut var_oscPort = <u16>::sse_decode(deserializer);
-        let mut var_lastSeen = <chrono::DateTime<chrono::Utc>>::sse_decode(deserializer);
-        let mut var_departed = <bool>::sse_decode(deserializer);
-        return crate::state::peer::Peer {
-            peer_id: var_peerId,
-            peer_name: var_peerName,
-            channels: var_channels,
-            role: var_role,
-            discovery_mode: var_discoveryMode,
-            address: var_address,
-            osc_port: var_oscPort,
-            last_seen: var_lastSeen,
-            departed: var_departed,
-        };
-    }
-}
-
 impl SseDecode for crate::osc::types::PeerPresence {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2443,6 +2417,47 @@ impl SseDecode for crate::osc::types::PeerPresence {
             channels: var_channels,
             role: var_role,
             timestamp: var_timestamp,
+        };
+    }
+}
+
+impl SseDecode for crate::api::PeerSnapshot {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_peerId = <uuid::Uuid>::sse_decode(deserializer);
+        let mut var_peerName = <String>::sse_decode(deserializer);
+        let mut var_channels = <Vec<String>>::sse_decode(deserializer);
+        let mut var_role = <Option<String>>::sse_decode(deserializer);
+        let mut var_discoveryMode = <crate::state::peer::DiscoveryMode>::sse_decode(deserializer);
+        let mut var_address = <String>::sse_decode(deserializer);
+        let mut var_oscPort = <u16>::sse_decode(deserializer);
+        let mut var_lastSeen = <chrono::DateTime<chrono::Utc>>::sse_decode(deserializer);
+        let mut var_departed = <bool>::sse_decode(deserializer);
+        let mut var_status = <crate::state::peer::PeerStatus>::sse_decode(deserializer);
+        return crate::api::PeerSnapshot {
+            peer_id: var_peerId,
+            peer_name: var_peerName,
+            channels: var_channels,
+            role: var_role,
+            discovery_mode: var_discoveryMode,
+            address: var_address,
+            osc_port: var_oscPort,
+            last_seen: var_lastSeen,
+            departed: var_departed,
+            status: var_status,
+        };
+    }
+}
+
+impl SseDecode for crate::state::peer::PeerStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::state::peer::PeerStatus::Online,
+            1 => crate::state::peer::PeerStatus::Stale,
+            2 => crate::state::peer::PeerStatus::Offline,
+            _ => unreachable!("Invalid variant for PeerStatus: {}", inner),
         };
     }
 }
@@ -2900,29 +2915,6 @@ impl flutter_rust_bridge::IntoIntoDart<crate::osc::types::PatchMessage>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::state::peer::Peer {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.peer_id.into_into_dart().into_dart(),
-            self.peer_name.into_into_dart().into_dart(),
-            self.channels.into_into_dart().into_dart(),
-            self.role.into_into_dart().into_dart(),
-            self.discovery_mode.into_into_dart().into_dart(),
-            self.address.into_into_dart().into_dart(),
-            self.osc_port.into_into_dart().into_dart(),
-            self.last_seen.into_into_dart().into_dart(),
-            self.departed.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::state::peer::Peer {}
-impl flutter_rust_bridge::IntoIntoDart<crate::state::peer::Peer> for crate::state::peer::Peer {
-    fn into_into_dart(self) -> crate::state::peer::Peer {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::osc::types::PeerPresence {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -2943,6 +2935,52 @@ impl flutter_rust_bridge::IntoIntoDart<crate::osc::types::PeerPresence>
     for crate::osc::types::PeerPresence
 {
     fn into_into_dart(self) -> crate::osc::types::PeerPresence {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::PeerSnapshot {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.peer_id.into_into_dart().into_dart(),
+            self.peer_name.into_into_dart().into_dart(),
+            self.channels.into_into_dart().into_dart(),
+            self.role.into_into_dart().into_dart(),
+            self.discovery_mode.into_into_dart().into_dart(),
+            self.address.into_into_dart().into_dart(),
+            self.osc_port.into_into_dart().into_dart(),
+            self.last_seen.into_into_dart().into_dart(),
+            self.departed.into_into_dart().into_dart(),
+            self.status.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::PeerSnapshot {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::PeerSnapshot> for crate::api::PeerSnapshot {
+    fn into_into_dart(self) -> crate::api::PeerSnapshot {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::state::peer::PeerStatus {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Online => 0.into_dart(),
+            Self::Stale => 1.into_dart(),
+            Self::Offline => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::state::peer::PeerStatus
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::state::peer::PeerStatus>
+    for crate::state::peer::PeerStatus
+{
+    fn into_into_dart(self) -> crate::state::peer::PeerStatus {
         self
     }
 }
@@ -3220,12 +3258,12 @@ impl SseEncode for Vec<crate::osc::types::PatchMessage> {
     }
 }
 
-impl SseEncode for Vec<crate::state::peer::Peer> {
+impl SseEncode for Vec<crate::api::PeerSnapshot> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
-            <crate::state::peer::Peer>::sse_encode(item, serializer);
+            <crate::api::PeerSnapshot>::sse_encode(item, serializer);
         }
     }
 }
@@ -3406,7 +3444,18 @@ impl SseEncode for crate::osc::types::PatchMessage {
     }
 }
 
-impl SseEncode for crate::state::peer::Peer {
+impl SseEncode for crate::osc::types::PeerPresence {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <uuid::Uuid>::sse_encode(self.peer_id, serializer);
+        <String>::sse_encode(self.peer_name, serializer);
+        <Vec<String>>::sse_encode(self.channels, serializer);
+        <Option<String>>::sse_encode(self.role, serializer);
+        <chrono::DateTime<chrono::Utc>>::sse_encode(self.timestamp, serializer);
+    }
+}
+
+impl SseEncode for crate::api::PeerSnapshot {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <uuid::Uuid>::sse_encode(self.peer_id, serializer);
@@ -3418,17 +3467,24 @@ impl SseEncode for crate::state::peer::Peer {
         <u16>::sse_encode(self.osc_port, serializer);
         <chrono::DateTime<chrono::Utc>>::sse_encode(self.last_seen, serializer);
         <bool>::sse_encode(self.departed, serializer);
+        <crate::state::peer::PeerStatus>::sse_encode(self.status, serializer);
     }
 }
 
-impl SseEncode for crate::osc::types::PeerPresence {
+impl SseEncode for crate::state::peer::PeerStatus {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <uuid::Uuid>::sse_encode(self.peer_id, serializer);
-        <String>::sse_encode(self.peer_name, serializer);
-        <Vec<String>>::sse_encode(self.channels, serializer);
-        <Option<String>>::sse_encode(self.role, serializer);
-        <chrono::DateTime<chrono::Utc>>::sse_encode(self.timestamp, serializer);
+        <i32>::sse_encode(
+            match self {
+                crate::state::peer::PeerStatus::Online => 0,
+                crate::state::peer::PeerStatus::Stale => 1,
+                crate::state::peer::PeerStatus::Offline => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 
