@@ -7,6 +7,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
 import '../models/config.dart';
+import '../models/message.dart';
 import '../theme/patch_theme.dart';
 import '../widgets/bounded_int_field.dart';
 import '../widgets/interface_picker.dart';
@@ -60,7 +61,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   List<StaticPeerInfo> _staticPeers = [];
 
   // Live peers (for "import channels from a peer")
-  List<Map<String, dynamic>> _peers = [];
+  List<PeerInfo> _peers = [];
 
   /// True between sending a channels request and receiving the offer, so an
   /// unsolicited `channels_offered` (a peer announcing without us asking) is
@@ -97,8 +98,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final type = event['event'] as String?;
     switch (type) {
       case 'config':
-        final cfg =
-            AppConfig.fromJson(event['data'] as Map<String, dynamic>);
+        final cfg = event['data'] as AppConfig;
         setState(() {
           _nameCtrl.text = cfg.clientName;
           _roleCtrl.text = cfg.role ?? '';
@@ -137,27 +137,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
           if (mounted) setState(() => _nameSaved = false);
         });
       case 'channels':
-        final data = event['data'] as List<dynamic>;
+        final data = event['data'] as List<PatchChannel>;
         setState(() {
-          _channels = data
-              .map((c) => PatchChannel.fromJson(c as Map<String, dynamic>))
-              .toList();
+          _channels = data;
         });
       case 'channel_list_updated':
         widget.bridge.getChannels();
       case 'peers':
-        final data = event['data'] as List<dynamic>;
+        final data = event['data'] as List<PeerInfo>;
         setState(() {
-          _peers = List<Map<String, dynamic>>.from(
-            data.map((p) => Map<String, dynamic>.from(p as Map)),
-          );
+          _peers = data;
         });
       case 'channels_offered':
         if (!_awaitingOffer) break; // ignore unsolicited announces
         _awaitingOffer = false;
-        final channels = ((event['channels'] as List<dynamic>?) ?? [])
-            .map((c) => Map<String, dynamic>.from(c as Map))
-            .toList();
+        final channels =
+            (event['channels'] as List<dynamic>?)?.cast<PatchChannel>() ??
+                const <PatchChannel>[];
         final fromName = event['from_name'] as String? ?? 'peer';
         if (mounted) _showOfferDialog(fromName, channels);
       case 'channels_adopted':
@@ -196,11 +192,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// Pick a peer (with a resolved address) to request a channel layout from.
   void _showImportFromPeer() {
     widget.bridge.getPeers(); // refresh the list before showing it
-    final candidates = _peers
-        .where((p) =>
-            (p['address'] as String? ?? '').isNotEmpty &&
-            ((p['osc_port'] as num?)?.toInt() ?? 0) > 0)
-        .toList();
+    final candidates =
+        _peers.where((p) => p.address.isNotEmpty && p.oscPort > 0).toList();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -230,14 +223,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           dense: true,
                           contentPadding: EdgeInsets.zero,
                           leading: const Icon(Icons.person_outline, size: 18),
-                          title: Text(p['peer_name'] as String? ?? 'peer'),
-                          subtitle: Text(p['address'] as String? ?? ''),
+                          title: Text(p.peerName),
+                          subtitle: Text(p.address),
                           onTap: () {
                             Navigator.pop(ctx);
-                            _requestFromPeer(
-                              p['peer_id'] as String,
-                              p['peer_name'] as String? ?? 'peer',
-                            );
+                            _requestFromPeer(p.peerId, p.peerName);
                           },
                         )),
                   ],
@@ -270,11 +260,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   /// Preview a peer's offered channels and merge-adopt the ones we're missing.
-  void _showOfferDialog(String fromName, List<Map<String, dynamic>> channelMaps) {
+  void _showOfferDialog(String fromName, List<PatchChannel> channels) {
     final existing = _channels.map((c) => c.id).toSet();
-    final parsed =
-        channelMaps.map((m) => (map: m, ch: PatchChannel.fromJson(m))).toList();
-    final fresh = parsed.where((e) => !existing.contains(e.ch.id)).toList();
+    final fresh = channels.where((c) => !existing.contains(c.id)).toList();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -287,8 +275,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               Text(
                 fresh.isEmpty
-                    ? 'You already have all ${parsed.length} of their channels.'
-                    : '${fresh.length} new of ${parsed.length} will be added '
+                    ? 'You already have all ${channels.length} of their channels.'
+                    : '${fresh.length} new of ${channels.length} will be added '
                         '(existing channels are kept unchanged):',
                 style: const TextStyle(
                   color: PatchTheme.textSecondary,
@@ -296,8 +284,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              ...parsed.map((e) {
-                final isNew = !existing.contains(e.ch.id);
+              ...channels.map((c) {
+                final isNew = !existing.contains(c.id);
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 3),
                   child: Row(
@@ -306,14 +294,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         width: 10,
                         height: 10,
                         decoration: BoxDecoration(
-                          color: e.ch.color,
+                          color: c.color,
                           shape: BoxShape.circle,
                         ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          e.ch.displayName,
+                          c.displayName,
                           style: const TextStyle(color: PatchTheme.textPrimary),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -342,8 +330,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onPressed: fresh.isEmpty
                 ? null
                 : () {
-                    widget.bridge
-                        .adoptChannels(fresh.map((e) => e.map).toList());
+                    widget.bridge.adoptChannels(fresh);
                     Navigator.pop(ctx);
                   },
             child: Text(fresh.isEmpty ? 'Nothing to add' : 'Add ${fresh.length}'),

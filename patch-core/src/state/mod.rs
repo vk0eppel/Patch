@@ -108,6 +108,25 @@ pub fn is_self(id: Uuid, client_id: Uuid) -> bool {
     id == client_id
 }
 
+/// What kind of evidence a Peer sighting is — passed to
+/// [`AppState::record_sighting`], which applies the matching liveness/
+/// classification rule. Each call site reports the strongest evidence it
+/// actually has; the union of "every received packet" and "an mDNS
+/// resolution" is what builds up the peer registry.
+pub enum PeerSighting {
+    /// A full `/patch/presence` heartbeat — proves liveness and carries the
+    /// peer's current name/channels/role.
+    Presence(PeerPresence),
+    /// Any other received OSC packet naming a sender (`Message`/`Flash`/
+    /// `DirectMessage`/`DirectFlash`) — proves liveness, but carries nothing
+    /// beyond the sender's id and name.
+    Heartbeat { peer_id: Uuid, peer_name: String },
+    /// An mDNS resolution — gives an address to unicast to, but does **not**
+    /// prove current liveness: `mdns-sd` replays cached resolutions for
+    /// ~1–2 min after a peer quits (see ERRORS.md).
+    Mdns(PeerPresence),
+}
+
 impl AppState {
     pub fn new(config: Config) -> Self {
         let (tx, _) = broadcast::channel(256);
@@ -401,125 +420,100 @@ impl AppState {
 
     // ── Peers ─────────────────────────────────────────────────────────────────
 
-    /// Insert/update a peer discovered via the OSC presence beacon.
-    pub async fn upsert_peer(&self, presence: PeerPresence) {
-        self.upsert_peer_with_mode(presence, peer::DiscoveryMode::OscBeacon)
-            .await;
-    }
-
-    /// Insert/update a peer, classifying it with an explicit discovery mode.
-    /// Used by mDNS resolution (`DiscoveryMode::Mdns`) so the 🔍 icon shows.
-    pub async fn upsert_peer_with_mode(&self, presence: PeerPresence, mode: peer::DiscoveryMode) {
-        let mut peers = self.0.peers.write().await;
-        let mut new_peer = peer::Peer::from_presence(presence.clone());
-        new_peer.discovery_mode = mode;
-        // Preserve the transport-resolved address — touch_peer_address runs
-        // before upsert_peer in handle_event, and from_presence() would
-        // otherwise overwrite it with an empty string.
-        if let Some(existing) = peers.get(&presence.peer_id) {
-            if !existing.address.is_empty() {
-                new_peer.address = existing.address.clone();
-                new_peer.osc_port = existing.osc_port;
-            }
-            // Once a peer has been resolved via mDNS, keep that classification —
-            // a subsequent OSC presence heartbeat shouldn't downgrade the icon.
-            if matches!(existing.discovery_mode, peer::DiscoveryMode::Mdns) {
-                new_peer.discovery_mode = peer::DiscoveryMode::Mdns;
-            }
-        }
-        peers.insert(presence.peer_id, new_peer);
-        drop(peers);
-        self.publish(AppEvent::PeerUpdated(presence)).await;
-    }
-
-    /// Update the network address and `last_seen` of a known peer. Called from
-    /// transport on **received OSC packets** only (real liveness) — NOT from mDNS
-    /// resolution (see `resolve_peer_address`). Emits PeerUpdated so the Flutter
-    /// side refreshes the dot. No-op if the peer isn't in the registry yet — it
-    /// will be populated when their presence packet arrives.
-    pub async fn touch_peer_address(&self, peer_id: Uuid, address: String, port: u16) {
+    /// Records evidence that a [Peer] is out there. The single entry point for
+    /// "a Peer was seen" — each call carries the address it was seen at and
+    /// the kind of evidence it is, which determines the liveness/classification
+    /// rule applied (see each variant's doc comment). Replaces what used to be
+    /// four separate functions (`upsert_peer`, `upsert_peer_with_mode`,
+    /// `touch_peer_address`, `resolve_peer_address`), each covering a slice of
+    /// this and leaving a caller to pick the right one.
+    pub async fn record_sighting(&self, sighting: PeerSighting, address: String, port: u16) {
         let presence = {
             let mut peers = self.0.peers.write().await;
-            let Some(peer) = peers.get_mut(&peer_id) else {
-                return;
-            };
-            peer.address = address;
-            peer.osc_port = port;
-            peer.last_seen = chrono::Utc::now();
-            // A real OSC packet proves liveness — clear any prior departure.
-            peer.departed = false;
-            // Build a PeerPresence to carry through the event bus.
-            PeerPresence {
-                peer_id: peer.peer_id,
-                peer_name: peer.peer_name.clone(),
-                channels: peer.channels.clone(),
-                role: peer.role.clone(),
-                timestamp: peer.last_seen,
-            }
-        };
-        self.publish(AppEvent::PeerUpdated(presence)).await;
-    }
-
-    /// Register a peer the first time it's seen outside the presence
-    /// heartbeat — e.g. a `Message`/`Flash`/DM arriving before any
-    /// `/patch/presence` (AP isolation blocking broadcasts). No-op if the
-    /// peer is already known, so it never clobbers fields a real presence
-    /// heartbeat already filled in (role, channels). Collapses the
-    /// upsert_peer + touch_peer_address pair every such call site needs.
-    pub async fn register_if_unknown(
-        &self,
-        peer_id: Uuid,
-        peer_name: &str,
-        address: String,
-        port: u16,
-    ) {
-        if self.has_peer(peer_id).await {
-            return;
-        }
-        let presence = PeerPresence {
-            peer_id,
-            peer_name: peer_name.to_string(),
-            channels: Vec::new(),
-            role: None, // unknown until their presence heartbeat arrives
-            timestamp: chrono::Utc::now(),
-        };
-        self.upsert_peer(presence).await;
-        self.touch_peer_address(peer_id, address, port).await;
-    }
-
-    /// Record a peer's mDNS-resolved address **without** refreshing liveness.
-    ///
-    /// mDNS resolution can be replayed from a stale cache long after a peer has
-    /// quit, so it proves only that we have an address to unicast to — not that
-    /// the peer is currently up. Liveness (`last_seen`) must come solely from
-    /// real OSC traffic (`touch_peer_address`). So: a peer we already know keeps
-    /// its existing `last_seen` and just gets its address + `Mdns` classification
-    /// refreshed; a peer seen *only* via mDNS so far is inserted as already-stale
-    /// (grey) until an OSC packet greens it (≤ one heartbeat on a normal LAN).
-    /// Without this, repeated cached mDNS resolutions kept a departed peer green
-    /// until the mDNS record's TTL finally expired.
-    pub async fn resolve_peer_address(&self, presence: PeerPresence, address: String, port: u16) {
-        {
-            let mut peers = self.0.peers.write().await;
-            match peers.get_mut(&presence.peer_id) {
-                Some(peer) => {
-                    if !address.is_empty() {
-                        peer.address = address;
-                        peer.osc_port = port;
-                    }
-                    peer.discovery_mode = peer::DiscoveryMode::Mdns;
-                }
-                None => {
+            match sighting {
+                PeerSighting::Presence(presence) => {
                     let mut new_peer = peer::Peer::from_presence(presence.clone());
-                    new_peer.discovery_mode = peer::DiscoveryMode::Mdns;
+                    // Once a peer has been resolved via mDNS, keep that
+                    // classification — a subsequent OSC presence heartbeat
+                    // shouldn't downgrade the icon.
+                    if let Some(existing) = peers.get(&presence.peer_id) {
+                        if matches!(existing.discovery_mode, peer::DiscoveryMode::Mdns) {
+                            new_peer.discovery_mode = peer::DiscoveryMode::Mdns;
+                        }
+                    }
                     new_peer.address = address;
                     new_peer.osc_port = port;
-                    // Backdate past the UI's stale threshold so the dot starts grey.
-                    new_peer.last_seen = chrono::Utc::now() - chrono::Duration::seconds(60);
                     peers.insert(presence.peer_id, new_peer);
+                    presence
                 }
+                PeerSighting::Heartbeat { peer_id, peer_name } => match peers.get_mut(&peer_id) {
+                    Some(peer) => {
+                        peer.address = address;
+                        peer.osc_port = port;
+                        peer.last_seen = chrono::Utc::now();
+                        // A real OSC packet proves liveness — clear any prior departure.
+                        peer.departed = false;
+                        PeerPresence {
+                            peer_id: peer.peer_id,
+                            peer_name: peer.peer_name.clone(),
+                            channels: peer.channels.clone(),
+                            role: peer.role.clone(),
+                            timestamp: peer.last_seen,
+                        }
+                    }
+                    None => {
+                        // Seen for the first time outside the presence heartbeat
+                        // — e.g. a Message/Flash/DM arriving before any
+                        // `/patch/presence` (AP isolation blocking broadcasts).
+                        // Role/channels stay unknown until their presence
+                        // heartbeat arrives.
+                        let presence = PeerPresence {
+                            peer_id,
+                            peer_name,
+                            channels: Vec::new(),
+                            role: None,
+                            timestamp: chrono::Utc::now(),
+                        };
+                        let mut new_peer = peer::Peer::from_presence(presence.clone());
+                        new_peer.address = address;
+                        new_peer.osc_port = port;
+                        peers.insert(peer_id, new_peer);
+                        presence
+                    }
+                },
+                PeerSighting::Mdns(presence) => match peers.get_mut(&presence.peer_id) {
+                    Some(peer) => {
+                        // mDNS resolution can be replayed from a stale cache long
+                        // after a peer has quit, so it proves only that we have an
+                        // address to unicast to — not that the peer is currently
+                        // up. Liveness (`last_seen`) comes solely from a
+                        // `Heartbeat`/`Presence` sighting, never from here.
+                        if !address.is_empty() {
+                            peer.address = address;
+                            peer.osc_port = port;
+                        }
+                        peer.discovery_mode = peer::DiscoveryMode::Mdns;
+                        PeerPresence {
+                            peer_id: peer.peer_id,
+                            peer_name: peer.peer_name.clone(),
+                            channels: peer.channels.clone(),
+                            role: peer.role.clone(),
+                            timestamp: peer.last_seen,
+                        }
+                    }
+                    None => {
+                        let mut new_peer = peer::Peer::from_presence(presence.clone());
+                        new_peer.discovery_mode = peer::DiscoveryMode::Mdns;
+                        new_peer.address = address;
+                        new_peer.osc_port = port;
+                        // Backdate past the UI's stale threshold so the dot starts grey.
+                        new_peer.last_seen = chrono::Utc::now() - chrono::Duration::seconds(60);
+                        peers.insert(presence.peer_id, new_peer);
+                        presence
+                    }
+                },
             }
-        }
+        };
         self.publish(AppEvent::PeerUpdated(presence)).await;
     }
 
@@ -562,8 +556,9 @@ impl AppState {
     /// `ServiceRemoved`). Sets the `departed` flag — which the UI renders as a
     /// distinct "left" treatment — while **keeping the real `last_seen`**, so a
     /// clean departure is told apart from a peer that merely went quiet. A
-    /// reconnect (any received OSC packet) clears `departed` via
-    /// `touch_peer_address`. No-op if the peer isn't currently known.
+    /// reconnect (any received OSC packet) clears `departed` via a
+    /// `PeerSighting::Presence`/`Heartbeat` sighting. No-op if the peer isn't
+    /// currently known.
     pub async fn mark_peer_offline(&self, peer_id: Uuid) {
         let presence = {
             let mut peers = self.0.peers.write().await;
@@ -699,12 +694,8 @@ impl AppState {
         static_peers: Vec<config::StaticPeer>,
     ) -> anyhow::Result<()> {
         for ch in &channels {
-            if !crate::osc::codec::valid_channel_id(&ch.id) {
-                anyhow::bail!(
-                    "show file contains invalid channel id {:?} — use only lowercase letters, digits, _ or - (≤64 chars)",
-                    ch.id
-                );
-            }
+            channel::validate_channel_id(&ch.id)
+                .map_err(|e| anyhow::anyhow!("show file contains invalid channel id {:?} — {}", ch.id, e))?;
         }
         let mut validated_peers: Vec<config::StaticPeer> = Vec::with_capacity(static_peers.len());
         let mut seen: HashSet<(String, u16)> = HashSet::new();
@@ -769,8 +760,8 @@ impl AppState {
         {
             let mut map = self.0.channels.write().await;
             for mut ch in channels {
-                if ch.id == "__all__" || !crate::osc::codec::valid_channel_id(&ch.id) {
-                    tracing::warn!("merge_channels: skipping invalid/reserved id {:?}", ch.id);
+                if let Err(e) = channel::validate_channel_id(&ch.id) {
+                    tracing::warn!("merge_channels: skipping invalid/reserved id {:?}: {}", ch.id, e);
                     continue;
                 }
                 if map.contains_key(&ch.id) {
@@ -799,12 +790,8 @@ impl AppState {
         // verbatim in `/patch/channel/{id}/...` on the next send. Reject the whole
         // show file atomically so a single bad entry can't half-apply.
         for ch in &channels {
-            if !crate::osc::codec::valid_channel_id(&ch.id) {
-                anyhow::bail!(
-                    "show file contains invalid channel id {:?} — use only lowercase letters, digits, _ or - (≤64 chars)",
-                    ch.id
-                );
-            }
+            channel::validate_channel_id(&ch.id)
+                .map_err(|e| anyhow::anyhow!("show file contains invalid channel id {:?} — {}", ch.id, e))?;
         }
         {
             let mut ch_map = self.0.channels.write().await;
@@ -1007,6 +994,47 @@ mod tests {
         }
     }
 
+    /// Test-only: directly inserts a peer with an explicit `DiscoveryMode`,
+    /// bypassing `record_sighting`. There's no real `PeerSighting` for
+    /// `ManualIp` — that classification is only ever synthesized by
+    /// `get_peers()` from `config.static_peers`, never observed on the wire —
+    /// so fixtures that need a `ManualIp` peer already in `self.0.peers` (to
+    /// test the staleness-exemption rule itself, not how peers normally get
+    /// there) go around `record_sighting` on purpose.
+    async fn insert_peer_for_test(
+        st: &AppState,
+        id: Uuid,
+        last_seen: chrono::DateTime<chrono::Utc>,
+        mode: peer::DiscoveryMode,
+        address: &str,
+        port: u16,
+    ) {
+        let mut peers = st.0.peers.write().await;
+        let mut p = peer::Peer::from_presence(presence(id, last_seen));
+        p.discovery_mode = mode;
+        p.address = address.to_string();
+        p.osc_port = port;
+        peers.insert(id, p);
+    }
+
+    /// Test-only: builds a `Channel` with a deliberately illegal id, bypassing
+    /// `Channel::new`'s validation. Stands in for how an illegal id actually
+    /// reaches this code in production — not via the constructor at all, but
+    /// via `serde::Deserialize` on untrusted input (a show file, a peer's
+    /// `channels_announce`) — which is exactly why `apply_show_file`/
+    /// `apply_show_file_full`/`merge_channels` each still validate explicitly.
+    fn invalid_channel(id: &str, display_name: &str, color: &str) -> channel::Channel {
+        channel::Channel {
+            id: id.to_string(),
+            display_name: display_name.to_string(),
+            color: color.to_string(),
+            macros: Vec::new(),
+            flash_on_critical: true,
+            flash_on_message: false,
+            flash_count: None,
+        }
+    }
+
     #[tokio::test]
     async fn store_message_dedups_by_id() {
         let st = test_state();
@@ -1093,9 +1121,12 @@ mod tests {
             ..Config::default()
         });
         let pid = Uuid::new_v4();
-        st.upsert_peer(presence(pid, chrono::Utc::now())).await;
-        st.touch_peer_address(pid, "192.168.1.50".into(), 9000)
-            .await;
+        st.record_sighting(
+            PeerSighting::Presence(presence(pid, chrono::Utc::now())),
+            "192.168.1.50".into(),
+            9000,
+        )
+        .await;
         let peers = st.get_peers().await;
         assert_eq!(peers.len(), 1); // no synthetic duplicate
         assert_eq!(peers[0].peer_id, pid);
@@ -1108,12 +1139,13 @@ mod tests {
         let now = chrono::Utc::now();
 
         let stale_dyn = Uuid::new_v4();
-        st.upsert_peer(presence(stale_dyn, old)).await;
-        let fresh_dyn = Uuid::new_v4();
-        st.upsert_peer(presence(fresh_dyn, now)).await;
-        let stale_manual = Uuid::new_v4();
-        st.upsert_peer_with_mode(presence(stale_manual, old), peer::DiscoveryMode::ManualIp)
+        st.record_sighting(PeerSighting::Presence(presence(stale_dyn, old)), String::new(), 0)
             .await;
+        let fresh_dyn = Uuid::new_v4();
+        st.record_sighting(PeerSighting::Presence(presence(fresh_dyn, now)), String::new(), 0)
+            .await;
+        let stale_manual = Uuid::new_v4();
+        insert_peer_for_test(&st, stale_manual, old, peer::DiscoveryMode::ManualIp, "", 0).await;
 
         let removed = st.clear_stale_peers(60).await;
         assert_eq!(removed, vec![stale_dyn]); // only the stale dynamic one
@@ -1131,37 +1163,43 @@ mod tests {
 
         // Departed (clean bye) — offline regardless of last_seen recency.
         let departed = Uuid::new_v4();
-        st.upsert_peer(presence(departed, chrono::Utc::now())).await;
-        st.touch_peer_address(departed, "10.0.0.1".into(), 9000)
-            .await;
+        st.record_sighting(
+            PeerSighting::Presence(presence(departed, chrono::Utc::now())),
+            "10.0.0.1".into(),
+            9000,
+        )
+        .await;
         st.mark_peer_offline(departed).await;
 
-        // Quiet well past 5x the heartbeat — offline. Set the address
-        // directly rather than via `touch_peer_address`, which always
-        // refreshes `last_seen` to now (true to how a peer that's gone
-        // quiet would actually look: heard from, with a resolved address,
-        // a long time ago — and nothing since).
+        // Quiet well past 5x the heartbeat — offline. A Presence sighting
+        // honours the presence's own (old) timestamp rather than forcing
+        // `now()`, so the address can be set in the same call without also
+        // refreshing `last_seen` — true to how a peer that's gone quiet would
+        // actually look: heard from, with a resolved address, a long time
+        // ago, and nothing since.
         let stale = Uuid::new_v4();
         let old = chrono::Utc::now() - chrono::Duration::seconds(3600);
-        st.upsert_peer(presence(stale, old)).await;
-        {
-            let mut peers = st.0.peers.write().await;
-            let p = peers.get_mut(&stale).unwrap();
-            p.address = "10.0.0.2".into();
-            p.osc_port = 9000;
-        }
+        st.record_sighting(
+            PeerSighting::Presence(presence(stale, old)),
+            "10.0.0.2".into(),
+            9000,
+        )
+        .await;
 
         // Heard from recently — still online.
         let fresh = Uuid::new_v4();
-        st.upsert_peer(presence(fresh, chrono::Utc::now())).await;
-        st.touch_peer_address(fresh, "10.0.0.3".into(), 9000).await;
+        st.record_sighting(
+            PeerSighting::Presence(presence(fresh, chrono::Utc::now())),
+            "10.0.0.3".into(),
+            9000,
+        )
+        .await;
 
         // Manual/static peer — never heartbeats, so staleness can't apply
         // even though its synthetic last_seen looks fresh.
         let manual = Uuid::new_v4();
-        st.upsert_peer_with_mode(presence(manual, old), peer::DiscoveryMode::ManualIp)
+        insert_peer_for_test(&st, manual, old, peer::DiscoveryMode::ManualIp, "10.0.0.4", 9000)
             .await;
-        st.touch_peer_address(manual, "10.0.0.4".into(), 9000).await;
 
         let offline = st.offline_addresses(heartbeat_secs).await;
         assert!(offline.contains(&"10.0.0.1:9000".parse().unwrap()));
@@ -1187,49 +1225,79 @@ mod tests {
             client_id,
             ..Config::default()
         });
-        st.upsert_peer(presence(dynamic, chrono::Utc::now())).await;
-        st.touch_peer_address(dynamic, "10.0.0.5".into(), 9000)
-            .await;
+        st.record_sighting(
+            PeerSighting::Presence(presence(dynamic, chrono::Utc::now())),
+            "10.0.0.5".into(),
+            9000,
+        )
+        .await;
 
         // A peer with no address yet (presence not yet resolved) is excluded.
         let unaddressed = Uuid::new_v4();
-        st.upsert_peer(presence(unaddressed, chrono::Utc::now()))
-            .await;
+        st.record_sighting(
+            PeerSighting::Presence(presence(unaddressed, chrono::Utc::now())),
+            String::new(),
+            0,
+        )
+        .await;
 
         // Ourselves, if we somehow ended up in the registry, must be excluded.
-        st.upsert_peer(presence(client_id, chrono::Utc::now()))
-            .await;
-        st.touch_peer_address(client_id, "10.0.0.9".into(), 9000)
-            .await;
+        st.record_sighting(
+            PeerSighting::Presence(presence(client_id, chrono::Utc::now())),
+            "10.0.0.9".into(),
+            9000,
+        )
+        .await;
 
         let targets = st.reachable_peer_addrs(client_id).await;
         assert_eq!(targets, vec!["10.0.0.5:9000".parse().unwrap()]);
     }
 
     #[tokio::test]
-    async fn register_if_unknown_is_noop_for_a_peer_already_known() {
+    async fn heartbeat_sighting_refreshes_address_for_a_known_peer() {
         let st = test_state();
         let id = Uuid::new_v4();
-        st.upsert_peer(presence(id, chrono::Utc::now())).await;
-        st.touch_peer_address(id, "10.0.0.1".into(), 9000).await;
+        st.record_sighting(
+            PeerSighting::Presence(presence(id, chrono::Utc::now())),
+            "10.0.0.1".into(),
+            9000,
+        )
+        .await;
 
-        // A later auto-register call (e.g. from a Message arriving from a
-        // different address) must not clobber the address already on file.
-        st.register_if_unknown(id, "someone-else", "10.0.0.2".into(), 9001)
-            .await;
+        // A later Heartbeat sighting (e.g. a Message arriving from a
+        // different address — a reconnect over a different NIC/VPN) updates
+        // the address. This single call now also covers what the deleted
+        // generic per-packet `touch_peer_address` used to do for every event
+        // in `transport::handle_event` before this peer was registered.
+        st.record_sighting(
+            PeerSighting::Heartbeat {
+                peer_id: id,
+                peer_name: "someone-else".into(),
+            },
+            "10.0.0.2".into(),
+            9001,
+        )
+        .await;
 
         let peers = st.get_peers().await;
         assert_eq!(peers.len(), 1);
-        assert_eq!(peers[0].address, "10.0.0.1");
-        assert_eq!(peers[0].osc_port, 9000);
+        assert_eq!(peers[0].address, "10.0.0.2");
+        assert_eq!(peers[0].osc_port, 9001);
     }
 
     #[tokio::test]
-    async fn register_if_unknown_registers_and_addresses_a_new_peer() {
+    async fn heartbeat_sighting_registers_a_new_peer() {
         let st = test_state();
         let id = Uuid::new_v4();
-        st.register_if_unknown(id, "newcomer", "10.0.0.3".into(), 9002)
-            .await;
+        st.record_sighting(
+            PeerSighting::Heartbeat {
+                peer_id: id,
+                peer_name: "newcomer".into(),
+            },
+            "10.0.0.3".into(),
+            9002,
+        )
+        .await;
 
         let peers = st.get_peers().await;
         assert_eq!(peers.len(), 1);
@@ -1248,7 +1316,7 @@ mod tests {
         config::set_data_dir(dir.clone());
 
         let st = test_state();
-        let mut ch = Channel::new("rf", "RF", "#1E88E5");
+        let mut ch = Channel::new("rf", "RF", "#1E88E5").unwrap();
         ch.macros = ["a", "b", "c"]
             .iter()
             .map(|l| MacroMessage {
@@ -1473,7 +1541,7 @@ mod tests {
             ..Config::default()
         });
 
-        let channels = vec![channel::Channel::new("rf", "RF", "#1E88E5")];
+        let channels = vec![channel::Channel::new("rf", "RF", "#1E88E5").unwrap()];
         let show_file_peers = vec![
             config::StaticPeer {
                 address: "10.0.0.10".into(),
@@ -1527,7 +1595,7 @@ mod tests {
 
         let st = test_state();
         // Pre-existing channel with a distinctive colour we must NOT overwrite.
-        let mut existing = Channel::new("rf", "RF", "#000000");
+        let mut existing = Channel::new("rf", "RF", "#000000").unwrap();
         existing.macros = vec![channel::MacroMessage {
             label: "KEEP".into(),
             payload: "keep".into(),
@@ -1541,7 +1609,7 @@ mod tests {
 
         // An incoming channel that carries the source's behavioural flags — these
         // must NOT be inherited (reset to this machine's defaults on adopt).
-        let mut hot = Channel::new("audio", "AUDIO", "#E53935");
+        let mut hot = Channel::new("audio", "AUDIO", "#E53935").unwrap();
         hot.flash_on_message = true; // source had "flash on every message"
         hot.flash_on_critical = false;
         hot.flash_count = Some(7);
@@ -1549,13 +1617,16 @@ mod tests {
         let added = st
             .merge_channels(vec![
                 // Same id as existing — must be skipped (colour/macros preserved).
-                Channel::new("rf", "RF NEW", "#FFFFFF"),
+                Channel::new("rf", "RF NEW", "#FFFFFF").unwrap(),
                 // New — added (but with flash flags normalised, see below).
                 hot,
-                // Reserved id — skipped.
-                Channel::new("__all__", "ALL", "#fff"),
+                // Reserved id — skipped. `Channel::new` now rejects this id
+                // outright, so the fixture is built by hand (a deserialized
+                // show file / channels_announce Channel bypasses `new` the same
+                // way — that's exactly the untrusted input this test stands in for).
+                invalid_channel("__all__", "ALL", "#fff"),
                 // OSC-unsafe id — skipped.
-                Channel::new("BAD/../x", "BAD", "#fff"),
+                invalid_channel("BAD/../x", "BAD", "#fff"),
             ])
             .await
             .unwrap();
@@ -1594,7 +1665,7 @@ mod tests {
 
         // Merging the same set again adds nothing.
         let again = st
-            .merge_channels(vec![Channel::new("audio", "AUDIO", "#E53935")])
+            .merge_channels(vec![Channel::new("audio", "AUDIO", "#E53935").unwrap()])
             .await
             .unwrap();
         assert_eq!(again, 0);
@@ -1608,11 +1679,36 @@ mod tests {
         // A crafted/hand-edited show file with an OSC-unsafe id must be rejected
         // wholesale — and must not partially apply (the valid channel alongside
         // it should not be inserted either).
-        let bad = channel::Channel::new("RF/../x", "RF", "#1E88E5");
-        let good = channel::Channel::new("audio", "AUDIO", "#E53935");
+        let bad = invalid_channel("RF/../x", "RF", "#1E88E5");
+        let good = channel::Channel::new("audio", "AUDIO", "#E53935").unwrap();
         // Validation runs before any mutation, so the call errors and never
         // clears/persists — the good channel beside the bad one isn't applied.
         assert!(st.apply_show_file(vec![good, bad]).await.is_err());
+        assert!(st.get_channels().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn apply_show_file_rejects_reserved_all_id() {
+        let st = test_state();
+        // A show file is untrusted input — it could name a channel "__all__"
+        // (the reserved broadcast id), which apply_show_file used to accept
+        // because its loop only checked the OSC slug pattern, not reservation
+        // (api::upsert_channel and merge_channels already checked both).
+        let reserved = invalid_channel("__all__", "ALL", "#fff");
+        assert!(st.apply_show_file(vec![reserved]).await.is_err());
+        assert!(st.get_channels().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn apply_show_file_full_rejects_reserved_all_id() {
+        let st = test_state();
+        // Same gap as apply_show_file, in the load/import path that also
+        // restores static peers.
+        let reserved = invalid_channel("__all__", "ALL", "#fff");
+        assert!(st
+            .apply_show_file_full(vec![reserved], Vec::new())
+            .await
+            .is_err());
         assert!(st.get_channels().await.is_empty());
     }
 
@@ -1622,11 +1718,15 @@ mod tests {
         let pid = Uuid::new_v4();
         let old = chrono::Utc::now() - chrono::Duration::seconds(120);
         // Known peer, last actually heard (via OSC) 120 s ago — stale.
-        st.upsert_peer_with_mode(presence(pid, old), peer::DiscoveryMode::OscBeacon)
+        st.record_sighting(PeerSighting::Presence(presence(pid, old)), String::new(), 0)
             .await;
         // A cached mDNS record re-resolves it with an address.
-        st.resolve_peer_address(presence(pid, chrono::Utc::now()), "10.0.0.2".into(), 9000)
-            .await;
+        st.record_sighting(
+            PeerSighting::Mdns(presence(pid, chrono::Utc::now())),
+            "10.0.0.2".into(),
+            9000,
+        )
+        .await;
 
         let p = st
             .get_peers()
@@ -1644,8 +1744,12 @@ mod tests {
         let st = test_state();
         let pid = Uuid::new_v4();
         // First (and only) contact is mDNS — no OSC liveness yet.
-        st.resolve_peer_address(presence(pid, chrono::Utc::now()), "10.0.0.3".into(), 9000)
-            .await;
+        st.record_sighting(
+            PeerSighting::Mdns(presence(pid, chrono::Utc::now())),
+            "10.0.0.3".into(),
+            9000,
+        )
+        .await;
 
         let p = st
             .get_peers()
@@ -1662,8 +1766,12 @@ mod tests {
         let st = test_state();
         let pid = Uuid::new_v4();
         // A live peer (heard just now, with an address).
-        st.upsert_peer(presence(pid, chrono::Utc::now())).await;
-        st.touch_peer_address(pid, "10.0.0.4".into(), 9000).await;
+        st.record_sighting(
+            PeerSighting::Presence(presence(pid, chrono::Utc::now())),
+            "10.0.0.4".into(),
+            9000,
+        )
+        .await;
         // Graceful departure (e.g. /patch/bye or mDNS ServiceRemoved).
         st.mark_peer_offline(pid).await;
 
@@ -1681,11 +1789,23 @@ mod tests {
     async fn received_packet_clears_departed() {
         let st = test_state();
         let pid = Uuid::new_v4();
-        st.upsert_peer(presence(pid, chrono::Utc::now())).await;
-        st.touch_peer_address(pid, "10.0.0.4".into(), 9000).await;
+        st.record_sighting(
+            PeerSighting::Presence(presence(pid, chrono::Utc::now())),
+            "10.0.0.4".into(),
+            9000,
+        )
+        .await;
         st.mark_peer_offline(pid).await;
-        // The peer comes back — any real OSC packet refreshes the address.
-        st.touch_peer_address(pid, "10.0.0.4".into(), 9000).await;
+        // The peer comes back — any real OSC packet clears the departure.
+        st.record_sighting(
+            PeerSighting::Heartbeat {
+                peer_id: pid,
+                peer_name: "p".into(),
+            },
+            "10.0.0.4".into(),
+            9000,
+        )
+        .await;
 
         let peers = st.get_peers().await;
         let p = peers.iter().find(|p| p.peer_id == pid).unwrap();

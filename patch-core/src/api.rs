@@ -106,16 +106,14 @@ pub async fn init(config_dir: Option<String>) -> Result<()> {
                         }
                     }
                     for failure in due.failures {
-                        let failed_peers = resolve_peer_names(&rt_state, &failure.unacked).await;
-                        rt_state
-                            .publish(AppEvent::MessageDelivery {
-                                message_id: failure.message_id,
-                                delivered: failure.acked,
-                                total: failure.total,
-                                failed: true,
-                                failed_peers,
-                            })
-                            .await;
+                        crate::reliability::report_delivery_failure(
+                            &rt_state,
+                            failure.message_id,
+                            failure.acked,
+                            failure.total,
+                            &failure.unacked,
+                        )
+                        .await;
                     }
                 }
             });
@@ -163,31 +161,6 @@ pub fn engine() -> &'static EngineHandle {
         .expect("patch_core::api::init() must be called before any other API function")
 }
 
-/// Map socket addresses (reliability targets) back to peer display names for the
-/// "not delivered to …" alert, falling back to the raw `ip:port` if unknown.
-#[frb(ignore)]
-async fn resolve_peer_names(state: &AppState, addrs: &[SocketAddr]) -> Vec<String> {
-    if addrs.is_empty() {
-        return Vec::new();
-    }
-    let peers = state.get_peers().await;
-    addrs
-        .iter()
-        .map(|addr| {
-            peers
-                .iter()
-                .find(|p| {
-                    p.address
-                        .parse::<IpAddr>()
-                        .map(|ip| SocketAddr::new(ip, p.osc_port))
-                        .map(|sa| sa == *addr)
-                        .unwrap_or(false)
-                })
-                .map(|p| p.peer_name.clone())
-                .unwrap_or_else(|| addr.to_string())
-        })
-        .collect()
-}
 
 // ── Messaging ────────────────────────────────────────────────────────────────
 
@@ -219,41 +192,25 @@ pub(crate) async fn dispatch_message(
     let message_id = msg.message_id;
     let is_critical = msg.is_critical();
     // Critical messages require ACKs — register for retransmit until every
-    // contacted peer acknowledges (or MAX_RETRIES is exceeded). Skip targets
-    // that already look offline (clean departure, or quiet for 5x the
-    // heartbeat interval) — they were still sent the best-effort packet
-    // above, but tracking them for ACK only buys five rounds of pointless
-    // retransmits ending in a "failed to deliver" warning we could've
-    // skipped up front.
-    let offline = if is_critical {
-        state
-            .offline_addresses(config.heartbeat_interval_secs)
-            .await
+    // contacted peer acknowledges (or MAX_RETRIES is exceeded).
+    let target_count = if is_critical {
+        crate::reliability::track_critical(
+            reliability,
+            state,
+            config.heartbeat_interval_secs,
+            message_id,
+            bytes,
+            targets,
+        )
+        .await
     } else {
-        Default::default()
+        0
     };
-    let trackable: Vec<_> = targets
-        .iter()
-        .copied()
-        .filter(|a| !offline.contains(a))
-        .collect();
-    let target_count = trackable.len();
-    if is_critical && target_count > 0 {
-        reliability.lock().await.track(message_id, bytes, trackable);
-    }
     state.store_message(msg).await;
     // A critical with no peers to send to can never be delivered — surface that
     // immediately (the retransmit poller only knows about *tracked* messages).
     if is_critical && target_count == 0 {
-        state
-            .publish(AppEvent::MessageDelivery {
-                message_id,
-                delivered: 0,
-                total: 0,
-                failed: true,
-                failed_peers: Vec::new(),
-            })
-            .await;
+        crate::reliability::report_delivery_failure(state, message_id, 0, 0, &[]).await;
     }
     Ok(message_id)
 }
@@ -628,25 +585,14 @@ pub async fn upsert_channel(
     display_name: Option<String>,
     color: Option<String>,
 ) -> Result<()> {
-    // Validate that the id is safe to embed in an OSC address path. Same rule
-    // the codec enforces on inbound packets and sessions (see `valid_channel_id`).
-    if !crate::osc::codec::valid_channel_id(&id) {
-        anyhow::bail!(
-            "channel id '{}' is invalid — use only lowercase letters, digits, _ or - (≤64 chars)",
-            id
-        );
-    }
-    // `__all__` is reserved for the crew-wide broadcast (the ALL tab); it must
-    // not be a real channel a user can create/delete.
-    if id == "__all__" {
-        anyhow::bail!("channel id '__all__' is reserved for crew-wide broadcasts");
-    }
     let id_for_name = id.clone();
     let display_name = display_name.unwrap_or(id_for_name);
     let color = color.unwrap_or_else(|| "#607D8B".to_string());
+    // Validate before touching the engine — same as before this was folded into
+    // Channel::new, a bad id must error without requiring init() to have run.
+    let mut channel = Channel::new(id, display_name, color)?;
     let h = engine();
     let cfg = h.state.config().await;
-    let mut channel = Channel::new(id, display_name, color);
     channel.flash_on_critical = cfg.flash_on_critical;
     channel.flash_on_message = cfg.flash_on_message;
     h.state.upsert_channel(channel).await;

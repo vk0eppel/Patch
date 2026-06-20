@@ -38,12 +38,10 @@ class _ShowFilesDialogState extends State<ShowFilesDialog> {
   void _handleEvent(Map<String, dynamic> event) {
     switch (event['event'] as String?) {
       case 'show_files':
-        final data = event['data'] as List<dynamic>;
+        final data = event['data'] as List<ShowFileMeta>;
         if (mounted) {
           setState(() {
-            _showFiles = data
-                .map((s) => ShowFileMeta.fromJson(s as Map<String, dynamic>))
-                .toList();
+            _showFiles = data;
           });
         }
       case 'show_file_saved':

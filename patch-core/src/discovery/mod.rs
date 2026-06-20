@@ -15,7 +15,7 @@ use uuid::Uuid;
 use std::net::Ipv4Addr;
 
 use crate::osc::{codec::encode_presence, types::PeerPresence};
-use crate::state::{is_self, AppState, Config};
+use crate::state::{is_self, AppState, Config, PeerSighting};
 use crate::transport::{in_pinned_subnet, pinned_ipv4_subnet, Transport};
 
 /// Picks which of a resolved mDNS service's addresses to use as the peer's
@@ -139,9 +139,9 @@ impl Discovery {
                             // Record the address for unicast, but do NOT refresh
                             // liveness — mDNS can replay from a stale cache long
                             // after a peer quits. `last_seen` is driven only by
-                            // received OSC packets (`touch_peer_address`).
+                            // a `PeerSighting::Presence`/`Heartbeat` sighting.
                             browse_state
-                                .resolve_peer_address(presence, addr, port)
+                                .record_sighting(PeerSighting::Mdns(presence), addr, port)
                                 .await;
                         }
                         ServiceEvent::ServiceRemoved(_, fullname) => {

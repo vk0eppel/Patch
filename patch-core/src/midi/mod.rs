@@ -315,9 +315,9 @@ mod backend {
 
         #[test]
         fn per_channel_fires_on_own_channel_global_on_selected() {
-            let mut rf = Channel::new("rf", "RF", "#fff");
+            let mut rf = Channel::new("rf", "RF", "#fff").unwrap();
             rf.macros = vec![mac("A", Some(60), None)];
-            let mut audio = Channel::new("audio", "AUDIO", "#fff");
+            let mut audio = Channel::new("audio", "AUDIO", "#fff").unwrap();
             audio.macros = vec![mac("B", Some(61), None)];
             let globals = vec![mac("G", Some(60), None)];
             let selected = vec!["rf".to_string(), "audio".to_string()];
@@ -357,7 +357,7 @@ mod backend {
             };
             // A global macro (note 60) with an OSC target + a plain per-channel
             // macro (note 60, no OSC) on "rf".
-            let mut rf = Channel::new("rf", "RF", "#fff");
+            let mut rf = Channel::new("rf", "RF", "#fff").unwrap();
             rf.macros = vec![mac("A", Some(60), None)];
             let globals = vec![mac_osc("G", 60, osc.clone())];
 
@@ -376,7 +376,7 @@ mod backend {
             // Mirrors `_fireMacro`'s DM-mode rule: with a DM open, the
             // per-channel/global distinction stops mattering — every macro
             // bound to the trigger becomes a DM payload, channel-independent.
-            let mut rf = Channel::new("rf", "RF", "#fff");
+            let mut rf = Channel::new("rf", "RF", "#fff").unwrap();
             rf.macros = vec![mac("A", Some(60), None)];
             let globals = vec![mac("G", Some(60), None)];
 

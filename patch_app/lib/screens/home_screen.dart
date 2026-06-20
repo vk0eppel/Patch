@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
 import '../models/config.dart';
+import '../models/delivery_tracker.dart';
+import '../models/flash.dart';
 import '../models/message.dart';
 import '../models/selection.dart';
 import '../theme/patch_theme.dart';
@@ -99,7 +101,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Presence heartbeat interval (s) from config — drives the peer dot thresholds.
   int _heartbeatSecs = 7;
   /// Delivery status for criticals we've sent, keyed by message id.
-  final Map<String, MessageDeliveryStatus> _delivery = {};
+  final DeliveryTracker _delivery = DeliveryTracker();
 
   String _clientName = '';
   String _clientRole = '';
@@ -380,11 +382,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final type = event['event'] as String?;
     switch (type) {
       case 'channels':
-        final data = event['data'] as List<dynamic>;
+        final data = event['data'] as List<PatchChannel>;
         setState(() {
-          _channels = data
-              .map((c) => PatchChannel.fromJson(c as Map<String, dynamic>))
-              .toList();
+          _channels = data;
           // Remove stale ids (deleted channels) from a Channel selection, or
           // seed with the first channel if nothing was selected yet. ALL/DM
           // selections don't depend on the channel list, so a reload never
@@ -414,15 +414,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
       case 'messages':
         final chId = event['channel_id'] as String;
-        final data = event['data'] as List<dynamic>;
+        final data = event['data'] as List<PatchMessage>;
         setState(() {
-          _messages[chId] = data
-              .map((m) => PatchMessage.fromJson(m as Map<String, dynamic>))
-              .toList();
+          _messages[chId] = data;
         });
 
       case 'message':
-        final msg = PatchMessage.fromJson(event['data'] as Map<String, dynamic>);
+        final msg = event['data'] as PatchMessage;
         setState(() {
           final list = _messages.putIfAbsent(msg.channelId, () => [])..add(msg);
           // Keep the in-memory list bounded, mirroring the engine ring buffer.
@@ -430,36 +428,26 @@ class _HomeScreenState extends State<HomeScreen> {
             list.removeRange(0, list.length - _kMaxMessagesPerChannel);
           }
         });
-        // Flash if global OR per-channel flag is set.
-        if (msg.channelId.startsWith('dm:')) {
-          // A plain DM is a silent unread dot, but a *critical* DM flashes too
-          // (honouring the global flash-on-critical flag) — same attention
-          // treatment as a direct ping. _triggerDmFlash also sets the unread dot
-          // when the thread isn't in view, so it covers the non-critical case.
-          if (_flashOnCritical && msg.isCritical) {
-            _triggerDmFlash(msg.channelId);
-          } else if (!_selection.containsRawId(msg.channelId)) {
-            setState(() {
-              _unreadDms.add(msg.channelId);
-              // Pulse the peers toggle only when the panel is closed (open → the
-              // unread dot on the peer row is already visible).
-              if (!_showPeers) _dmPulseNotify++;
-            });
-          }
-        } else if (msg.channelId == kAllChannelId) {
-          // Broadcast — global flags only (it isn't tied to a channel).
-          final shouldFlash =
-              _flashOnMessage || (_flashOnCritical && msg.isCritical);
-          if (shouldFlash) _triggerBroadcastFlash();
-        } else {
-          final ch = _channels.cast<PatchChannel?>()
-              .firstWhere((c) => c?.id == msg.channelId, orElse: () => null);
-          if (ch != null) {
-            final shouldFlash =
-                (_flashOnMessage || ch.flashOnMessage) ||
-                ((_flashOnCritical || ch.flashOnCritical) && msg.isCritical);
-            if (shouldFlash) _triggerFlash(msg.channelId);
-          }
+        final flash = decideMessageFlash(
+          msg: msg,
+          channels: _channels,
+          globalOnCritical: _flashOnCritical,
+          globalOnMessage: _flashOnMessage,
+          globalPulseCount: _globalFlashCount,
+        );
+        if (flash != null) {
+          _applyFlash(flash);
+        } else if (msg.channelId.startsWith('dm:') &&
+            !_selection.containsRawId(msg.channelId)) {
+          // A non-critical DM that isn't flashing still needs a silent unread
+          // dot when its thread isn't in view — that's DM-visibility, not a
+          // flash decision (see decideMessageFlash's doc comment).
+          setState(() {
+            _unreadDms.add(msg.channelId);
+            // Pulse the peers toggle only when the panel is closed (open → the
+            // unread dot on the peer row is already visible).
+            if (!_showPeers) _dmPulseNotify++;
+          });
         }
 
       case 'ack_send':
@@ -468,7 +456,7 @@ class _HomeScreenState extends State<HomeScreen> {
       case 'message_delivery':
         final id = event['message_id'] as String;
         final status = MessageDeliveryStatus.fromEvent(event);
-        setState(() => _delivery[id] = status);
+        setState(() => _delivery.track(id, status));
         // A failed critical can't go unnoticed — also raise a red SnackBar.
         if (status.failed && mounted) {
           final who = status.total == 0
@@ -486,11 +474,9 @@ class _HomeScreenState extends State<HomeScreen> {
         }
 
       case 'peers':
-        final data = event['data'] as List<dynamic>;
+        final data = event['data'] as List<PeerInfo>;
         setState(() {
-          _peers = data
-              .map((p) => PeerInfo.fromJson(p as Map<String, dynamic>))
-              .toList();
+          _peers = data;
         });
 
       case 'peer_updated':
@@ -507,11 +493,18 @@ class _HomeScreenState extends State<HomeScreen> {
       case 'channel_flash':
         final chId = event['data']['channel_id'] as String;
         if (chId == kAllChannelId) {
-          _triggerBroadcastFlash();
+          _applyFlash(BroadcastFlashEvent(pulseCount: _globalFlashCount));
         } else if (chId.startsWith('dm:')) {
-          _triggerDmFlash(chId);
+          _applyFlash(DmFlashEvent(peerId: chId.substring(3)));
         } else {
-          _triggerFlash(chId);
+          final ch = _channels
+              .cast<PatchChannel?>()
+              .firstWhere((c) => c?.id == chId, orElse: () => null);
+          _applyFlash(ChannelFlashEvent(
+            channelId: chId,
+            color: ch?.color ?? Colors.white,
+            pulseCount: ch?.flashCount ?? _globalFlashCount,
+          ));
         }
 
       case 'channel_list_updated':
@@ -521,10 +514,13 @@ class _HomeScreenState extends State<HomeScreen> {
         final clearedId = event['channel_id'] as String?;
         setState(() {
           if (clearedId != null) {
-            _messages.remove(clearedId);
+            final removed = _messages.remove(clearedId);
+            if (removed != null) {
+              _delivery.clearForMessageIds(removed.map((m) => m.messageId));
+            }
           } else {
             _messages.clear();
-            _delivery.clear();
+            _delivery.clearAll();
           }
         });
 
@@ -535,8 +531,7 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() => _selection = const ChannelSelection({}));
 
       case 'config':
-        final cfg =
-            AppConfig.fromJson(event['data'] as Map<String, dynamic>);
+        final cfg = event['data'] as AppConfig;
         setState(() {
           _clientName = cfg.clientName;
           _clientRole = cfg.role ?? '';
@@ -616,55 +611,39 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _triggerFlash(String channelId) {
-    final ch = _channels.firstWhere(
-      (c) => c.id == channelId,
-      orElse: () => _channels.isEmpty
-          ? const PatchChannel(id: '', displayName: '?', color: Colors.white)
-          : _channels.first,
-    );
+  /// Applies a [FlashEvent]: plays the alert, bumps the relevant tab's flash
+  /// count, and pulses the message area if its target is currently selected —
+  /// otherwise marks it unread (DM threads only; channel/ALL tabs show their
+  /// own flash count instead of a separate unread marker).
+  void _applyFlash(FlashEvent event) {
     _playAlert();
     setState(() {
-      _flashCounts[channelId] = (_flashCounts[channelId] ?? 0) + 1;
-      // Only pulse the main screen overlay when the channel is selected.
-      if (_selection.containsRawId(channelId)) {
-        _flashNotify++;
-        _flashColor = ch.color;
-        _flashPulseCount = ch.flashCount ?? _globalFlashCount;
-      }
-    });
-  }
-
-  /// Flash for a broadcast (`__all__`): pulses the ALL tab and always flashes the
-  /// message area (a broadcast is visible in whatever view the operator is in),
-  /// in the neutral broadcast (white) colour.
-  void _triggerBroadcastFlash() {
-    _playAlert();
-    setState(() {
-      _flashCounts[kAllChannelId] = (_flashCounts[kAllChannelId] ?? 0) + 1;
-      _flashNotify++;
-      _flashColor = PatchTheme.broadcast;
-      _flashPulseCount = _globalFlashCount;
-    });
-  }
-
-  /// Flash for a **direct** ping (`dm:{peer}`). Unlike a plain DM (silent unread
-  /// dot), a direct flash plays the alert sound and pulses the message area when
-  /// the thread is in view — a deliberate "look at me" from one person. The DM
-  /// tab is opened (so it appears even with no prior message) and marked unread
-  /// when the thread isn't the one being viewed.
-  void _triggerDmFlash(String dmKey) {
-    final peerId = dmKey.substring(3);
-    _playAlert();
-    setState(() {
-      _openDms.add(peerId); // ensure the tab exists even on a first-ever ping
-      if (_selection.containsRawId(dmKey)) {
-        _flashNotify++;
-        _flashColor = PatchTheme.accent;
-        _flashPulseCount = _globalFlashCount;
-      } else {
-        _unreadDms.add(dmKey);
-        if (!_showPeers) _dmPulseNotify++;
+      switch (event) {
+        case ChannelFlashEvent(channelId: final id, color: final color, pulseCount: final count):
+          _flashCounts[id] = (_flashCounts[id] ?? 0) + 1;
+          if (_selection.containsRawId(id)) {
+            _flashNotify++;
+            _flashColor = color;
+            _flashPulseCount = count;
+          }
+        case BroadcastFlashEvent(pulseCount: final count):
+          // Always pulses — a broadcast is visible in whatever view the
+          // Operator is in, regardless of selection.
+          _flashCounts[kAllChannelId] = (_flashCounts[kAllChannelId] ?? 0) + 1;
+          _flashNotify++;
+          _flashColor = PatchTheme.broadcast;
+          _flashPulseCount = count;
+        case DmFlashEvent(peerId: final peerId):
+          final dmKey = 'dm:$peerId';
+          _openDms.add(peerId); // ensure the tab exists even on a first-ever ping
+          if (_selection.containsRawId(dmKey)) {
+            _flashNotify++;
+            _flashColor = PatchTheme.accent;
+            _flashPulseCount = _globalFlashCount;
+          } else {
+            _unreadDms.add(dmKey);
+            if (!_showPeers) _dmPulseNotify++;
+          }
       }
     });
   }
@@ -703,7 +682,8 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_hideKeyboard) FocusScope.of(context).unfocus();
   }
 
-  /// After a broadcast send, snap back to the channel(s) selected before ALL.
+  /// After a send in ALL mode, snap back to the channel(s) selected before
+  /// ALL — `AllSelection.previous` holds that data; this just restores it.
   void _snapBackFromAll() {
     setState(() {
       final sel = _selection;
@@ -795,16 +775,14 @@ class _HomeScreenState extends State<HomeScreen> {
               child: _channels.isEmpty
                   ? const Center(child: Text('No channels'))
                   : _ChannelView(
-                      selectedChannels: _selectedChannels,
-                      isAllMode: _isAllMode,
-                      isDmMode: _isDmMode,
-                      dmPeerId: _dmPeerId,
+                      selection: _selection,
+                      channels: _channels,
                       dmPeerName:
                           _dmPeerId == null ? null : _dmPeerName(_dmPeerId!),
                       onDmSent: _warnIfDmPeerOffline,
                       messages: _combinedMessages,
                       channelColors: _channelColors,
-                      delivery: _delivery,
+                      delivery: _delivery.all,
                       aggregatedMacros: _aggregatedMacros,
                       bridge: widget.bridge,
                       showPeers: _showPeers,
@@ -819,7 +797,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       flashColor: _flashColor,
                       flashPulseCount: _flashPulseCount,
                       hideKeyboard: _hideKeyboard,
-                      onBroadcastSent: _snapBackFromAll,
+                      onOneShotSent: _snapBackFromAll,
                     ),
             ),
           ),
@@ -977,25 +955,12 @@ class _ChannelStrip extends StatelessWidget {
 
 // ── Per-channel (or multi-channel) view ──────────────────────────────────────
 
-/// Channel context key — identifies the viewed channel(s)/thread so a switch
-/// resets the in-channel search (never silently hide messages on a new view).
-String _channelContextKey(_ChannelView w) {
-  if (w.isDmMode) return 'dm:${w.dmPeerId}';
-  if (w.isAllMode) return '__all__';
-  return (w.selectedChannels.map((c) => c.id).toList()..sort()).join(',');
-}
-
 class _ChannelView extends StatefulWidget {
-  final List<PatchChannel> selectedChannels;
+  /// What's selected — Channel(s), ALL, or a DM thread. [channels] resolves
+  /// a [ChannelSelection]'s ids to the full [PatchChannel] objects below.
+  final Selection selection;
+  final List<PatchChannel> channels;
 
-  /// Broadcast (ALL) mode — `selectedChannels` is empty; send/flash target the
-  /// reserved `__all__` id and the feed shows every channel's traffic.
-  final bool isAllMode;
-
-  /// Direct-message mode — a 1:1 private thread. `selectedChannels` is empty;
-  /// send targets `dmPeerId` and there's no flash/macros.
-  final bool isDmMode;
-  final String? dmPeerId;
   final String? dmPeerName;
 
   /// Called by the parent after a DM is sent (typed or flash) so it can warn
@@ -1019,13 +984,14 @@ class _ChannelView extends StatefulWidget {
   final Color flashColor;
   final int flashPulseCount;
   final bool hideKeyboard;
-  final VoidCallback? onBroadcastSent;
+
+  /// Called after a send/flash while [selection] is the one-shot ALL compose
+  /// state, so the parent can snap back to whatever was selected before ALL.
+  final VoidCallback? onOneShotSent;
 
   const _ChannelView({
-    required this.selectedChannels,
-    required this.isAllMode,
-    required this.isDmMode,
-    required this.dmPeerId,
+    required this.selection,
+    required this.channels,
     required this.dmPeerName,
     required this.onDmSent,
     required this.messages,
@@ -1043,8 +1009,24 @@ class _ChannelView extends StatefulWidget {
     required this.flashColor,
     required this.flashPulseCount,
     required this.hideKeyboard,
-    this.onBroadcastSent,
+    this.onOneShotSent,
   });
+
+  /// Broadcast (ALL) mode — `selectedChannels` is empty; send/flash target the
+  /// reserved `__all__` id and the feed shows every channel's traffic.
+  bool get isAllMode => selection.isAllMode;
+
+  /// Direct-message mode — a 1:1 private thread. `selectedChannels` is empty;
+  /// send targets `dmPeerId` and there's no flash/macros.
+  bool get isDmMode => selection.isDmMode;
+
+  String? get dmPeerId => selection.dmPeerId;
+
+  List<PatchChannel> get selectedChannels => switch (selection) {
+        ChannelSelection(ids: final ids) =>
+          channels.where((c) => ids.contains(c.id)).toList(),
+        _ => const [],
+      };
 
   @override
   State<_ChannelView> createState() => _ChannelViewState();
@@ -1063,7 +1045,7 @@ class _ChannelViewState extends State<_ChannelView> {
     super.didUpdateWidget(old);
     // Reset search when the viewed channel(s) change — a filter left active from
     // a previous view could otherwise hide a critical on the new one.
-    if (_channelContextKey(old) != _channelContextKey(widget) &&
+    if (widget.selection != old.selection &&
         (_searchExpanded || _filterActive)) {
       _resetSearch();
     }
@@ -1089,7 +1071,7 @@ class _ChannelViewState extends State<_ChannelView> {
       widget.onDmSent();
     } else if (widget.isAllMode) {
       widget.bridge.sendMessage(channelId: kAllChannelId, payload: text);
-      widget.onBroadcastSent?.call();
+      widget.onOneShotSent?.call();
     } else {
       for (final ch in widget.selectedChannels) {
         widget.bridge.sendMessage(channelId: ch.id, payload: text);
@@ -1103,7 +1085,7 @@ class _ChannelViewState extends State<_ChannelView> {
       widget.onDmSent();
     } else if (widget.isAllMode) {
       widget.bridge.sendFlash(kAllChannelId);
-      widget.onBroadcastSent?.call();
+      widget.onOneShotSent?.call();
     } else {
       for (final ch in widget.selectedChannels) {
         widget.bridge.sendFlash(ch.id);

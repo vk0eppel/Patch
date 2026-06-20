@@ -260,7 +260,9 @@ pub fn default_channels() -> Vec<Channel> {
     // add channel-specific macros in Settings when their show needs them.
     specs
         .iter()
-        .map(|(id, name, color)| Channel::new(*id, *name, *color))
+        .map(|(id, name, color)| {
+            Channel::new(*id, *name, *color).expect("default channel id is valid")
+        })
         .collect()
 }
 

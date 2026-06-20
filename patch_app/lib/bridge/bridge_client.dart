@@ -1,5 +1,9 @@
 import 'dart:async';
+import 'dart:ui' show Color;
 
+import '../models/channel.dart';
+import '../models/config.dart';
+import '../models/message.dart';
 import '../src/rust/api.dart' as rust;
 import '../src/rust/frb_generated.dart';
 import '../src/rust/osc/types.dart' as rust_osc;
@@ -48,7 +52,7 @@ class BridgeClient {
     final map = switch (event) {
       rust.PatchAppEvent_Message(:final field0) => {
         'event': 'message',
-        'data': _messageToMap(field0),
+        'data': _messageFromRust(field0),
       },
       rust.PatchAppEvent_MessageAcked(:final messageId, :final peerId) => {
         'event': 'message_acked',
@@ -69,9 +73,11 @@ class BridgeClient {
         'failed': failed,
         'failed_peers': failedPeers,
       },
-      rust.PatchAppEvent_PeerUpdated(:final field0) => {
+      // `field0` (a PeerPresence) carries no address — never enough to render
+      // a peer row — so home_screen only ever reacts to the event's
+      // occurrence (debounced into a getPeers() refresh), never its payload.
+      rust.PatchAppEvent_PeerUpdated() => const {
         'event': 'peer_updated',
-        'data': _presenceToPeerMap(field0),
       },
       rust.PatchAppEvent_PeerExpired(:final peerId) => {
         'event': 'peer_expired',
@@ -96,7 +102,7 @@ class BridgeClient {
         'event': 'channels_offered',
         'from_peer_id': fromPeerId,
         'from_name': fromName,
-        'channels': channels.map(_channelToMap).toList(),
+        'channels': channels.map(_channelFromRust).toList(),
       },
       rust.PatchAppEvent_ClientNameChanged(:final name) => {
         'event': 'client_name_changed',
@@ -176,7 +182,7 @@ class BridgeClient {
       final channels = await rust.getChannels();
       _emit({
         'event': 'channels',
-        'data': channels.map(_channelToMap).toList(),
+        'data': channels.map(_channelFromRust).toList(),
       });
     } catch (e) {
       _emitError(e);
@@ -186,7 +192,7 @@ class BridgeClient {
   Future<void> getPeers() async {
     try {
       final peers = await rust.getPeers();
-      _emit({'event': 'peers', 'data': peers.map(_peerToMap).toList()});
+      _emit({'event': 'peers', 'data': peers.map(_peerFromRust).toList()});
     } catch (e) {
       _emitError(e);
     }
@@ -201,7 +207,7 @@ class BridgeClient {
       _emit({
         'event': 'messages',
         'channel_id': channelId,
-        'data': messages.map(_messageToMap).toList(),
+        'data': messages.map(_messageFromRust).toList(),
       });
     } catch (e) {
       _emitError(e);
@@ -223,25 +229,7 @@ class BridgeClient {
   Future<void> getConfig() async {
     try {
       final cfg = await rust.getConfig();
-      _emit({
-        'event': 'config',
-        'data': {
-          'client_name': cfg.clientName,
-          'role': cfg.role,
-          'osc_port': cfg.oscPort,
-          'network_interface': cfg.networkInterface,
-          'static_peers': cfg.staticPeers.map(_staticPeerToMap).toList(),
-          'flash_on_critical': cfg.flashOnCritical,
-          'flash_on_message': cfg.flashOnMessage,
-          'flash_count': cfg.flashCount,
-          'macros_columns': cfg.macrosColumns,
-          'hide_keyboard': cfg.hideKeyboard,
-          'audible_alert': cfg.audibleAlert,
-          'global_macros': cfg.globalMacros.map(_macroToMap).toList(),
-          'heartbeat_interval_secs': cfg.heartbeatIntervalSecs,
-          'name_is_default': cfg.nameIsDefault,
-        },
-      });
+      _emit({'event': 'config', 'data': _configFromRust(cfg)});
     } catch (e) {
       _emitError(e);
     }
@@ -534,12 +522,12 @@ class BridgeClient {
     }
   }
 
-  /// Adopt offered channels — merge (adds only ids not already present). Takes
-  /// the legacy channel-map shape (as delivered in `channels_offered`) and
+  /// Adopt offered channels — merge (adds only ids not already present).
+  /// Takes the same `PatchChannel`s delivered in `channels_offered` and
   /// rebuilds the typed FRB `Channel`s. Emits `channels_adopted` with the count.
-  Future<void> adoptChannels(List<Map<String, dynamic>> channels) async {
+  Future<void> adoptChannels(List<PatchChannel> channels) async {
     try {
-      final rebuilt = channels.map(_channelFromMap).toList();
+      final rebuilt = channels.map(_channelToRust).toList();
       final added = await rust.adoptChannels(channels: rebuilt);
       _emit({'event': 'channels_adopted', 'added': added});
     } catch (e) {
@@ -604,7 +592,7 @@ class BridgeClient {
       final list = await rust.listShowFiles();
       _emit({
         'event': 'show_files',
-        'data': list.map(_showFileMetaToMap).toList(),
+        'data': list.map(_showFileMetaFromRust).toList(),
       });
     } catch (e) {
       _emitError(e);
@@ -736,129 +724,129 @@ class BridgeClient {
 
 // ── Conversion helpers ──────────────────────────────────────────────────────
 //
-// The Dart models (PatchMessage.fromJson, PatchChannel.fromJson, ...) expect
-// snake_case keys, ISO-8601 timestamp strings, UUIDs-as-strings, and integer
-// priorities. The FRB-generated types are strongly-typed Dart classes with
-// DateTime/UuidValue/enum fields — we re-emit them in the legacy JSON shape
-// so the screens keep working unchanged.
+// Builds the plain Dart models the screens already render straight from the
+// FRB-generated types — one conversion instead of the previous Rust struct →
+// legacy JSON Map → model round trip (the Map added nothing: the models'
+// fields already mirror these structs field-for-field).
 
-Map<String, dynamic> _channelToMap(rust_channel.Channel c) => {
-      'id': c.id,
-      'display_name': c.displayName,
-      'color': c.color,
-      'macros': c.macros.map(_macroToMap).toList(),
-      'flash_on_critical': c.flashOnCritical,
-      'flash_on_message': c.flashOnMessage,
-      'flash_count': c.flashCount,
-    };
-
-Map<String, dynamic> _macroToMap(rust_channel.MacroMessage s) => {
-      'label': s.label,
-      'payload': s.payload,
-      'key_binding': s.keyBinding,
-      'priority': s.priority,
-      'midi_note': s.midiNote,
-      'midi_cc': s.midiCc,
-      'osc': s.osc == null
-          ? null
-          : {
-              'address': s.osc!.address,
-              'port': s.osc!.port,
-              'path': s.osc!.path,
-              'arg': s.osc!.arg,
-            },
-    };
-
-// Inverse of `_channelToMap`/`_macroToMap` — rebuilds the typed FRB structs from
-// the legacy map shape so offered channels (delivered as maps) can be passed back
-// into `adopt_channels`.
-rust_channel.Channel _channelFromMap(Map<String, dynamic> m) => rust_channel.Channel(
-      id: m['id'] as String,
-      displayName: m['display_name'] as String,
-      color: m['color'] as String,
-      macros: ((m['macros'] as List<dynamic>?) ?? const [])
-          .map((e) => _macroFromMap(e as Map<String, dynamic>))
-          .toList(),
-      flashOnCritical: m['flash_on_critical'] as bool? ?? true,
-      flashOnMessage: m['flash_on_message'] as bool? ?? false,
-      flashCount: m['flash_count'] as int?,
+PatchChannel _channelFromRust(rust_channel.Channel c) => PatchChannel(
+      id: c.id,
+      displayName: c.displayName,
+      color: _parseHexColor(c.color),
+      macros: c.macros.map(_macroFromRust).toList(),
+      flashOnCritical: c.flashOnCritical,
+      flashOnMessage: c.flashOnMessage,
+      flashCount: c.flashCount,
     );
 
-rust_channel.MacroMessage _macroFromMap(Map<String, dynamic> m) => rust_channel.MacroMessage(
-      label: m['label'] as String,
-      payload: m['payload'] as String,
-      keyBinding: m['key_binding'] as String?,
-      priority: (m['priority'] as num).toInt(),
-      midiNote: (m['midi_note'] as num?)?.toInt(),
-      midiCc: (m['midi_cc'] as num?)?.toInt(),
-      osc: _oscFromMap(m['osc']),
+MacroMessage _macroFromRust(rust_channel.MacroMessage s) => MacroMessage(
+      label: s.label,
+      payload: s.payload,
+      keyBinding: s.keyBinding,
+      priority: s.priority,
+      midiNote: s.midiNote,
+      midiCc: s.midiCc,
+      osc: s.osc == null ? null : _oscFromRust(s.osc!),
     );
 
-rust_channel.OscTarget? _oscFromMap(dynamic o) {
-  if (o == null) return null;
-  final m = Map<String, dynamic>.from(o as Map);
-  return rust_channel.OscTarget(
-    address: m['address'] as String,
-    port: (m['port'] as num).toInt(),
-    path: m['path'] as String,
-    arg: m['arg'] as String?,
-  );
-}
+MacroOsc _oscFromRust(rust_channel.OscTarget o) => MacroOsc(
+      address: o.address,
+      port: o.port,
+      path: o.path,
+      arg: o.arg,
+    );
 
-Map<String, dynamic> _messageToMap(rust_osc.PatchMessage m) => {
-      'message_id': m.messageId.toString(),
-      'sender_id': m.senderId.toString(),
-      'sender_name': m.senderName,
-      'channel_id': m.channelId,
-      'timestamp': m.timestamp.toIso8601String(),
-      'priority': m.priority.index,
-      'payload': m.payload,
-    };
+Color _parseHexColor(String hex) =>
+    Color(int.parse('FF${hex.replaceFirst('#', '')}', radix: 16));
 
-Map<String, dynamic> _peerToMap(rust_peer.Peer p) => {
-      'peer_id': p.peerId.toString(),
-      'peer_name': p.peerName,
-      'role': p.role,
-      'channels': p.channels,
-      'address': p.address,
-      'osc_port': p.oscPort,
-      'last_seen': p.lastSeen.toIso8601String(),
-      'departed': p.departed,
-      'discovery_mode': switch (p.discoveryMode) {
+// Inverse of the three functions above — rebuilds the typed FRB structs from
+// a `PatchChannel` so an adopted offer (delivered as `PatchChannel`s in
+// `channels_offered`) can be passed back into `adopt_channels`.
+rust_channel.Channel _channelToRust(PatchChannel c) => rust_channel.Channel(
+      id: c.id,
+      displayName: c.displayName,
+      // Pad to 8 hex digits (full ARGB) before dropping the alpha byte —
+      // padding after the substring would corrupt low colour values.
+      color:
+          '#${c.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
+      macros: c.macros.map(_macroToRust).toList(),
+      flashOnCritical: c.flashOnCritical,
+      flashOnMessage: c.flashOnMessage,
+      flashCount: c.flashCount,
+    );
+
+rust_channel.MacroMessage _macroToRust(MacroMessage s) => rust_channel.MacroMessage(
+      label: s.label,
+      payload: s.payload,
+      keyBinding: s.keyBinding,
+      priority: s.priority,
+      midiNote: s.midiNote,
+      midiCc: s.midiCc,
+      osc: s.osc == null ? null : _oscToRust(s.osc!),
+    );
+
+rust_channel.OscTarget _oscToRust(MacroOsc o) => rust_channel.OscTarget(
+      address: o.address,
+      port: o.port,
+      path: o.path,
+      arg: o.arg,
+    );
+
+PatchMessage _messageFromRust(rust_osc.PatchMessage m) => PatchMessage(
+      messageId: m.messageId.toString(),
+      senderId: m.senderId.toString(),
+      senderName: m.senderName,
+      channelId: m.channelId,
+      timestamp: m.timestamp,
+      priority: m.priority.index,
+      payload: m.payload,
+    );
+
+PeerInfo _peerFromRust(rust_peer.Peer p) => PeerInfo(
+      peerId: p.peerId.toString(),
+      peerName: p.peerName,
+      role: p.role,
+      channels: p.channels,
+      address: p.address,
+      oscPort: p.oscPort,
+      lastSeen: p.lastSeen,
+      departed: p.departed,
+      discoveryMode: switch (p.discoveryMode) {
         rust_peer.DiscoveryMode.mdns => 'mdns',
         rust_peer.DiscoveryMode.oscBeacon => 'osc_beacon',
         rust_peer.DiscoveryMode.manualIp => 'manual_ip',
       },
-    };
+    );
 
-/// Map a `PeerPresence` event (broadcast on update) to the legacy `Peer` shape
-/// the UI expects. Address/port/last_seen aren't on the presence packet itself;
-/// the UI also receives a full `peers` snapshot via `getPeers()` so this is
-/// mostly used for the "new peer joined" indicator.
-Map<String, dynamic> _presenceToPeerMap(rust_osc.PeerPresence p) => {
-      'peer_id': p.peerId.toString(),
-      'peer_name': p.peerName,
-      'role': p.role,
-      'channels': p.channels,
-      'address': '',
-      'osc_port': 0,
-      'last_seen': p.timestamp.toIso8601String(),
-      'departed': false,
-      'discovery_mode': 'osc_beacon',
-    };
+StaticPeerInfo _staticPeerFromRust(rust_config.StaticPeer s) => StaticPeerInfo(
+      address: s.address,
+      port: s.port,
+      label: s.label,
+    );
 
-Map<String, dynamic> _staticPeerToMap(rust_config.StaticPeer s) => {
-      'address': s.address,
-      'port': s.port,
-      'label': s.label,
-    };
+ShowFileMeta _showFileMetaFromRust(rust_show_file.ShowFileMeta s) => ShowFileMeta(
+      slug: s.slug,
+      name: s.name,
+      createdAt: s.createdAt,
+      channelCount: s.channelCount.toInt(),
+    );
 
-Map<String, dynamic> _showFileMetaToMap(rust_show_file.ShowFileMeta s) => {
-      'slug': s.slug,
-      'name': s.name,
-      'created_at': s.createdAt.toIso8601String(),
-      'channel_count': s.channelCount.toInt(),
-    };
+AppConfig _configFromRust(rust.ConfigSnapshot cfg) => AppConfig(
+      clientName: cfg.clientName,
+      role: cfg.role,
+      oscPort: cfg.oscPort,
+      networkInterface: cfg.networkInterface,
+      staticPeers: cfg.staticPeers.map(_staticPeerFromRust).toList(),
+      flashOnCritical: cfg.flashOnCritical,
+      flashOnMessage: cfg.flashOnMessage,
+      flashCount: cfg.flashCount,
+      macrosColumns: cfg.macrosColumns,
+      hideKeyboard: cfg.hideKeyboard,
+      audibleAlert: cfg.audibleAlert,
+      globalMacros: cfg.globalMacros.map(_macroFromRust).toList(),
+      heartbeatIntervalSecs: cfg.heartbeatIntervalSecs,
+      nameIsDefault: cfg.nameIsDefault,
+    );
 
 // Keep this import alive — `InterfaceInfo` is referenced only via `rust.`,
 // not via the prefix, but the unused-import lint would still trip without it.

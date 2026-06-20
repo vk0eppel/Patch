@@ -61,4 +61,25 @@ void main() {
       expect(sel.containsRawId('p1'), isFalse);
     });
   });
+
+  group('value equality', () {
+    test('ChannelSelection compares by set contents, not identity', () {
+      expect(const ChannelSelection({'rf', 'audio'}),
+          const ChannelSelection({'audio', 'rf'})); // order-independent
+      expect(const ChannelSelection({'rf'}), isNot(const ChannelSelection({'audio'})));
+      expect(const ChannelSelection({'rf'}).hashCode,
+          const ChannelSelection({'rf'}).hashCode);
+    });
+
+    test('AllSelection compares by previous contents', () {
+      expect(const AllSelection({'rf'}), const AllSelection({'rf'}));
+      expect(const AllSelection({'rf'}), isNot(const AllSelection({'audio'})));
+      expect(const AllSelection({'rf'}), isNot(const ChannelSelection({'rf'})));
+    });
+
+    test('DmSelection compares by peerId', () {
+      expect(const DmSelection('p1'), const DmSelection('p1'));
+      expect(const DmSelection('p1'), isNot(const DmSelection('p2')));
+    });
+  });
 }

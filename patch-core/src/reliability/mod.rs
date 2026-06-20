@@ -11,10 +11,13 @@
 //! equals the target address we unicast to.
 
 use std::collections::{HashMap, HashSet};
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 
+use tokio::sync::Mutex;
 use tracing::{debug, warn};
 use uuid::Uuid;
+
+use crate::state::{AppEvent, AppState};
 
 /// Max retransmit attempts for an unacked critical before it's reported failed.
 const MAX_RETRIES: u32 = 5;
@@ -171,6 +174,81 @@ impl ReliabilityManager {
     }
 }
 
+/// Registers a critical message for ACK tracking, after filtering out targets
+/// that already look offline (see `AppState::offline_addresses`) — tracking
+/// them only buys pointless retransmits ending in a "failed to deliver"
+/// warning that could've been skipped up front. Shared by `dispatch_message`
+/// (typed/macro/MIDI sends) and the `/patch/say` external-OSC relay — only the
+/// former used to apply this filter, so a critical injected via `/patch/say`
+/// would retransmit against peers already known to be gone.
+///
+/// Returns the number of targets actually tracked (0 means nothing to track —
+/// callers use this to decide whether to report an immediate failure).
+pub async fn track_critical(
+    reliability: &Mutex<ReliabilityManager>,
+    state: &AppState,
+    heartbeat_secs: u64,
+    message_id: Uuid,
+    bytes: Vec<u8>,
+    targets: Vec<SocketAddr>,
+) -> usize {
+    let offline = state.offline_addresses(heartbeat_secs).await;
+    let trackable: Vec<_> = targets.into_iter().filter(|a| !offline.contains(a)).collect();
+    let count = trackable.len();
+    if count > 0 {
+        reliability.lock().await.track(message_id, bytes, trackable);
+    }
+    count
+}
+
+/// Publishes a failed-delivery `MessageDelivery` event, resolving unacked
+/// addresses to peer display names. Shared by `dispatch_message`'s "no peers
+/// to send to" case and the retransmit poller's "exceeded MAX_RETRIES" case —
+/// the only two places a Critical Message's delivery is ever declared failed.
+pub async fn report_delivery_failure(
+    state: &AppState,
+    message_id: Uuid,
+    delivered: u32,
+    total: u32,
+    unacked: &[SocketAddr],
+) {
+    let failed_peers = resolve_peer_names(state, unacked).await;
+    state
+        .publish(AppEvent::MessageDelivery {
+            message_id,
+            delivered,
+            total,
+            failed: true,
+            failed_peers,
+        })
+        .await;
+}
+
+/// Maps socket addresses (reliability targets) back to peer display names for
+/// the "not delivered to …" alert, falling back to the raw `ip:port` if unknown.
+async fn resolve_peer_names(state: &AppState, addrs: &[SocketAddr]) -> Vec<String> {
+    if addrs.is_empty() {
+        return Vec::new();
+    }
+    let peers = state.get_peers().await;
+    addrs
+        .iter()
+        .map(|addr| {
+            peers
+                .iter()
+                .find(|p| {
+                    p.address
+                        .parse::<IpAddr>()
+                        .map(|ip| SocketAddr::new(ip, p.osc_port))
+                        .map(|sa| sa == *addr)
+                        .unwrap_or(false)
+                })
+                .map(|p| p.peer_name.clone())
+                .unwrap_or_else(|| addr.to_string())
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,5 +347,95 @@ mod tests {
     fn ack_for_unknown_message_is_none() {
         let mut r = ReliabilityManager::new();
         assert_eq!(r.ack(Uuid::new_v4(), addr(1)), None);
+    }
+
+    fn test_state() -> AppState {
+        AppState::new(crate::state::Config {
+            default_channels: Vec::new(),
+            ..crate::state::Config::default()
+        })
+    }
+
+    /// A peer marked offline via a clean departure — `looks_offline` is true
+    /// for it regardless of `last_seen` recency.
+    async fn add_offline_peer(state: &AppState, address: &str) {
+        let id = Uuid::new_v4();
+        state
+            .record_sighting(
+                crate::state::PeerSighting::Presence(crate::osc::types::PeerPresence {
+                    peer_id: id,
+                    peer_name: "offline-peer".into(),
+                    channels: Vec::new(),
+                    role: None,
+                    timestamp: chrono::Utc::now(),
+                }),
+                address.to_string(),
+                addr(1).port(),
+            )
+            .await;
+        state.mark_peer_offline(id).await;
+    }
+
+    #[tokio::test]
+    async fn track_critical_filters_out_offline_targets() {
+        let state = test_state();
+        add_offline_peer(&state, "10.0.0.1").await;
+        let reliability = Mutex::new(ReliabilityManager::new());
+        let id = Uuid::new_v4();
+
+        let tracked = track_critical(
+            &reliability,
+            &state,
+            7,
+            id,
+            vec![0],
+            vec![addr(1), addr(2)],
+        )
+        .await;
+
+        assert_eq!(tracked, 1); // only the online target
+        let mut r = reliability.lock().await;
+        assert_eq!(r.ack(id, addr(2)), Some((1, 1))); // tracked
+        assert_eq!(r.ack(id, addr(1)), None); // never tracked — filtered out
+    }
+
+    #[tokio::test]
+    async fn track_critical_tracks_nothing_when_every_target_is_offline() {
+        let state = test_state();
+        add_offline_peer(&state, "10.0.0.1").await;
+        let reliability = Mutex::new(ReliabilityManager::new());
+
+        let tracked =
+            track_critical(&reliability, &state, 7, Uuid::new_v4(), vec![0], vec![addr(1)]).await;
+
+        assert_eq!(tracked, 0);
+    }
+
+    #[tokio::test]
+    async fn report_delivery_failure_resolves_peer_names_and_publishes_failed_event() {
+        let state = test_state();
+        add_offline_peer(&state, "10.0.0.1").await;
+        let mut events = state.subscribe();
+        let id = Uuid::new_v4();
+
+        report_delivery_failure(&state, id, 1, 2, &[addr(1)]).await;
+
+        let event = events.recv().await.unwrap();
+        match event {
+            AppEvent::MessageDelivery {
+                message_id,
+                delivered,
+                total,
+                failed,
+                failed_peers,
+            } => {
+                assert_eq!(message_id, id);
+                assert_eq!(delivered, 1);
+                assert_eq!(total, 2);
+                assert!(failed);
+                assert_eq!(failed_peers, vec!["offline-peer".to_string()]);
+            }
+            other => panic!("expected MessageDelivery, got {other:?}"),
+        }
     }
 }

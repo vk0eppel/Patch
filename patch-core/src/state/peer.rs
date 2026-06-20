@@ -23,7 +23,7 @@ pub struct Peer {
     /// True when the peer announced a clean departure (`/patch/bye` or mDNS
     /// `ServiceRemoved`) — drives a distinct "left" treatment in the UI while
     /// keeping the real `last_seen`. Cleared the moment a real OSC packet is
-    /// received again (`touch_peer_address`).
+    /// received again (`AppState::record_sighting`).
     pub departed: bool,
 }
 

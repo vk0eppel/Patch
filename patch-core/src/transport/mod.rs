@@ -18,7 +18,7 @@ use crate::osc::types::PeerPresence;
 use crate::osc::types::{ChannelFlash, PatchMessage};
 use crate::reliability::ReliabilityManager;
 use crate::state::channel::Channel;
-use crate::state::{is_self, AppEvent, AppState, Config};
+use crate::state::{is_self, AppEvent, AppState, Config, PeerSighting};
 
 /// Defensive cap on how many channels a peer may offer in one announce.
 const MAX_OFFERED_CHANNELS: usize = 64;
@@ -292,37 +292,26 @@ async fn handle_event(
     send_tx: &mpsc::Sender<Outgoing>,
     reliability: &Arc<Mutex<ReliabilityManager>>,
 ) {
-    // For every event that carries a sender_id, record the source address so
-    // we can unicast back to that peer later.  Skip our own packets — the Mac
-    // receives its own broadcast, and we don't want to add ourselves as a peer.
-    let sender_id: Option<Uuid> = match &event {
-        PatchEvent::Message(m) => Some(m.sender_id),
-        PatchEvent::Presence(p) => Some(p.peer_id),
-        PatchEvent::Flash(f) => Some(f.sender_id),
-        PatchEvent::DirectMessage { msg, .. } => Some(msg.sender_id),
-        PatchEvent::DirectFlash { sender_id, .. } => Some(*sender_id),
-        _ => None,
-    };
-    if let Some(id) = sender_id {
-        if !is_self(id, client_id) {
-            state
-                .touch_peer_address(id, from.ip().to_string(), from.port())
-                .await;
-        }
-    }
-
     match event {
         PatchEvent::Message(msg) => {
-            // Auto-register the sender so they appear in the peers panel
-            // immediately, even when AP isolation blocks their broadcast heartbeats.
-            state
-                .register_if_unknown(
-                    msg.sender_id,
-                    &msg.sender_name,
-                    from.ip().to_string(),
-                    from.port(),
-                )
-                .await;
+            // Record the sighting so the sender appears in the peers panel
+            // immediately (even when AP isolation blocks their broadcast
+            // heartbeats) and so an already-known sender's address stays
+            // current. Skip our own — broadcasts don't echo back to self in
+            // practice (Messages are unicast-only, never broadcast), but the
+            // guard costs nothing and matches every other sender-recording arm.
+            if !is_self(msg.sender_id, client_id) {
+                state
+                    .record_sighting(
+                        PeerSighting::Heartbeat {
+                            peer_id: msg.sender_id,
+                            peer_name: msg.sender_name.clone(),
+                        },
+                        from.ip().to_string(),
+                        from.port(),
+                    )
+                    .await;
+            }
             // ACK critical messages so the sender can stop retransmitting.
             if msg.is_critical() {
                 match encode_ack(msg.message_id, client_id) {
@@ -340,11 +329,13 @@ async fn handle_event(
             if !is_self(target_id, client_id) {
                 return;
             }
-            // Auto-register the sender so the DM thread + peers panel show them.
+            // Record the sighting so the DM thread + peers panel show them.
             state
-                .register_if_unknown(
-                    msg.sender_id,
-                    &msg.sender_name,
+                .record_sighting(
+                    PeerSighting::Heartbeat {
+                        peer_id: msg.sender_id,
+                        peer_name: msg.sender_name.clone(),
+                    },
                     from.ip().to_string(),
                     from.port(),
                 )
@@ -361,9 +352,16 @@ async fn handle_event(
             if !is_self(target_id, client_id) {
                 return;
             }
-            // Auto-register the sender so the DM thread + peers panel show them.
+            // Record the sighting so the DM thread + peers panel show them.
             state
-                .register_if_unknown(sender_id, &sender_name, from.ip().to_string(), from.port())
+                .record_sighting(
+                    PeerSighting::Heartbeat {
+                        peer_id: sender_id,
+                        peer_name: sender_name.clone(),
+                    },
+                    from.ip().to_string(),
+                    from.port(),
+                )
                 .await;
             // Flash our DM thread with the sender (keyed by the *other* peer,
             // exactly like an inbound DM). The id is built locally, so it never
@@ -408,13 +406,8 @@ async fn handle_event(
             if is_self(p.peer_id, client_id) {
                 return;
             }
-            let peer_id = p.peer_id;
-            state.upsert_peer(p).await;
-            // touch_peer_address at the top of this fn was a no-op (no entry yet);
-            // resolve the address now so the first unicast back isn't delayed a
-            // full heartbeat interval.
             state
-                .touch_peer_address(peer_id, from.ip().to_string(), from.port())
+                .record_sighting(PeerSighting::Presence(p), from.ip().to_string(), from.port())
                 .await;
         }
         PatchEvent::Bye { peer_id } => {
@@ -427,11 +420,13 @@ async fn handle_event(
             }
         }
         PatchEvent::Flash(f) => {
-            // Same auto-register logic as for Message.
+            // Same sighting as for Message.
             state
-                .register_if_unknown(
-                    f.sender_id,
-                    &f.sender_name,
+                .record_sighting(
+                    PeerSighting::Heartbeat {
+                        peer_id: f.sender_id,
+                        peer_name: f.sender_name.clone(),
+                    },
                     from.ip().to_string(),
                     from.port(),
                 )
@@ -463,12 +458,20 @@ async fn handle_event(
                     for addr in &targets {
                         let _ = send_tx.send(Outgoing::To(bytes.clone(), *addr)).await;
                     }
-                    // Track criticals for retransmit, like a hand-sent message.
-                    if msg.is_critical() && !targets.is_empty() {
-                        reliability
-                            .lock()
-                            .await
-                            .track(msg.message_id, bytes, targets);
+                    // Track criticals for retransmit, like a hand-sent message —
+                    // same offline-peer filter `dispatch_message` applies, so an
+                    // injected critical doesn't retransmit against peers already
+                    // known to be gone.
+                    if msg.is_critical() {
+                        crate::reliability::track_critical(
+                            reliability,
+                            state,
+                            config.heartbeat_interval_secs,
+                            msg.message_id,
+                            bytes,
+                            targets,
+                        )
+                        .await;
                     }
                 }
                 Err(e) => warn!("Failed to encode OSC-injected message: {}", e),

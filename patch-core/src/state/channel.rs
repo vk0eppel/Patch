@@ -26,21 +26,48 @@ pub struct Channel {
     pub flash_count: Option<u8>,
 }
 
+/// True when `id` is legal for a Channel — the OSC-path slug rule
+/// (`osc::codec::valid_channel_id`) plus the reserved `__all__` broadcast id.
+/// `__all__` is a legal message-routing target (an inbound broadcast must
+/// still decode), just never a real Channel a user can create — so this is a
+/// stricter check than the wire-level one, not a replacement for it.
+///
+/// Single source of truth for "is this Channel id legal": [`Channel::new`]
+/// calls it for the one path that constructs a `Channel` from a raw id
+/// (`api::upsert_channel`'s FFI argument); every other path validates a
+/// `Channel` already built by `serde::Deserialize` (a show file, a peer's
+/// `channels_announce`) and calls this directly instead of re-deriving the
+/// rule.
+pub fn validate_channel_id(id: &str) -> anyhow::Result<()> {
+    if id == "__all__" {
+        anyhow::bail!("channel id '__all__' is reserved for crew-wide broadcasts");
+    }
+    if !crate::osc::codec::valid_channel_id(id) {
+        anyhow::bail!(
+            "channel id '{}' is invalid — use only lowercase letters, digits, _ or - (≤64 chars)",
+            id
+        );
+    }
+    Ok(())
+}
+
 impl Channel {
     pub fn new(
         id: impl Into<String>,
         display_name: impl Into<String>,
         color: impl Into<String>,
-    ) -> Self {
-        Self {
-            id: id.into(),
+    ) -> anyhow::Result<Self> {
+        let id = id.into();
+        validate_channel_id(&id)?;
+        Ok(Self {
+            id,
             display_name: display_name.into(),
             color: color.into(),
             macros: Vec::new(),
             flash_on_critical: true,
             flash_on_message: false,
             flash_count: None,
-        }
+        })
     }
 }
 

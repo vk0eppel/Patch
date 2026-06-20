@@ -43,10 +43,20 @@ sealed class Selection {
       };
 }
 
+bool _setEquals(Set<String> a, Set<String> b) =>
+    a.length == b.length && a.containsAll(b);
+
 /// One or more Channels selected (never empty once channels have loaded).
 final class ChannelSelection extends Selection {
   final Set<String> ids;
   const ChannelSelection(this.ids);
+
+  @override
+  bool operator ==(Object other) =>
+      other is ChannelSelection && _setEquals(ids, other.ids);
+
+  @override
+  int get hashCode => Object.hashAllUnordered(ids);
 }
 
 /// The one-shot ALL/broadcast compose state. `previous` is the Channel
@@ -55,10 +65,24 @@ final class ChannelSelection extends Selection {
 final class AllSelection extends Selection {
   final Set<String> previous;
   const AllSelection(this.previous);
+
+  @override
+  bool operator ==(Object other) =>
+      other is AllSelection && _setEquals(previous, other.previous);
+
+  @override
+  int get hashCode => Object.hashAllUnordered(previous);
 }
 
 /// A single open Direct Message thread.
 final class DmSelection extends Selection {
   final String peerId;
   const DmSelection(this.peerId);
+
+  @override
+  bool operator ==(Object other) =>
+      other is DmSelection && peerId == other.peerId;
+
+  @override
+  int get hashCode => peerId.hashCode;
 }
