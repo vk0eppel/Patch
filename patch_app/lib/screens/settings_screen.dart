@@ -591,6 +591,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     await widget.bridge.removeStaticPeer(peer.address, peer.port);
                   }
                   await widget.bridge.getConfig();
+                  await widget.bridge.getPeers();
                 });
               }),
             ],
@@ -634,8 +635,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           else
             ..._staticPeers.map((peer) => _StaticPeerRow(
                   peer: peer,
-                  onDelete: () => _applyConfigChange(
-                      () => widget.bridge.removeStaticPeer(peer.address, peer.port)),
+                  onDelete: () => runGuarded(context, () async {
+                    await widget.bridge.removeStaticPeer(peer.address, peer.port);
+                    await widget.bridge.getConfig();
+                    await widget.bridge.getPeers();
+                  }),
                 )),
 
           const SizedBox(height: 32),
@@ -2040,6 +2044,9 @@ void _showAddPeerDialog(BuildContext context, BridgeClient bridge) {
                   label: label.isEmpty ? null : label,
                 );
                 await bridge.getConfig();
+                // Refresh peers too — a static peer shows in the peers panel
+                // (was home's old config_updated → getPeers; ADR-0004).
+                await bridge.getPeers();
               });
               Navigator.pop(ctx);
             },

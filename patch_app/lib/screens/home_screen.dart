@@ -478,11 +478,6 @@ class _HomeScreenState extends State<HomeScreen> {
       case 'interface_changed':
         break;
 
-      case 'config_updated':
-        // Re-fetch config (flash flags) and peers (static peer list may have changed).
-        widget.bridge.getConfig();
-        widget.bridge.getPeers();
-
       case 'error':
         final msg = event['message'] as String? ?? 'Something went wrong';
         debugPrint('Bridge error: $msg');

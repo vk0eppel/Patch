@@ -59,75 +59,11 @@ class BridgeClient {
     _connected = true;
   }
 
+  /// Forward an engine push onto the typed [pushes] stream only (slice 1.4,
+  /// ADR-0004) — the legacy map-push path is gone now that both screens consume
+  /// the sealed [PatchEvent]. `patchEventFromRust` returns null for variants
+  /// intentionally not surfaced to the UI (e.g. MessageAcked).
   void _forwardEngineEvent(rust.PatchAppEvent event) {
-    final map = switch (event) {
-      rust.PatchAppEvent_Message(:final field0) => {
-        'event': 'message',
-        'data': _messageFromRust(field0),
-      },
-      rust.PatchAppEvent_MessageAcked(:final messageId, :final peerId) => {
-        'event': 'message_acked',
-        'message_id': messageId,
-        'peer_id': peerId,
-      },
-      rust.PatchAppEvent_MessageDelivery(
-        :final messageId,
-        :final delivered,
-        :final total,
-        :final failed,
-        :final failedPeers,
-      ) => {
-        'event': 'message_delivery',
-        'message_id': messageId,
-        'delivered': delivered,
-        'total': total,
-        'failed': failed,
-        'failed_peers': failedPeers,
-      },
-      // `field0` (a PeerPresence) carries no address — never enough to render
-      // a peer row — so home_screen only ever reacts to the event's
-      // occurrence (debounced into a getPeers() refresh), never its payload.
-      rust.PatchAppEvent_PeerUpdated() => const {
-        'event': 'peer_updated',
-      },
-      rust.PatchAppEvent_PeerExpired(:final peerId) => {
-        'event': 'peer_expired',
-        'data': {'peer_id': peerId},
-      },
-      rust.PatchAppEvent_ChannelFlash(:final field0) => {
-        'event': 'channel_flash',
-        'data': {
-          'channel_id': field0.channelId,
-          'sender_id': field0.senderId.toString(),
-          'sender_name': field0.senderName,
-        },
-      },
-      rust.PatchAppEvent_ChannelListUpdated() => {
-        'event': 'channel_list_updated',
-      },
-      rust.PatchAppEvent_ChannelsOffered(
-        :final fromPeerId,
-        :final fromName,
-        :final channels,
-      ) => {
-        'event': 'channels_offered',
-        'from_peer_id': fromPeerId,
-        'from_name': fromName,
-        'channels': channels.map(_channelFromRust).toList(),
-      },
-      rust.PatchAppEvent_ClientNameChanged(:final name) => {
-        'event': 'client_name_changed',
-        'name': name,
-      },
-      rust.PatchAppEvent_PermissionDenied(:final context) => {
-        'event': 'permission_denied',
-        'message': context,
-      },
-    };
-    _eventController.add(map);
-
-    // Slice 1.1: also emit the typed event. `patchEventFromRust` returns null
-    // for variants intentionally not surfaced to the UI (e.g. MessageAcked).
     final typed = patchEventFromRust(event);
     if (typed != null) _pushController.add(typed);
   }
