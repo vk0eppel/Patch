@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../bridge/bridge_client.dart';
 import '../models/message.dart';
 import '../theme/patch_theme.dart';
+import '../util/run_guarded.dart';
 
 /// Modal show files panel — shows named show files and file import/export.
 /// Open with: showDialog(context: ctx, builder: (_) => ShowFilesDialog(bridge: bridge))
@@ -44,7 +45,8 @@ class _ShowFilesDialogState extends State<ShowFilesDialog> {
             _showFiles = data;
           });
         }
-      case 'show_file_saved':
+      // show_file_saved is now handled at the _saveNew call site (ADR-0004);
+      // show_file_loaded stays on the legacy stream (deferred — cross-screen).
       case 'show_file_loaded':
         widget.bridge.listShowFiles();
     }
@@ -80,8 +82,11 @@ class _ShowFilesDialogState extends State<ShowFilesDialog> {
 
   Future<void> _saveNew() async {
     final name = await _askName(context, title: 'Save Show File', hint: 'Show file name (e.g. "Festival Day 1")');
-    if (name == null) return;
-    await widget.bridge.saveShowFile(name);
+    if (name == null || !mounted) return;
+    await runGuarded(context, () async {
+      await widget.bridge.saveShowFile(name);
+      await widget.bridge.listShowFiles(); // refresh the saved-files list
+    });
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────

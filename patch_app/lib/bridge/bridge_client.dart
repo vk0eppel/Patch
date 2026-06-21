@@ -170,20 +170,11 @@ class BridgeClient {
     }
   }
 
-  Future<void> setInterface(String name) async {
-    try {
-      await rust.setInterface(name: name.isEmpty ? null : name);
-      // No restart needed: the socket always binds 0.0.0.0; the NIC only scopes
-      // the discovery broadcast, which the engine re-reads each heartbeat.
-      _emit({
-        'event': 'interface_changed',
-        'name': name.isEmpty ? 'auto' : name,
-        'restart_required': false,
-      });
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  /// Change the network interface (empty/'auto' → all interfaces). Throws on
+  /// failure. No restart needed: the socket always binds 0.0.0.0; the NIC only
+  /// scopes the discovery broadcast, which the engine re-reads each heartbeat.
+  Future<void> setInterface(String name) =>
+      rust.setInterface(name: name.isEmpty ? null : name);
 
   Future<void> setClientName(String name) async {
     try {
@@ -419,15 +410,10 @@ class BridgeClient {
     }
   }
 
-  /// Clear messages for [channelId], or all channels when null.
-  Future<void> clearMessages({String? channelId}) async {
-    try {
-      await rust.clearMessages(channelId: channelId);
-      _emit({'event': 'messages_cleared', 'channel_id': channelId});
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  /// Clear messages for [channelId], or all channels when null. Throws on
+  /// failure; the caller updates its local message buffer.
+  Future<void> clearMessages({String? channelId}) =>
+      rust.clearMessages(channelId: channelId);
 
   /// Ask a peer (by id) for its channel layout. The reply arrives asynchronously
   /// as a `channels_offered` event (not auto-applied — the UI previews + merges).
@@ -440,17 +426,9 @@ class BridgeClient {
   }
 
   /// Adopt offered channels — merge (adds only ids not already present).
-  /// Takes the same `PatchChannel`s delivered in `channels_offered` and
-  /// rebuilds the typed FRB `Channel`s. Emits `channels_adopted` with the count.
-  Future<void> adoptChannels(List<PatchChannel> channels) async {
-    try {
-      final rebuilt = channels.map(_channelToRust).toList();
-      final added = await rust.adoptChannels(channels: rebuilt);
-      _emit({'event': 'channels_adopted', 'added': added});
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  /// Returns the number of channels actually added; throws on failure.
+  Future<int> adoptChannels(List<PatchChannel> channels) =>
+      rust.adoptChannels(channels: channels.map(_channelToRust).toList());
 
   /// Reset all channels to factory defaults (AUDIO · RF · LIGHTING · VIDEO · STAGE).
   Future<void> resetChannels() async {
@@ -462,13 +440,11 @@ class BridgeClient {
     }
   }
 
-  Future<void> saveShowFile(String name) async {
-    try {
-      final s = await rust.saveShowFile(name: name);
-      _emit({'event': 'show_file_saved', 'slug': s.slug, 'name': s.name});
-    } catch (e) {
-      _emitError(e);
-    }
+  /// Save the current layout as a show file. Returns its slug + name; throws on
+  /// failure. The caller reports the result.
+  Future<({String slug, String name})> saveShowFile(String name) async {
+    final s = await rust.saveShowFile(name: name);
+    return (slug: s.slug, name: s.name);
   }
 
   /// Export the current layout to an arbitrary file path (from a file picker).

@@ -129,11 +129,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   })
               .toList();
         });
-      case 'interface_changed':
-        setState(() => _interfaceApplied = true);
-        Future.delayed(const Duration(seconds: 3), () {
-          if (mounted) setState(() => _interfaceApplied = false);
-        });
       case 'channels':
         final data = event['data'] as List<PatchChannel>;
         setState(() {
@@ -144,18 +139,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         setState(() {
           _peers = data;
         });
-      case 'channels_adopted':
-        final added = (event['added'] as num?)?.toInt() ?? 0;
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(added == 0
-                  ? 'No new channels to add — you already have them all'
-                  : 'Added $added channel${added == 1 ? '' : 's'}'),
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
     }
   }
 
@@ -356,7 +339,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onPressed: fresh.isEmpty
                 ? null
                 : () {
-                    widget.bridge.adoptChannels(fresh);
+                    final messenger = ScaffoldMessenger.of(context);
+                    runGuarded(context, () async {
+                      final added = await widget.bridge.adoptChannels(fresh);
+                      messenger.showSnackBar(SnackBar(
+                        content: Text(added == 0
+                            ? 'No new channels to add — you already have them all'
+                            : 'Added $added channel${added == 1 ? '' : 's'}'),
+                        duration: const Duration(seconds: 3),
+                      ));
+                    });
                     Navigator.pop(ctx);
                   },
             child: Text(fresh.isEmpty ? 'Nothing to add' : 'Add ${fresh.length}'),
@@ -503,7 +495,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             applied: _interfaceApplied,
             onSelect: (name) {
               setState(() => _selectedInterface = name);
-              widget.bridge.setInterface(name ?? 'auto');
+              runGuarded(context, () async {
+                await widget.bridge.setInterface(name ?? 'auto');
+                if (!mounted) return;
+                // Flash the "applied" tick (was the interface_changed event).
+                setState(() => _interfaceApplied = true);
+                Future.delayed(const Duration(seconds: 3), () {
+                  if (mounted) setState(() => _interfaceApplied = false);
+                });
+              });
             },
           ),
           const SizedBox(height: 16),

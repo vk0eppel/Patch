@@ -436,20 +436,6 @@ class _HomeScreenState extends State<HomeScreen> {
           _peers = data;
         });
 
-      case 'messages_cleared':
-        final clearedId = event['channel_id'] as String?;
-        setState(() {
-          if (clearedId != null) {
-            final removed = _messages.remove(clearedId);
-            if (removed != null) {
-              _delivery.clearForMessageIds(removed.map((m) => m.messageId));
-            }
-          } else {
-            _messages.clear();
-            _delivery.clearAll();
-          }
-        });
-
       case 'show_file_loaded':
         widget.bridge.getChannels();
         // A show file also restores static peers — refresh the peers panel.
@@ -473,10 +459,6 @@ class _HomeScreenState extends State<HomeScreen> {
           nameIsDefault: cfg.nameIsDefault,
           currentName: cfg.clientName,
         );
-
-      case 'show_file_saved':
-      case 'interface_changed':
-        break;
 
       case 'error':
         final msg = event['message'] as String? ?? 'Something went wrong';
@@ -594,6 +576,22 @@ class _HomeScreenState extends State<HomeScreen> {
         pulseCount: ch?.flashCount ?? _globalFlashCount,
       ));
     }
+  }
+
+  /// Drop the local copy of cleared messages after a `clearMessages` command
+  /// (was the `messages_cleared` event — ADR-0004). `channelId` null = all.
+  void _onMessagesCleared(String? channelId) {
+    setState(() {
+      if (channelId != null) {
+        final removed = _messages.remove(channelId);
+        if (removed != null) {
+          _delivery.clearForMessageIds(removed.map((m) => m.messageId));
+        }
+      } else {
+        _messages.clear();
+        _delivery.clearAll();
+      }
+    });
   }
 
   void _onPermissionDenied(String message) {
@@ -800,6 +798,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       dmPeerName:
                           _dmPeerId == null ? null : _dmPeerName(_dmPeerId!),
                       onDmSent: _warnIfDmPeerOffline,
+                      onMessagesCleared: _onMessagesCleared,
                       messages: _combinedMessages,
                       channelColors: _channelColors,
                       delivery: _delivery.all,
@@ -986,6 +985,10 @@ class _ChannelView extends StatefulWidget {
   /// Called by the parent after a DM is sent (typed or flash) so it can warn
   /// when the recipient looks offline — the parent owns the peer list + context.
   final VoidCallback onDmSent;
+
+  /// Called after messages are cleared (null = all channels) so the parent can
+  /// drop them from its buffer — the parent owns `_messages` (ADR-0004).
+  final void Function(String? channelId) onMessagesCleared;
   final List<PatchMessage> messages;
   final Map<String, Color> channelColors; // empty when single channel
   final Map<String, MessageDeliveryStatus> delivery;
@@ -1014,6 +1017,7 @@ class _ChannelView extends StatefulWidget {
     required this.channels,
     required this.dmPeerName,
     required this.onDmSent,
+    required this.onMessagesCleared,
     required this.messages,
     required this.channelColors,
     required this.delivery,
@@ -1115,6 +1119,13 @@ class _ChannelViewState extends State<_ChannelView> {
     }
   }
 
+  void _clear(String? channelId) {
+    runGuarded(context, () async {
+      await widget.bridge.clearMessages(channelId: channelId);
+      widget.onMessagesCleared(channelId);
+    });
+  }
+
   Future<void> _exportMessages() async {
     final label = widget.isDmMode
         ? 'dm_${widget.dmPeerName ?? ''}'.toLowerCase()
@@ -1168,12 +1179,12 @@ class _ChannelViewState extends State<_ChannelView> {
             style: ElevatedButton.styleFrom(backgroundColor: PatchTheme.critical),
             onPressed: () {
               if (widget.isDmMode) {
-                widget.bridge.clearMessages(channelId: 'dm:${widget.dmPeerId}');
+                _clear('dm:${widget.dmPeerId}');
               } else if (widget.isAllMode) {
-                widget.bridge.clearMessages(channelId: null); // clear everything
+                _clear(null); // clear everything
               } else {
                 for (final ch in widget.selectedChannels) {
-                  widget.bridge.clearMessages(channelId: ch.id);
+                  _clear(ch.id);
                 }
               }
               Navigator.pop(context);
