@@ -117,7 +117,7 @@ Resolving a single peer's address (DM send, DM flash, channels-request, shutdown
 
 ## Config I/O
 
-`save_config` wraps `Config::save` in `spawn_blocking`. A dedicated `save_lock` (`Mutex<()>`) serialises concurrent whole-file writes — acquired after cloning the current config, so the config `RwLock` is not held during disk I/O. All `std::fs` operations in async paths are `spawn_blocking`-wrapped.
+`ConfigStore` (`state/config.rs`) owns `Config` and persistence together — see ADR-0003. `ConfigStore::save` wraps `Config::save` in `spawn_blocking`. A dedicated `save_lock` (`Mutex<()>`), internal to `ConfigStore`, serialises concurrent whole-file writes — acquired after cloning the current config, so the config lock is not held during disk I/O. `AppState::save_config` is a thin delegation to it. All `std::fs` operations in async paths are `spawn_blocking`-wrapped.
 
 ## ALL Mode (Broadcast)
 

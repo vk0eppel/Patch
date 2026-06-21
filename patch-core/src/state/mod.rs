@@ -3,16 +3,23 @@
 
 pub mod channel;
 pub mod config;
+mod message;
 pub mod peer;
 pub mod show_file;
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::HashSet;
 use std::sync::Arc;
-use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
+
+use channel::ChannelRegistry;
+use config::ConfigStore;
+use message::MessageBuffer;
+use peer::PeerRegistry;
 
 use crate::osc::types::{ChannelFlash, PatchMessage, PeerPresence};
 pub use config::Config;
+pub use peer::PeerSighting;
 
 /// Events broadcast to all internal subscribers (bridge, UI, etc.)
 #[derive(Debug, Clone)]
@@ -56,15 +63,14 @@ pub struct AppState(Arc<Inner>);
 
 #[derive(Debug)]
 struct Inner {
-    /// Full config — wrapped in RwLock so client_name and shortcuts can be
-    /// mutated at runtime without restarting the engine.
-    pub config: RwLock<Config>,
-    /// channel_id → Channel
-    pub channels: RwLock<HashMap<String, channel::Channel>>,
-    /// peer_id → Peer
-    pub peers: RwLock<HashMap<Uuid, peer::Peer>>,
-    /// Recent messages (ring buffer — capped at MAX_BUFFER)
-    pub messages: RwLock<MessageBuffer>,
+    /// Config store — owns its own lock(s) internally.
+    pub config: ConfigStore,
+    /// Channel/macro registry — owns its own lock internally.
+    pub channels: ChannelRegistry,
+    /// Peer registry — owns its own lock internally.
+    pub peers: PeerRegistry,
+    /// Recent messages (ring buffer with dedup) — owns its own lock internally.
+    pub messages: MessageBuffer,
     /// Channel ids the UI currently has selected (incl. `__all__` in ALL mode).
     /// Pushed from Flutter via `set_selected_channels`; read by the MIDI listener
     /// so a MIDI-triggered *global* macro fires on the same channel(s) a tap/F-key
@@ -79,24 +85,6 @@ struct Inner {
     pub dm_target: RwLock<Option<Uuid>>,
     /// Event bus — clone a receiver to subscribe
     pub events: broadcast::Sender<AppEvent>,
-    /// Serializes config persistence so concurrent mutators can't write the
-    /// `patch.toml` out of order (which would let an earlier change clobber a
-    /// later one). Held only across the clone + offloaded write, never with the
-    /// config `RwLock`, so it doesn't block readers on the hot send path.
-    pub save_lock: Mutex<()>,
-}
-
-const MAX_BUFFER: usize = 500;
-
-/// Bounded message ring buffer with O(1) dedup.
-///
-/// `queue` keeps insertion order (and is popped from the front on overflow);
-/// `seen` mirrors the message IDs currently in `queue` so duplicates — our own
-/// broadcast echoes back over UDP — are rejected without scanning the queue.
-#[derive(Debug, Default)]
-struct MessageBuffer {
-    queue: VecDeque<PatchMessage>,
-    seen: HashSet<Uuid>,
 }
 
 /// True when `id` is our own client_id — every event/discovery loop that
@@ -108,50 +96,25 @@ pub fn is_self(id: Uuid, client_id: Uuid) -> bool {
     id == client_id
 }
 
-/// What kind of evidence a Peer sighting is — passed to
-/// [`AppState::record_sighting`], which applies the matching liveness/
-/// classification rule. Each call site reports the strongest evidence it
-/// actually has; the union of "every received packet" and "an mDNS
-/// resolution" is what builds up the peer registry.
-pub enum PeerSighting {
-    /// A full `/patch/presence` heartbeat — proves liveness and carries the
-    /// peer's current name/channels/role.
-    Presence(PeerPresence),
-    /// Any other received OSC packet naming a sender (`Message`/`Flash`/
-    /// `DirectMessage`/`DirectFlash`) — proves liveness, but carries nothing
-    /// beyond the sender's id and name.
-    Heartbeat { peer_id: Uuid, peer_name: String },
-    /// An mDNS resolution — gives an address to unicast to, but does **not**
-    /// prove current liveness: `mdns-sd` replays cached resolutions for
-    /// ~1–2 min after a peer quits (see ERRORS.md).
-    Mdns(PeerPresence),
-}
-
 impl AppState {
     pub fn new(config: Config) -> Self {
         let (tx, _) = broadcast::channel(256);
-
-        // Seed with default channels from config
-        let mut channels = HashMap::new();
-        for ch in &config.default_channels {
-            channels.insert(ch.id.clone(), ch.clone());
-        }
+        let channels = ChannelRegistry::seeded(config.default_channels.clone());
 
         Self(Arc::new(Inner {
-            config: RwLock::new(config),
-            channels: RwLock::new(channels),
-            peers: RwLock::new(HashMap::new()),
-            messages: RwLock::new(MessageBuffer::default()),
+            config: ConfigStore::new(config),
+            channels,
+            peers: PeerRegistry::default(),
+            messages: MessageBuffer::default(),
             selected: RwLock::new(Vec::new()),
             dm_target: RwLock::new(None),
             events: tx,
-            save_lock: Mutex::new(()),
         }))
     }
 
     /// Returns a snapshot clone of the current config.
     pub async fn config(&self) -> Config {
-        self.0.config.read().await.clone()
+        self.0.config.snapshot().await
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<AppEvent> {
@@ -165,7 +128,7 @@ impl AppState {
     // ── Client name ───────────────────────────────────────────────────────────
 
     pub async fn set_client_name(&self, name: String) -> anyhow::Result<()> {
-        self.0.config.write().await.client_name = name.clone();
+        self.0.config.mutate(|c| c.client_name = name.clone()).await;
         self.save_config().await?;
         self.publish(AppEvent::ClientNameChanged(name)).await;
         Ok(())
@@ -198,7 +161,7 @@ impl AppState {
     /// presence heartbeat (the loop re-reads config each tick, like client_name),
     /// so it propagates to other peers within one interval without a restart.
     pub async fn set_role(&self, role: Option<String>) -> anyhow::Result<()> {
-        self.0.config.write().await.role = role;
+        self.0.config.mutate(|c| c.role = role).await;
         self.save_config().await
     }
 
@@ -210,7 +173,7 @@ impl AppState {
     /// peer list rebuilds via the new NIC's discovery. ManualIp/static peers
     /// are kept — their addresses don't depend on which NIC was used.
     pub async fn set_network_interface(&self, iface: Option<String>) -> anyhow::Result<()> {
-        self.0.config.write().await.network_interface = iface;
+        self.0.config.mutate(|c| c.network_interface = iface).await;
         let removed = self.clear_dynamic_peers().await;
         for id in removed {
             self.publish(AppEvent::PeerExpired(id)).await;
@@ -222,49 +185,48 @@ impl AppState {
     /// ManualIp/static peers are never touched.
     /// Returns the IDs of removed peers so callers can emit PeerExpired events.
     async fn clear_dynamic_peers(&self) -> Vec<Uuid> {
-        let mut peers = self.0.peers.write().await;
-        let mut removed = Vec::new();
-        peers.retain(|id, p| {
-            if matches!(p.discovery_mode, peer::DiscoveryMode::ManualIp) {
-                true
-            } else {
-                removed.push(*id);
-                false
-            }
-        });
-        removed
+        self.0.peers.clear_dynamic().await
     }
 
     /// Persist the flash-on-critical setting.
     pub async fn set_flash_on_critical(&self, enabled: bool) -> anyhow::Result<()> {
-        self.0.config.write().await.flash_on_critical = enabled;
+        self.0
+            .config
+            .mutate(|c| c.flash_on_critical = enabled)
+            .await;
         self.save_config().await
     }
 
     /// Persist the flash-on-every-message setting.
     pub async fn set_flash_on_message(&self, enabled: bool) -> anyhow::Result<()> {
-        self.0.config.write().await.flash_on_message = enabled;
+        self.0.config.mutate(|c| c.flash_on_message = enabled).await;
         self.save_config().await
     }
 
     /// Persist the global flash pulse count (clamped to 3–7).
     pub async fn set_flash_count(&self, count: u8) -> anyhow::Result<()> {
-        self.0.config.write().await.flash_count = count.clamp(3, 7);
+        self.0
+            .config
+            .mutate(|c| c.flash_count = count.clamp(3, 7))
+            .await;
         self.save_config().await
     }
 
     pub async fn set_macros_columns(&self, columns: u8) -> anyhow::Result<()> {
-        self.0.config.write().await.macros_columns = columns.clamp(1, 3);
+        self.0
+            .config
+            .mutate(|c| c.macros_columns = columns.clamp(1, 3))
+            .await;
         self.save_config().await
     }
 
     pub async fn set_hide_keyboard(&self, enabled: bool) -> anyhow::Result<()> {
-        self.0.config.write().await.hide_keyboard = enabled;
+        self.0.config.mutate(|c| c.hide_keyboard = enabled).await;
         self.save_config().await
     }
 
     pub async fn set_audible_alert(&self, enabled: bool) -> anyhow::Result<()> {
-        self.0.config.write().await.audible_alert = enabled;
+        self.0.config.mutate(|c| c.audible_alert = enabled).await;
         self.save_config().await
     }
 
@@ -276,7 +238,10 @@ impl AppState {
         if !(1..=60).contains(&secs) {
             anyhow::bail!("heartbeat interval must be 1–60 seconds (got {})", secs);
         }
-        self.0.config.write().await.heartbeat_interval_secs = secs;
+        self.0
+            .config
+            .mutate(|c| c.heartbeat_interval_secs = secs)
+            .await;
         self.save_config().await
     }
 
@@ -287,7 +252,7 @@ impl AppState {
         if !(1024..=65535).contains(&port) {
             anyhow::bail!("OSC port must be 1024–65535 (got {})", port);
         }
-        self.0.config.write().await.osc_port = port;
+        self.0.config.mutate(|c| c.osc_port = port).await;
         self.save_config().await
     }
 
@@ -299,23 +264,10 @@ impl AppState {
         flash_on_message: Option<bool>,
         flash_count: Option<u8>,
     ) -> anyhow::Result<()> {
-        {
-            let mut channels = self.0.channels.write().await;
-            let ch = channels
-                .get_mut(channel_id)
-                .ok_or_else(|| anyhow::anyhow!("Channel '{}' not found", channel_id))?;
-            if let Some(v) = flash_on_critical {
-                ch.flash_on_critical = v;
-            }
-            if let Some(v) = flash_on_message {
-                ch.flash_on_message = v;
-            }
-            // flash_count: None = leave unchanged, Some(0) = clear override (use global),
-            // Some(n) = set per-channel override to n.
-            if let Some(v) = flash_count {
-                ch.flash_count = if v == 0 { None } else { Some(v.clamp(3, 7)) };
-            }
-        }
+        self.0
+            .channels
+            .set_flash(channel_id, flash_on_critical, flash_on_message, flash_count)
+            .await?;
         self.persist_channels().await?;
         self.publish(AppEvent::ChannelListUpdated).await;
         Ok(())
@@ -330,82 +282,55 @@ impl AppState {
         label: Option<String>,
     ) -> anyhow::Result<()> {
         let peer = config::StaticPeer::new(address, port, label)?;
-        {
-            let mut cfg = self.0.config.write().await;
-            if cfg
-                .static_peers
-                .iter()
-                .any(|p| p.address == peer.address && p.port == peer.port)
-            {
-                anyhow::bail!("Peer {}:{} is already configured", peer.address, peer.port);
-            }
-            cfg.static_peers.push(peer);
-        }
+        self.0
+            .config
+            .mutate(|cfg| {
+                if cfg
+                    .static_peers
+                    .iter()
+                    .any(|p| p.address == peer.address && p.port == peer.port)
+                {
+                    anyhow::bail!("Peer {}:{} is already configured", peer.address, peer.port);
+                }
+                cfg.static_peers.push(peer);
+                Ok(())
+            })
+            .await?;
         self.save_config().await
     }
 
     pub async fn remove_static_peer(&self, address: &str, port: u16) -> anyhow::Result<()> {
         self.0
             .config
-            .write()
-            .await
-            .static_peers
-            .retain(|p| !(p.address == address && p.port == port));
+            .mutate(|cfg| {
+                cfg.static_peers
+                    .retain(|p| !(p.address == address && p.port == port))
+            })
+            .await;
         self.save_config().await
     }
 
     // ── Messages ──────────────────────────────────────────────────────────────
 
     pub async fn store_message(&self, msg: PatchMessage) {
-        let mut buf = self.0.messages.write().await;
         // Deduplicate — our own broadcast comes back over UDP, so the same
         // message_id can arrive twice (once on send, once on receive).
-        // `insert` returns false if the id was already present (O(1)).
-        if !buf.seen.insert(msg.message_id) {
-            return;
+        if self.0.messages.store(msg.clone()).await {
+            self.publish(AppEvent::MessageReceived(msg)).await;
         }
-        if buf.queue.len() >= MAX_BUFFER {
-            if let Some(old) = buf.queue.pop_front() {
-                buf.seen.remove(&old.message_id);
-            }
-        }
-        buf.queue.push_back(msg.clone());
-        drop(buf);
-        self.publish(AppEvent::MessageReceived(msg)).await;
     }
 
     /// Clear messages for a specific channel, or all channels when `channel_id` is `None`.
     pub async fn clear_messages(&self, channel_id: Option<&str>) {
-        let mut buf = self.0.messages.write().await;
-        match channel_id {
-            Some(id) => {
-                buf.queue.retain(|m| m.channel_id != id);
-                // Rebuild the dedup set so cleared IDs can be received again.
-                buf.seen = buf.queue.iter().map(|m| m.message_id).collect();
-            }
-            None => {
-                buf.queue.clear();
-                buf.seen.clear();
-            }
-        }
+        self.0.messages.clear(channel_id).await;
     }
 
     pub async fn get_all_messages(&self) -> Vec<PatchMessage> {
-        self.0.messages.read().await.queue.iter().cloned().collect()
+        self.0.messages.get_all().await
     }
 
     pub async fn get_messages(&self, channel_id: &str, limit: usize) -> Vec<PatchMessage> {
-        let buf = self.0.messages.read().await;
-        buf.queue
-            .iter()
-            .filter(|m| m.channel_id == channel_id)
-            .rev()
-            .take(limit)
-            .cloned()
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect()
+        self.0.messages.get(channel_id, limit).await
     }
 
     // ── Peers ─────────────────────────────────────────────────────────────────
@@ -418,99 +343,7 @@ impl AppState {
     /// `touch_peer_address`, `resolve_peer_address`), each covering a slice of
     /// this and leaving a caller to pick the right one.
     pub async fn record_sighting(&self, sighting: PeerSighting, address: String, port: u16) {
-        let presence = {
-            let mut peers = self.0.peers.write().await;
-            match sighting {
-                PeerSighting::Presence(presence) => {
-                    let mut new_peer = peer::Peer::from_presence(presence.clone());
-                    // Once a peer has been resolved via mDNS, keep that
-                    // classification — a subsequent OSC presence heartbeat
-                    // shouldn't downgrade the icon.
-                    if let Some(existing) = peers.get(&presence.peer_id) {
-                        if matches!(existing.discovery_mode, peer::DiscoveryMode::Mdns) {
-                            new_peer.discovery_mode = peer::DiscoveryMode::Mdns;
-                        }
-                    }
-                    new_peer.address = address;
-                    new_peer.osc_port = port;
-                    peers.insert(presence.peer_id, new_peer);
-                    presence
-                }
-                PeerSighting::Heartbeat { peer_id, peer_name } => match peers.get_mut(&peer_id) {
-                    Some(peer) => {
-                        peer.address = address;
-                        peer.osc_port = port;
-                        peer.last_seen = chrono::Utc::now();
-                        // A real OSC packet proves liveness — clear any prior departure.
-                        peer.departed = false;
-                        PeerPresence {
-                            peer_id: peer.peer_id,
-                            peer_name: peer.peer_name.clone(),
-                            channels: peer.channels.clone(),
-                            role: peer.role.clone(),
-                            timestamp: peer.last_seen,
-                        }
-                    }
-                    None => {
-                        // Seen for the first time outside the presence heartbeat
-                        // — e.g. a Message/Flash/DM arriving before any
-                        // `/patch/presence` (AP isolation blocking broadcasts).
-                        // Role/channels stay unknown until their presence
-                        // heartbeat arrives.
-                        let presence = PeerPresence {
-                            peer_id,
-                            peer_name,
-                            channels: Vec::new(),
-                            role: None,
-                            timestamp: chrono::Utc::now(),
-                        };
-                        let mut new_peer = peer::Peer::from_presence(presence.clone());
-                        new_peer.address = address;
-                        new_peer.osc_port = port;
-                        peers.insert(peer_id, new_peer);
-                        presence
-                    }
-                },
-                PeerSighting::Mdns(presence) => match peers.get_mut(&presence.peer_id) {
-                    Some(peer) => {
-                        // mDNS resolution can be replayed from a stale cache long
-                        // after a peer has quit, so it proves only that we have an
-                        // address to unicast to — not that the peer is currently
-                        // up. Liveness (`last_seen`) comes solely from a
-                        // `Heartbeat`/`Presence` sighting, never from here.
-                        if !address.is_empty() {
-                            peer.address = address;
-                            peer.osc_port = port;
-                        }
-                        peer.discovery_mode = peer::DiscoveryMode::Mdns;
-                        PeerPresence {
-                            peer_id: peer.peer_id,
-                            peer_name: peer.peer_name.clone(),
-                            channels: peer.channels.clone(),
-                            role: peer.role.clone(),
-                            timestamp: peer.last_seen,
-                        }
-                    }
-                    None => {
-                        let mut new_peer = peer::Peer::from_presence(presence.clone());
-                        new_peer.discovery_mode = peer::DiscoveryMode::Mdns;
-                        // Same rule as the `Some` branch above: an unresolved pinned
-                        // subnet means `address` is empty — leave the peer with no
-                        // address (its `from_presence` default) rather than store an
-                        // empty one, so `Peer::has_address`/`socket_addr` correctly
-                        // read it as unreachable instead of address == "".
-                        if !address.is_empty() {
-                            new_peer.address = address;
-                            new_peer.osc_port = port;
-                        }
-                        // Backdate past the UI's stale threshold so the dot starts grey.
-                        new_peer.last_seen = chrono::Utc::now() - chrono::Duration::seconds(60);
-                        peers.insert(presence.peer_id, new_peer);
-                        presence
-                    }
-                },
-            }
-        };
+        let presence = self.0.peers.record_sighting(sighting, address, port).await;
         self.publish(AppEvent::PeerUpdated(presence)).await;
     }
 
@@ -518,23 +351,11 @@ impl AppState {
     /// ManualIp / static peers are never removed.
     /// Returns the IDs of removed peers so callers can emit PeerExpired events.
     pub async fn clear_stale_peers(&self, max_age_secs: u64) -> Vec<Uuid> {
-        let mut peers = self.0.peers.write().await;
-        let mut removed = Vec::new();
-        peers.retain(|id, p| {
-            let is_manual = matches!(p.discovery_mode, peer::DiscoveryMode::ManualIp);
-            let is_stale = p.is_stale(max_age_secs as i64);
-            if !is_manual && is_stale {
-                removed.push(*id);
-                false
-            } else {
-                true
-            }
-        });
-        removed
+        self.0.peers.clear_stale(max_age_secs).await
     }
 
     pub async fn has_peer(&self, peer_id: Uuid) -> bool {
-        self.0.peers.read().await.contains_key(&peer_id)
+        self.0.peers.has(peer_id).await
     }
 
     /// Fully remove a peer from the registry (emits `PeerExpired`). Graceful
@@ -543,9 +364,7 @@ impl AppState {
     /// than vanishing — and the manual "clear inactive peers" button removes via
     /// `clear_stale_peers`. Retained as a utility (no current caller).
     pub async fn expire_peer(&self, peer_id: Uuid) {
-        let mut peers = self.0.peers.write().await;
-        peers.remove(&peer_id);
-        drop(peers);
+        self.0.peers.expire(peer_id).await;
         self.publish(AppEvent::PeerExpired(peer_id)).await;
     }
 
@@ -557,30 +376,22 @@ impl AppState {
     /// `PeerSighting::Presence`/`Heartbeat` sighting. No-op if the peer isn't
     /// currently known.
     pub async fn mark_peer_offline(&self, peer_id: Uuid) {
-        let presence = {
-            let mut peers = self.0.peers.write().await;
-            let Some(peer) = peers.get_mut(&peer_id) else {
-                return;
-            };
-            peer.departed = true;
-            PeerPresence {
-                peer_id: peer.peer_id,
-                peer_name: peer.peer_name.clone(),
-                channels: peer.channels.clone(),
-                role: peer.role.clone(),
-                timestamp: peer.last_seen,
-            }
-        };
-        self.publish(AppEvent::PeerUpdated(presence)).await;
+        if let Some(presence) = self.0.peers.mark_offline(peer_id).await {
+            self.publish(AppEvent::PeerUpdated(presence)).await;
+        }
     }
 
+    /// Every known peer, including a synthetic entry per configured static
+    /// peer that hasn't been heard from dynamically yet. The static-peer merge
+    /// is cross-domain (it needs `Config`, not just the peer registry), so it
+    /// lives here rather than in `PeerRegistry` — see ADR-0003.
     pub async fn get_peers(&self) -> Vec<peer::Peer> {
-        let mut peers: Vec<_> = self.0.peers.read().await.values().cloned().collect();
+        let mut peers: Vec<_> = self.0.peers.list().await;
 
         // Merge in static peers that haven't been heard from yet.
         // Once a real packet arrives from the same address, the dynamic entry
         // takes over and the synthetic one is suppressed by the address check.
-        let static_peers = self.0.config.read().await.static_peers.clone();
+        let static_peers = self.0.config.read(|c| c.static_peers.clone()).await;
         let known_by_addr: std::collections::HashSet<(String, u16)> = peers
             .iter()
             .map(|p| (p.address.clone(), p.osc_port))
@@ -643,20 +454,18 @@ impl AppState {
     // ── Channels & macros ────────────────────────────────────────────────────
 
     pub async fn get_channels(&self) -> Vec<channel::Channel> {
-        let mut channels: Vec<_> = self.0.channels.read().await.values().cloned().collect();
-        channels.sort_by(|a, b| a.display_name.cmp(&b.display_name));
-        channels
+        self.0.channels.list().await
     }
 
     pub async fn upsert_channel(&self, ch: channel::Channel) {
-        self.0.channels.write().await.insert(ch.id.clone(), ch);
+        self.0.channels.upsert(ch).await;
         self.persist_channels().await.ok();
         self.publish(AppEvent::ChannelListUpdated).await;
     }
 
     /// Delete a channel by ID.
     pub async fn delete_channel(&self, channel_id: &str) -> anyhow::Result<()> {
-        self.0.channels.write().await.remove(channel_id);
+        self.0.channels.delete(channel_id).await;
         self.persist_channels().await?;
         self.publish(AppEvent::ChannelListUpdated).await;
         Ok(())
@@ -684,23 +493,7 @@ impl AppState {
         channels: Vec<channel::Channel>,
         static_peers: Vec<config::StaticPeer>,
     ) -> anyhow::Result<()> {
-        for ch in &channels {
-            channel::validate_channel_id(&ch.id).map_err(|e| {
-                anyhow::anyhow!("show file contains invalid channel id {:?} — {}", ch.id, e)
-            })?;
-            for m in &ch.macros {
-                if let Some(osc) = &m.osc {
-                    channel::validate_osc_target(osc).map_err(|e| {
-                        anyhow::anyhow!(
-                            "show file macro {:?} on channel {:?} has an invalid OSC target — {}",
-                            m.label,
-                            ch.id,
-                            e
-                        )
-                    })?;
-                }
-            }
-        }
+        channel::validate_show_file_channels(&channels)?;
         let mut validated_peers: Vec<config::StaticPeer> = Vec::with_capacity(static_peers.len());
         let mut seen: HashSet<(String, u16)> = HashSet::new();
         for sp in static_peers {
@@ -718,22 +511,17 @@ impl AppState {
             }
         }
 
-        {
-            let mut ch_map = self.0.channels.write().await;
-            ch_map.clear();
-            for ch in channels {
-                ch_map.insert(ch.id.clone(), ch);
-            }
-        }
+        self.0.channels.replace_all(channels).await;
         // Replace static peers and sync default_channels into the config, then
         // persist once (rather than a write for channels + a write for peers).
-        {
-            let channels_snapshot: Vec<_> =
-                self.0.channels.read().await.values().cloned().collect();
-            let mut cfg = self.0.config.write().await;
-            cfg.default_channels = channels_snapshot;
-            cfg.static_peers = validated_peers;
-        }
+        let channels_snapshot = self.0.channels.list().await;
+        self.0
+            .config
+            .mutate(|cfg| {
+                cfg.default_channels = channels_snapshot;
+                cfg.static_peers = validated_peers;
+            })
+            .await;
         self.save_config().await?;
         self.publish(AppEvent::ChannelListUpdated).await;
         Ok(())
@@ -754,51 +542,16 @@ impl AppState {
     /// Without this, importing a layout could silently impose "flash on every
     /// message" from whoever you imported from.
     pub async fn merge_channels(&self, channels: Vec<channel::Channel>) -> anyhow::Result<usize> {
-        let (flash_on_critical, flash_on_message) = {
-            let cfg = self.0.config.read().await;
-            (cfg.flash_on_critical, cfg.flash_on_message)
-        };
-        let mut added = 0usize;
-        {
-            let mut map = self.0.channels.write().await;
-            for mut ch in channels {
-                if let Err(e) = channel::validate_channel_id(&ch.id) {
-                    tracing::warn!(
-                        "merge_channels: skipping invalid/reserved id {:?}: {}",
-                        ch.id,
-                        e
-                    );
-                    continue;
-                }
-                if map.contains_key(&ch.id) {
-                    continue; // keep the existing channel untouched
-                }
-                // Reset behavioural flags to local defaults (structure-only adopt).
-                ch.flash_on_critical = flash_on_critical;
-                ch.flash_on_message = flash_on_message;
-                ch.flash_count = None;
-                // Untrusted peer input (possibly a different/older Patch build) —
-                // drop just the one macro with an invalid OSC target rather than
-                // rejecting the whole channel; see ADR-0002.
-                ch.macros.retain(|m| {
-                    let Some(osc) = &m.osc else { return true };
-                    match channel::validate_osc_target(osc) {
-                        Ok(()) => true,
-                        Err(e) => {
-                            tracing::warn!(
-                                "merge_channels: dropping macro {:?} on channel {:?} — invalid OSC target: {}",
-                                m.label,
-                                ch.id,
-                                e
-                            );
-                            false
-                        }
-                    }
-                });
-                map.insert(ch.id.clone(), ch);
-                added += 1;
-            }
-        }
+        let (flash_on_critical, flash_on_message) = self
+            .0
+            .config
+            .read(|c| (c.flash_on_critical, c.flash_on_message))
+            .await;
+        let added = self
+            .0
+            .channels
+            .merge(channels, flash_on_critical, flash_on_message)
+            .await;
         if added > 0 {
             self.persist_channels().await?;
             self.publish(AppEvent::ChannelListUpdated).await;
@@ -809,34 +562,11 @@ impl AppState {
     /// Replace all channels with those from a loaded show file.
     pub async fn apply_show_file(&self, channels: Vec<channel::Channel>) -> anyhow::Result<()> {
         // A show file is untrusted input (shared between machines, possibly
-        // hand-edited). Validate every channel id against the OSC-path slug rule
-        // *before* mutating anything — an invalid id would otherwise be embedded
-        // verbatim in `/patch/channel/{id}/...` on the next send. Reject the whole
-        // show file atomically so a single bad entry can't half-apply.
-        for ch in &channels {
-            channel::validate_channel_id(&ch.id).map_err(|e| {
-                anyhow::anyhow!("show file contains invalid channel id {:?} — {}", ch.id, e)
-            })?;
-            for m in &ch.macros {
-                if let Some(osc) = &m.osc {
-                    channel::validate_osc_target(osc).map_err(|e| {
-                        anyhow::anyhow!(
-                            "show file macro {:?} on channel {:?} has an invalid OSC target — {}",
-                            m.label,
-                            ch.id,
-                            e
-                        )
-                    })?;
-                }
-            }
-        }
-        {
-            let mut ch_map = self.0.channels.write().await;
-            ch_map.clear();
-            for ch in channels {
-                ch_map.insert(ch.id.clone(), ch);
-            }
-        }
+        // hand-edited). Validate every channel id and macro OSC target *before*
+        // mutating anything — reject the whole show file atomically so a single
+        // bad entry can't half-apply.
+        channel::validate_show_file_channels(&channels)?;
+        self.0.channels.replace_all(channels).await;
         self.persist_channels().await?;
         self.publish(AppEvent::ChannelListUpdated).await;
         Ok(())
@@ -848,18 +578,7 @@ impl AppState {
         channel_id: &str,
         macro_msg: channel::MacroMessage,
     ) -> anyhow::Result<()> {
-        {
-            let mut channels = self.0.channels.write().await;
-            let ch = channels
-                .get_mut(channel_id)
-                .ok_or_else(|| anyhow::anyhow!("Channel '{}' not found", channel_id))?;
-            // Replace existing macro with same label, or append.
-            if let Some(pos) = ch.macros.iter().position(|s| s.label == macro_msg.label) {
-                ch.macros[pos] = macro_msg;
-            } else {
-                ch.macros.push(macro_msg);
-            }
-        }
+        self.0.channels.upsert_macro(channel_id, macro_msg).await?;
         self.persist_channels().await?;
         self.publish(AppEvent::ChannelListUpdated).await;
         Ok(())
@@ -875,22 +594,10 @@ impl AppState {
         channel_id: &str,
         ordered_labels: Vec<String>,
     ) -> anyhow::Result<()> {
-        {
-            let mut channels = self.0.channels.write().await;
-            let ch = channels
-                .get_mut(channel_id)
-                .ok_or_else(|| anyhow::anyhow!("Channel '{}' not found", channel_id))?;
-            let mut remaining = std::mem::take(&mut ch.macros);
-            let mut reordered = Vec::with_capacity(remaining.len());
-            for label in &ordered_labels {
-                if let Some(pos) = remaining.iter().position(|m| &m.label == label) {
-                    reordered.push(remaining.remove(pos));
-                }
-            }
-            // Preserve any macros that weren't named in `ordered_labels`.
-            reordered.append(&mut remaining);
-            ch.macros = reordered;
-        }
+        self.0
+            .channels
+            .reorder_macros(channel_id, ordered_labels)
+            .await?;
         self.persist_channels().await?;
         self.publish(AppEvent::ChannelListUpdated).await;
         Ok(())
@@ -907,24 +614,29 @@ impl AppState {
         &self,
         macro_msg: channel::MacroMessage,
     ) -> anyhow::Result<()> {
-        {
-            let mut cfg = self.0.config.write().await;
-            if let Some(pos) = cfg
-                .global_macros
-                .iter()
-                .position(|m| m.label == macro_msg.label)
-            {
-                cfg.global_macros[pos] = macro_msg;
-            } else {
-                cfg.global_macros.push(macro_msg);
-            }
-        }
+        self.0
+            .config
+            .mutate(|cfg| {
+                if let Some(pos) = cfg
+                    .global_macros
+                    .iter()
+                    .position(|m| m.label == macro_msg.label)
+                {
+                    cfg.global_macros[pos] = macro_msg;
+                } else {
+                    cfg.global_macros.push(macro_msg);
+                }
+            })
+            .await;
         self.save_config().await
     }
 
     /// Replace all global macros with the factory defaults.
     pub async fn reset_global_macros(&self) -> anyhow::Result<()> {
-        self.0.config.write().await.global_macros = config::default_global_macros();
+        self.0
+            .config
+            .mutate(|cfg| cfg.global_macros = config::default_global_macros())
+            .await;
         self.save_config().await
     }
 
@@ -932,10 +644,8 @@ impl AppState {
     pub async fn delete_global_macro(&self, label: &str) -> anyhow::Result<()> {
         self.0
             .config
-            .write()
-            .await
-            .global_macros
-            .retain(|m| m.label != label);
+            .mutate(|cfg| cfg.global_macros.retain(|m| m.label != label))
+            .await;
         self.save_config().await
     }
 
@@ -943,30 +653,26 @@ impl AppState {
     /// not named are kept at the end, unknown labels ignored — same contract as
     /// [`reorder_macros`].
     pub async fn reorder_global_macros(&self, ordered_labels: Vec<String>) -> anyhow::Result<()> {
-        {
-            let mut cfg = self.0.config.write().await;
-            let mut remaining = std::mem::take(&mut cfg.global_macros);
-            let mut reordered = Vec::with_capacity(remaining.len());
-            for label in &ordered_labels {
-                if let Some(pos) = remaining.iter().position(|m| &m.label == label) {
-                    reordered.push(remaining.remove(pos));
+        self.0
+            .config
+            .mutate(|cfg| {
+                let mut remaining = std::mem::take(&mut cfg.global_macros);
+                let mut reordered = Vec::with_capacity(remaining.len());
+                for label in &ordered_labels {
+                    if let Some(pos) = remaining.iter().position(|m| &m.label == label) {
+                        reordered.push(remaining.remove(pos));
+                    }
                 }
-            }
-            reordered.append(&mut remaining);
-            cfg.global_macros = reordered;
-        }
+                reordered.append(&mut remaining);
+                cfg.global_macros = reordered;
+            })
+            .await;
         self.save_config().await
     }
 
     /// Remove a macro from a channel by label.
     pub async fn delete_macro(&self, channel_id: &str, label: &str) -> anyhow::Result<()> {
-        {
-            let mut channels = self.0.channels.write().await;
-            let ch = channels
-                .get_mut(channel_id)
-                .ok_or_else(|| anyhow::anyhow!("Channel '{}' not found", channel_id))?;
-            ch.macros.retain(|s| s.label != label);
-        }
+        self.0.channels.delete_macro(channel_id, label).await?;
         self.persist_channels().await?;
         self.publish(AppEvent::ChannelListUpdated).await;
         Ok(())
@@ -974,26 +680,17 @@ impl AppState {
 
     /// Write current channel macros back to patch.toml.
     async fn persist_channels(&self) -> anyhow::Result<()> {
-        {
-            let channels: Vec<_> = self.0.channels.read().await.values().cloned().collect();
-            self.0.config.write().await.default_channels = channels;
-        }
+        let channels = self.0.channels.list().await;
+        self.0
+            .config
+            .mutate(|cfg| cfg.default_channels = channels)
+            .await;
         self.save_config().await
     }
 
     /// Persist the current config to disk, off the async runtime.
-    ///
-    /// `Config::save` does blocking file I/O (`std::fs::write` of the whole
-    /// TOML); running it on a tokio worker would stall OSC send/receive, so it's
-    /// offloaded to the blocking pool. The `save_lock` serializes writes so two
-    /// concurrent mutators can't reorder their writes; the config snapshot is
-    /// taken *after* acquiring the lock, so the last writer always persists the
-    /// latest committed state. Callers must commit their mutation (drop the
-    /// config write guard) before calling this.
     async fn save_config(&self) -> anyhow::Result<()> {
-        let _guard = self.0.save_lock.lock().await;
-        let cfg = self.0.config.read().await.clone();
-        tokio::task::spawn_blocking(move || cfg.save()).await?
+        self.0.config.save().await
     }
 }
 
@@ -1002,7 +699,6 @@ impl AppState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::osc::types::Priority;
 
     /// An in-memory state with no channels, no static peers, and no global macros
     /// (a clean slate — `Config::default()` now seeds global macros on a fresh
@@ -1015,10 +711,6 @@ mod tests {
             global_macros: Vec::new(),
             ..Config::default()
         })
-    }
-
-    fn msg(channel: &str) -> PatchMessage {
-        PatchMessage::new(Uuid::new_v4(), "tester", channel, Priority::Info, "hi")
     }
 
     fn presence(id: Uuid, when: chrono::DateTime<chrono::Utc>) -> PeerPresence {
@@ -1046,12 +738,11 @@ mod tests {
         address: &str,
         port: u16,
     ) {
-        let mut peers = st.0.peers.write().await;
         let mut p = peer::Peer::from_presence(presence(id, last_seen));
         p.discovery_mode = mode;
         p.address = address.to_string();
         p.osc_port = port;
-        peers.insert(id, p);
+        st.0.peers.insert_for_test(id, p).await;
     }
 
     /// Test-only: builds a `Channel` with a deliberately illegal id, bypassing
@@ -1070,61 +761,6 @@ mod tests {
             flash_on_message: false,
             flash_count: None,
         }
-    }
-
-    #[tokio::test]
-    async fn store_message_dedups_by_id() {
-        let st = test_state();
-        let m = msg("rf");
-        st.store_message(m.clone()).await;
-        st.store_message(m.clone()).await; // same id again (our UDP echo)
-        assert_eq!(st.get_all_messages().await.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn store_message_evicts_oldest_on_overflow() {
-        let st = test_state();
-        let first = msg("rf");
-        st.store_message(first.clone()).await;
-        for _ in 0..MAX_BUFFER {
-            st.store_message(msg("rf")).await;
-        }
-        let all = st.get_all_messages().await;
-        assert_eq!(all.len(), MAX_BUFFER);
-        assert!(all.iter().all(|m| m.message_id != first.message_id)); // front evicted
-                                                                       // Eviction also drops the id from the dedup set, so it can re-arrive.
-        st.store_message(first.clone()).await;
-        assert!(st
-            .get_all_messages()
-            .await
-            .iter()
-            .any(|m| m.message_id == first.message_id));
-    }
-
-    #[tokio::test]
-    async fn clear_all_allows_re_receive() {
-        let st = test_state();
-        let m = msg("rf");
-        st.store_message(m.clone()).await;
-        st.clear_messages(None).await;
-        assert_eq!(st.get_all_messages().await.len(), 0);
-        st.store_message(m.clone()).await; // same id, accepted after clear
-        assert_eq!(st.get_all_messages().await.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn clear_by_channel_rebuilds_dedup_set() {
-        let st = test_state();
-        let rf = msg("rf");
-        let audio = msg("audio");
-        st.store_message(rf.clone()).await;
-        st.store_message(audio.clone()).await;
-        st.clear_messages(Some("rf")).await;
-        let remaining = st.get_all_messages().await;
-        assert_eq!(remaining.len(), 1);
-        assert_eq!(remaining[0].channel_id, "audio");
-        st.store_message(rf.clone()).await; // rf id was cleared from `seen`
-        assert_eq!(st.get_all_messages().await.len(), 2);
     }
 
     #[tokio::test]

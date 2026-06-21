@@ -20,7 +20,7 @@ Proven mistakes — these have caused real bugs. Read before touching the releva
 
 ## Config / State
 
-**Do not pass a config snapshot into `save_config` or save under the config `RwLock`.** The former reintroduces a write-reorder race (concurrent fire-and-forget mutators clobber each other); the latter stalls OSC traffic during disk I/O. Correct pattern: mutate under the RwLock, drop the guard, call `save_config().await` — which acquires a separate `save_lock` and clones the *current* config before writing.
+**Do not pass a config snapshot into `save_config` or save under `ConfigStore`'s config lock.** The former reintroduces a write-reorder race (concurrent fire-and-forget mutators clobber each other); the latter stalls OSC traffic during disk I/O. Correct pattern: mutate via `ConfigStore::mutate` (drops the write guard when it returns), then call `save_config().await` — which delegates to `ConfigStore::save`, acquiring a separate `save_lock` and cloning the *current* config before writing.
 
 ## FFI Bridge
 

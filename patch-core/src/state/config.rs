@@ -271,6 +271,59 @@ pub fn migrate(config: &mut Config) -> bool {
     }
 }
 
+/// Pure config-persistence logic — no `AppEvent`/broadcast-channel
+/// dependency. Owns `Config` *and* the lock serializing writes to
+/// `patch.toml` (`save_lock` previously lived on `AppState`'s inner state —
+/// it's purely a config-persistence concern, see ADR-0003).
+#[derive(Debug)]
+pub(crate) struct ConfigStore {
+    config: tokio::sync::RwLock<Config>,
+    /// Serializes config persistence so concurrent mutators can't write
+    /// `patch.toml` out of order (which would let an earlier change clobber a
+    /// later one). Held only across the clone + offloaded write, never with
+    /// `config`, so it doesn't block readers on the hot send path.
+    save_lock: tokio::sync::Mutex<()>,
+}
+
+impl ConfigStore {
+    pub(crate) fn new(config: Config) -> Self {
+        Self {
+            config: tokio::sync::RwLock::new(config),
+            save_lock: tokio::sync::Mutex::new(()),
+        }
+    }
+
+    /// Returns a snapshot clone of the current config.
+    pub(crate) async fn snapshot(&self) -> Config {
+        self.config.read().await.clone()
+    }
+
+    /// Read access to the config under the lock, without cloning the whole
+    /// struct — for callers that only need a field or two (e.g. the
+    /// static-peer list, the flash defaults).
+    pub(crate) async fn read<R>(&self, f: impl FnOnce(&Config) -> R) -> R {
+        f(&*self.config.read().await)
+    }
+
+    /// Apply a mutation under the write lock. Does not persist — call
+    /// [`ConfigStore::save`] afterward (every current caller does,
+    /// immediately).
+    pub(crate) async fn mutate<R>(&self, f: impl FnOnce(&mut Config) -> R) -> R {
+        f(&mut *self.config.write().await)
+    }
+
+    /// Persist the current config to disk, off the async runtime.
+    ///
+    /// `Config::save` does blocking file I/O (`std::fs::write` of the whole
+    /// file), so it's offloaded via `spawn_blocking` rather than running on
+    /// the async runtime's worker threads.
+    pub(crate) async fn save(&self) -> Result<()> {
+        let _guard = self.save_lock.lock().await;
+        let cfg = self.config.read().await.clone();
+        tokio::task::spawn_blocking(move || cfg.save()).await?
+    }
+}
+
 fn whoami() -> String {
     std::env::var("USER")
         .or_else(|_| std::env::var("USERNAME"))
@@ -506,5 +559,62 @@ default_channels = []
         };
         assert!(!migrate(&mut cfg)); // no change, never downgrade
         assert_eq!(cfg.config_version, 9999);
+    }
+
+    // ── ConfigStore — direct, no AppState/event bus needed ──────────────────
+
+    #[tokio::test]
+    async fn snapshot_returns_a_clone_of_the_current_config() {
+        let store = ConfigStore::new(Config {
+            client_name: "Alice".into(),
+            ..Config::default()
+        });
+        assert_eq!(store.snapshot().await.client_name, "Alice");
+    }
+
+    #[tokio::test]
+    async fn mutate_applies_under_the_write_lock() {
+        let store = ConfigStore::new(Config::default());
+        store.mutate(|c| c.client_name = "Bob".into()).await;
+        assert_eq!(store.snapshot().await.client_name, "Bob");
+    }
+
+    #[tokio::test]
+    async fn mutate_returns_the_closures_value() {
+        let store = ConfigStore::new(Config::default());
+        let port = store
+            .mutate(|c| {
+                c.osc_port = 9001;
+                c.osc_port
+            })
+            .await;
+        assert_eq!(port, 9001);
+    }
+
+    #[tokio::test]
+    async fn read_does_not_clone_the_whole_config() {
+        let store = ConfigStore::new(Config {
+            client_name: "Alice".into(),
+            ..Config::default()
+        });
+        let name_len = store.read(|c| c.client_name.len()).await;
+        assert_eq!(name_len, 5);
+    }
+
+    #[tokio::test]
+    async fn save_then_reload_round_trips_a_mutation() {
+        let _guard = test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        set_data_dir(dir.clone());
+
+        let store = ConfigStore::new(Config::default());
+        store.mutate(|c| c.client_name = "Persisted".into()).await;
+        store.save().await.unwrap();
+
+        let reloaded = Config::load_or_default().unwrap();
+        assert_eq!(reloaded.client_name, "Persisted");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
