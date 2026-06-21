@@ -270,7 +270,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // Dual action: also fire the macro's OSC packet to external gear (once).
     final osc = cm.macro.osc;
     if (osc != null) {
-      widget.bridge.sendOscMacro(osc.address, osc.port, osc.path, osc.arg);
+      widget.bridge.sendOscMacro(osc.address, osc.port, osc.path, osc.arg, osc.argType);
     }
   }
 

@@ -182,6 +182,7 @@ abstract class RustLibApi extends BaseApi {
     required int port,
     required String path,
     String? arg,
+    required OscArgKind argType,
   });
 
   Future<void> crateApiSetAudibleAlert({required bool enabled});
@@ -1192,6 +1193,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required int port,
     required String path,
     String? arg,
+    required OscArgKind argType,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1201,6 +1203,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_u_16(port, serializer);
           sse_encode_String(path, serializer);
           sse_encode_opt_String(arg, serializer);
+          sse_encode_osc_arg_kind(argType, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1213,7 +1216,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiSendOscMacroConstMeta,
-        argValues: [address, port, path, arg],
+        argValues: [address, port, path, arg, argType],
         apiImpl: this,
       ),
     );
@@ -1221,7 +1224,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiSendOscMacroConstMeta => const TaskConstMeta(
     debugName: "send_osc_macro",
-    argNames: ["address", "port", "path", "arg"],
+    argNames: ["address", "port", "path", "arg", "argType"],
   );
 
   @override
@@ -2115,16 +2118,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  OscArgKind dco_decode_osc_arg_kind(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return OscArgKind.values[raw as int];
+  }
+
+  @protected
   OscTarget dco_decode_osc_target(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return OscTarget(
       address: dco_decode_String(arr[0]),
       port: dco_decode_u_16(arr[1]),
       path: dco_decode_String(arr[2]),
       arg: dco_decode_opt_String(arr[3]),
+      argType: dco_decode_osc_arg_kind(arr[4]),
     );
   }
 
@@ -2690,17 +2700,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  OscArgKind sse_decode_osc_arg_kind(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return OscArgKind.values[inner];
+  }
+
+  @protected
   OscTarget sse_decode_osc_target(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_address = sse_decode_String(deserializer);
     var var_port = sse_decode_u_16(deserializer);
     var var_path = sse_decode_String(deserializer);
     var var_arg = sse_decode_opt_String(deserializer);
+    var var_argType = sse_decode_osc_arg_kind(deserializer);
     return OscTarget(
       address: var_address,
       port: var_port,
       path: var_path,
       arg: var_arg,
+      argType: var_argType,
     );
   }
 
@@ -3242,12 +3261,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_osc_arg_kind(OscArgKind self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_osc_target(OscTarget self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.address, serializer);
     sse_encode_u_16(self.port, serializer);
     sse_encode_String(self.path, serializer);
     sse_encode_opt_String(self.arg, serializer);
+    sse_encode_osc_arg_kind(self.argType, serializer);
   }
 
   @protected

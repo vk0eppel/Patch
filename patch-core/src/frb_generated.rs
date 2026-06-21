@@ -1197,13 +1197,19 @@ fn wire__crate__api__send_osc_macro_impl(
             let api_port = <u16>::sse_decode(&mut deserializer);
             let api_path = <String>::sse_decode(&mut deserializer);
             let api_arg = <Option<String>>::sse_decode(&mut deserializer);
+            let api_arg_type = <crate::osc::types::OscArgKind>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                     (move || async move {
-                        let output_ok =
-                            crate::api::send_osc_macro(api_address, api_port, api_path, api_arg)
-                                .await?;
+                        let output_ok = crate::api::send_osc_macro(
+                            api_address,
+                            api_port,
+                            api_path,
+                            api_arg,
+                            api_arg_type,
+                        )
+                        .await?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -2289,6 +2295,19 @@ impl SseDecode for Option<u8> {
     }
 }
 
+impl SseDecode for crate::osc::types::OscArgKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::osc::types::OscArgKind::String,
+            1 => crate::osc::types::OscArgKind::Int,
+            2 => crate::osc::types::OscArgKind::Float,
+            _ => unreachable!("Invalid variant for OscArgKind: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::state::channel::OscTarget {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2296,11 +2315,13 @@ impl SseDecode for crate::state::channel::OscTarget {
         let mut var_port = <u16>::sse_decode(deserializer);
         let mut var_path = <String>::sse_decode(deserializer);
         let mut var_arg = <Option<String>>::sse_decode(deserializer);
+        let mut var_argType = <crate::osc::types::OscArgKind>::sse_decode(deserializer);
         return crate::state::channel::OscTarget {
             address: var_address,
             port: var_port,
             path: var_path,
             arg: var_arg,
+            arg_type: var_argType,
         };
     }
 }
@@ -2794,6 +2815,25 @@ impl flutter_rust_bridge::IntoIntoDart<crate::state::channel::MacroMessage>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::osc::types::OscArgKind {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::String => 0.into_dart(),
+            Self::Int => 1.into_dart(),
+            Self::Float => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::osc::types::OscArgKind {}
+impl flutter_rust_bridge::IntoIntoDart<crate::osc::types::OscArgKind>
+    for crate::osc::types::OscArgKind
+{
+    fn into_into_dart(self) -> crate::osc::types::OscArgKind {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::state::channel::OscTarget {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -2801,6 +2841,7 @@ impl flutter_rust_bridge::IntoDart for crate::state::channel::OscTarget {
             self.port.into_into_dart().into_dart(),
             self.path.into_into_dart().into_dart(),
             self.arg.into_into_dart().into_dart(),
+            self.arg_type.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -3348,6 +3389,23 @@ impl SseEncode for Option<u8> {
     }
 }
 
+impl SseEncode for crate::osc::types::OscArgKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::osc::types::OscArgKind::String => 0,
+                crate::osc::types::OscArgKind::Int => 1,
+                crate::osc::types::OscArgKind::Float => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for crate::state::channel::OscTarget {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3355,6 +3413,7 @@ impl SseEncode for crate::state::channel::OscTarget {
         <u16>::sse_encode(self.port, serializer);
         <String>::sse_encode(self.path, serializer);
         <Option<String>>::sse_encode(self.arg, serializer);
+        <crate::osc::types::OscArgKind>::sse_encode(self.arg_type, serializer);
     }
 }
 

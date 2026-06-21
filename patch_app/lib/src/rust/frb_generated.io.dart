@@ -127,6 +127,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int? dco_decode_opt_box_autoadd_u_8(dynamic raw);
 
   @protected
+  OscArgKind dco_decode_osc_arg_kind(dynamic raw);
+
+  @protected
   OscTarget dco_decode_osc_target(dynamic raw);
 
   @protected
@@ -295,6 +298,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   int? sse_decode_opt_box_autoadd_u_8(SseDeserializer deserializer);
+
+  @protected
+  OscArgKind sse_decode_osc_arg_kind(SseDeserializer deserializer);
 
   @protected
   OscTarget sse_decode_osc_target(SseDeserializer deserializer);
@@ -490,6 +496,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_box_autoadd_u_8(int? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_osc_arg_kind(OscArgKind self, SseSerializer serializer);
 
   @protected
   void sse_encode_osc_target(OscTarget self, SseSerializer serializer);

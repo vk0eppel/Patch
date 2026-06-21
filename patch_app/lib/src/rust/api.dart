@@ -34,11 +34,13 @@ Future<void> sendOscMacro({
   required int port,
   required String path,
   String? arg,
+  required OscArgKind argType,
 }) => RustLib.instance.api.crateApiSendOscMacro(
   address: address,
   port: port,
   path: path,
   arg: arg,
+  argType: argType,
 );
 
 /// Sends a message on a channel. Returns the message_id.

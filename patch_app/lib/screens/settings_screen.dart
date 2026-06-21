@@ -984,6 +984,7 @@ class _ChannelMacroEditor extends StatelessWidget {
         oscPort: osc?.port,
         oscPath: osc?.path,
         oscArg: osc?.arg,
+        oscArgType: osc?.argType ?? MacroOscArgType.string,
       ),
       onDelete: (m) => bridge.deleteMacro(channelId: channel.id, label: m.label),
       onReorder: (labels) => bridge.reorderMacros(channel.id, labels),
@@ -1231,6 +1232,7 @@ class _MacroListCard extends StatelessWidget {
         TextEditingController(text: existing?.osc?.port.toString() ?? '');
     final oscPathCtrl = TextEditingController(text: existing?.osc?.path ?? '');
     final oscArgCtrl = TextEditingController(text: existing?.osc?.arg ?? '');
+    MacroOscArgType oscArgType = existing?.osc?.argType ?? MacroOscArgType.string;
     bool oscEnabled = existing?.osc != null;
     int priority = existing?.priority ?? 1;
     String? error;
@@ -1398,6 +1400,30 @@ class _MacroListCard extends StatelessWidget {
                     controller: oscArgCtrl,
                     decoration: const InputDecoration(labelText: 'Argument (optional)', hintText: 'e.g. go'),
                   ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Argument type',
+                    style: TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeSmall),
+                  ),
+                  const SizedBox(height: 6),
+                  SegmentedButton<MacroOscArgType>(
+                    segments: const [
+                      ButtonSegment(value: MacroOscArgType.string, label: Text('String')),
+                      ButtonSegment(value: MacroOscArgType.int, label: Text('Int')),
+                      ButtonSegment(value: MacroOscArgType.float, label: Text('Float')),
+                    ],
+                    selected: {oscArgType},
+                    onSelectionChanged: (s) => setDialogState(() => oscArgType = s.first),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Sent to the console as that OSC type — e.g. Float for a fader '
+                    '(0.0–1.0), Int for a cue number.',
+                    style: TextStyle(
+                      color: PatchTheme.textMuted,
+                      fontSize: 11,
+                    ),
+                  ),
                 ],
                 if (error != null) ...[
                   const SizedBox(height: 8),
@@ -1435,7 +1461,13 @@ class _MacroListCard extends StatelessWidget {
                     return;
                   }
                   final a = oscArgCtrl.text.trim();
-                  osc = MacroOsc(address: addr, port: port, path: path, arg: a.isEmpty ? null : a);
+                  osc = MacroOsc(
+                    address: addr,
+                    port: port,
+                    path: path,
+                    arg: a.isEmpty ? null : a,
+                    argType: oscArgType,
+                  );
                 }
 
                 onSave(
@@ -1486,6 +1518,7 @@ class _GlobalMacrosEditor extends StatelessWidget {
         oscPort: osc?.port,
         oscPath: osc?.path,
         oscArg: osc?.arg,
+        oscArgType: osc?.argType ?? MacroOscArgType.string,
       ),
       onDelete: (m) => bridge.deleteGlobalMacro(m.label),
       onReorder: (labels) => bridge.reorderGlobalMacros(labels),

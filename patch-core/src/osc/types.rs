@@ -44,6 +44,23 @@ impl<'de> serde::Deserialize<'de> for Priority {
     }
 }
 
+/// Type of a single outbound OSC macro argument — selects which `rosc::OscType`
+/// variant the macro's stored `arg` string is parsed into when it fires.
+/// Variant names mirror `rosc::OscType` exactly (`Int`/`Float`/`String`); only
+/// the 32-bit `Int`/`Float` wire types are supported, not `Long`/`Double`, since
+/// those are the OSC types most consoles/show-control gear expect.
+///
+/// Serialized as a plain string (`"Float"`, not an int code) — unlike
+/// `Priority`, this never travels over the wire itself, it only selects how
+/// `arg` gets encoded, so there's no compactness reason to int-code it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum OscArgKind {
+    #[default]
+    String,
+    Int,
+    Float,
+}
+
 /// A single PATCH message — maps 1-to-1 to the `/patch/message` OSC packet.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PatchMessage {

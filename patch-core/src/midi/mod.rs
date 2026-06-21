@@ -354,6 +354,7 @@ mod backend {
                 port: 53000,
                 path: "/cue/1/start".into(),
                 arg: None,
+                arg_type: Default::default(),
             };
             // A global macro (note 60) with an OSC target + a plain per-channel
             // macro (note 60, no OSC) on "rf".

@@ -681,13 +681,18 @@ impl AppState {
     /// warning (and de-duplicated by `address:port`) rather than failing the load.
     pub async fn apply_show_file_full(
         &self,
-        channels: Vec<channel::Channel>,
+        mut channels: Vec<channel::Channel>,
         static_peers: Vec<config::StaticPeer>,
     ) -> anyhow::Result<()> {
         for ch in &channels {
             channel::validate_channel_id(&ch.id).map_err(|e| {
                 anyhow::anyhow!("show file contains invalid channel id {:?} — {}", ch.id, e)
             })?;
+        }
+        for ch in &mut channels {
+            for m in &mut ch.macros {
+                channel::normalize_macro_osc(m);
+            }
         }
         let mut validated_peers: Vec<config::StaticPeer> = Vec::with_capacity(static_peers.len());
         let mut seen: HashSet<(String, u16)> = HashSet::new();
@@ -765,6 +770,9 @@ impl AppState {
                 ch.flash_on_critical = flash_on_critical;
                 ch.flash_on_message = flash_on_message;
                 ch.flash_count = None;
+                for m in &mut ch.macros {
+                    channel::normalize_macro_osc(m);
+                }
                 map.insert(ch.id.clone(), ch);
                 added += 1;
             }
@@ -777,7 +785,7 @@ impl AppState {
     }
 
     /// Replace all channels with those from a loaded show file.
-    pub async fn apply_show_file(&self, channels: Vec<channel::Channel>) -> anyhow::Result<()> {
+    pub async fn apply_show_file(&self, mut channels: Vec<channel::Channel>) -> anyhow::Result<()> {
         // A show file is untrusted input (shared between machines, possibly
         // hand-edited). Validate every channel id against the OSC-path slug rule
         // *before* mutating anything — an invalid id would otherwise be embedded
@@ -787,6 +795,11 @@ impl AppState {
             channel::validate_channel_id(&ch.id).map_err(|e| {
                 anyhow::anyhow!("show file contains invalid channel id {:?} — {}", ch.id, e)
             })?;
+        }
+        for ch in &mut channels {
+            for m in &mut ch.macros {
+                channel::normalize_macro_osc(m);
+            }
         }
         {
             let mut ch_map = self.0.channels.write().await;
@@ -1591,6 +1604,59 @@ mod tests {
         assert_eq!(loaded.static_peers.len(), 1);
         assert_eq!(loaded.default_channels.len(), 1);
         assert_eq!(loaded.default_channels[0].id, "rf");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A macro whose `arg_type`/`arg` pair doesn't parse (e.g. hand-edited
+    /// `patch.toml`, or an imported show file from an older/buggier build)
+    /// must not fail the whole show file load — it falls back to
+    /// `OscArgKind::String`, mirroring the invalid-static-peer skip pattern
+    /// in `apply_show_file_full_restores_static_peers` above.
+    #[tokio::test]
+    async fn apply_show_file_full_normalizes_mismatched_macro_arg_type() {
+        use crate::osc::types::OscArgKind;
+
+        let _guard = config::test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        config::set_data_dir(dir.clone());
+
+        let st = AppState::new(Config::default());
+
+        let mut ch = channel::Channel::new("rf", "RF", "#1E88E5").unwrap();
+        ch.macros = vec![channel::MacroMessage {
+            label: "GO".into(),
+            payload: "go".into(),
+            key_binding: None,
+            priority: 1,
+            midi_note: None,
+            midi_cc: None,
+            osc: Some(channel::OscTarget {
+                address: "10.0.0.10".into(),
+                port: 53000,
+                path: "/cue/1/start".into(),
+                arg: Some("loud".into()),
+                arg_type: OscArgKind::Float,
+            }),
+        }];
+
+        st.apply_show_file_full(vec![ch], Vec::new()).await.unwrap();
+
+        let channels = st.get_channels().await;
+        let macro_osc = channels
+            .iter()
+            .find(|c| c.id == "rf")
+            .unwrap()
+            .macros
+            .iter()
+            .find(|m| m.label == "GO")
+            .unwrap()
+            .osc
+            .as_ref()
+            .unwrap();
+        assert_eq!(macro_osc.arg_type, OscArgKind::String);
+        assert_eq!(macro_osc.arg.as_deref(), Some("loud"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }

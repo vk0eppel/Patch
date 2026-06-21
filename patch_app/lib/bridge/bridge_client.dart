@@ -328,6 +328,7 @@ class BridgeClient {
     int? oscPort,
     String? oscPath,
     String? oscArg,
+    MacroOscArgType oscArgType = MacroOscArgType.string,
   }) async {
     try {
       await rust.upsertMacro(
@@ -338,7 +339,7 @@ class BridgeClient {
         keyBinding: keyBinding,
         midiNote: midiNote,
         midiCc: midiCc,
-        osc: _buildOsc(oscAddress, oscPort, oscPath, oscArg),
+        osc: _buildOsc(oscAddress, oscPort, oscPath, oscArg, oscArgType),
       );
     } catch (e) {
       _emitError(e);
@@ -347,9 +348,21 @@ class BridgeClient {
 
   /// Fire an arbitrary OSC message to external gear (the dual-action half of an
   /// OSC macro — the Patch message is sent separately via [sendMessage]).
-  Future<void> sendOscMacro(String address, int port, String path, String? arg) async {
+  Future<void> sendOscMacro(
+    String address,
+    int port,
+    String path,
+    String? arg, [
+    MacroOscArgType argType = MacroOscArgType.string,
+  ]) async {
     try {
-      await rust.sendOscMacro(address: address, port: port, path: path, arg: arg);
+      await rust.sendOscMacro(
+        address: address,
+        port: port,
+        path: path,
+        arg: arg,
+        argType: _toRustArgType(argType),
+      );
     } catch (e) {
       _emitError(e);
     }
@@ -398,6 +411,7 @@ class BridgeClient {
     int? oscPort,
     String? oscPath,
     String? oscArg,
+    MacroOscArgType oscArgType = MacroOscArgType.string,
   }) async {
     try {
       await rust.upsertGlobalMacro(
@@ -407,7 +421,7 @@ class BridgeClient {
         keyBinding: keyBinding,
         midiNote: midiNote,
         midiCc: midiCc,
-        osc: _buildOsc(oscAddress, oscPort, oscPath, oscArg),
+        osc: _buildOsc(oscAddress, oscPort, oscPath, oscArg, oscArgType),
       );
       _emit({'event': 'config_updated'});
     } catch (e) {
@@ -422,6 +436,7 @@ class BridgeClient {
     int? port,
     String? path,
     String? arg,
+    MacroOscArgType argType,
   ) {
     if (address == null || address.isEmpty || port == null || path == null || path.isEmpty) {
       return null;
@@ -431,6 +446,7 @@ class BridgeClient {
       port: port,
       path: path,
       arg: (arg == null || arg.isEmpty) ? null : arg,
+      argType: _toRustArgType(argType),
     );
   }
 
@@ -753,6 +769,11 @@ MacroOsc _oscFromRust(rust_channel.OscTarget o) => MacroOsc(
       port: o.port,
       path: o.path,
       arg: o.arg,
+      argType: switch (o.argType) {
+        rust_osc.OscArgKind.string => MacroOscArgType.string,
+        rust_osc.OscArgKind.int => MacroOscArgType.int,
+        rust_osc.OscArgKind.float => MacroOscArgType.float,
+      },
     );
 
 Color _parseHexColor(String hex) =>
@@ -789,7 +810,14 @@ rust_channel.OscTarget _oscToRust(MacroOsc o) => rust_channel.OscTarget(
       port: o.port,
       path: o.path,
       arg: o.arg,
+      argType: _toRustArgType(o.argType),
     );
+
+rust_osc.OscArgKind _toRustArgType(MacroOscArgType t) => switch (t) {
+      MacroOscArgType.string => rust_osc.OscArgKind.string,
+      MacroOscArgType.int => rust_osc.OscArgKind.int,
+      MacroOscArgType.float => rust_osc.OscArgKind.float,
+    };
 
 PatchMessage _messageFromRust(rust_osc.PatchMessage m) => PatchMessage(
       messageId: m.messageId.toString(),

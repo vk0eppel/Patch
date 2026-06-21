@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import '../osc/types.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 /// A logical communication channel.
@@ -137,19 +138,31 @@ class OscTarget {
   /// OSC address path, must start with '/' (e.g. "/cue/1/start").
   final String path;
 
-  /// Optional single string argument.
+  /// Optional single argument, stored as text regardless of `arg_type` —
+  /// parsed into the matching `OscType` (Int/Float/String) when the macro
+  /// fires (`osc::codec::build_osc_arg`).
   final String? arg;
+
+  /// How `arg` should be parsed/sent. Defaults to `String` so existing
+  /// macros and hand-edited `patch.toml` files without this field keep
+  /// behaving exactly as before this field was added.
+  final OscArgKind argType;
 
   const OscTarget({
     required this.address,
     required this.port,
     required this.path,
     this.arg,
+    required this.argType,
   });
 
   @override
   int get hashCode =>
-      address.hashCode ^ port.hashCode ^ path.hashCode ^ arg.hashCode;
+      address.hashCode ^
+      port.hashCode ^
+      path.hashCode ^
+      arg.hashCode ^
+      argType.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -159,5 +172,6 @@ class OscTarget {
           address == other.address &&
           port == other.port &&
           path == other.path &&
-          arg == other.arg;
+          arg == other.arg &&
+          argType == other.argType;
 }

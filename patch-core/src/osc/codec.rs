@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use super::{
     addresses,
-    types::{ChannelFlash, PatchMessage, PeerPresence, Priority},
+    types::{ChannelFlash, OscArgKind, PatchMessage, PeerPresence, Priority},
 };
 
 // ── Encode ────────────────────────────────────────────────────────────────────
@@ -137,15 +137,37 @@ pub fn encode_channels_announce(
         .context("Failed to encode /patch/channels/announce")
 }
 
+/// Parse a macro's stored `arg` string into the `OscType` matching its
+/// declared `arg_type`. The single place that converts the wire-agnostic
+/// [`OscArgKind`] into a concrete `rosc::OscType` — both `encode_osc` and the
+/// save-time/load-time validation callers in `api`/`state` go through this so
+/// the parsing rule has one definition.
+pub(crate) fn build_osc_arg(kind: OscArgKind, value: &str) -> Result<OscType> {
+    match kind {
+        OscArgKind::String => Ok(OscType::String(value.to_string())),
+        OscArgKind::Int => value
+            .trim()
+            .parse::<i32>()
+            .map(OscType::Int)
+            .with_context(|| format!("OSC arg {:?} is not a valid Int", value)),
+        OscArgKind::Float => value
+            .trim()
+            .parse::<f32>()
+            .map(OscType::Float)
+            .with_context(|| format!("OSC arg {:?} is not a valid Float", value)),
+    }
+}
+
 /// Encode an arbitrary outbound OSC message for an "OSC macro" → external gear
 /// (QLab/Companion/vMix…). `path` must be a valid OSC address (start with '/');
-/// `arg`, when present, is sent as a single OSC string argument.
-pub fn encode_osc(path: &str, arg: Option<&str>) -> Result<Vec<u8>> {
+/// `arg`, when present, is parsed per `arg_type` and sent as that single typed
+/// OSC argument.
+pub fn encode_osc(path: &str, arg_type: OscArgKind, arg: Option<&str>) -> Result<Vec<u8>> {
     if !path.starts_with('/') {
         bail!("OSC path must start with '/': {:?}", path);
     }
     let args = match arg {
-        Some(s) => vec![OscType::String(s.to_string())],
+        Some(s) => vec![build_osc_arg(arg_type, s)?],
         None => Vec::new(),
     };
     let osc = OscMessage {
@@ -815,8 +837,8 @@ mod tests {
 
     #[test]
     fn encode_osc_rejects_bad_path_and_encodes_good() {
-        assert!(encode_osc("no-leading-slash", None).is_err());
-        let bytes = encode_osc("/cue/1/start", Some("go")).unwrap();
+        assert!(encode_osc("no-leading-slash", OscArgKind::String, None).is_err());
+        let bytes = encode_osc("/cue/1/start", OscArgKind::String, Some("go")).unwrap();
         // A non-Patch address decodes as a generic (Unknown) OSC message.
         match decode_packet(&bytes).unwrap() {
             PatchEvent::Unknown(m) => {
@@ -826,11 +848,42 @@ mod tests {
             other => panic!("expected Unknown, got {:?}", other),
         }
         // No-arg form encodes an empty arg list.
-        let bytes = encode_osc("/go", None).unwrap();
+        let bytes = encode_osc("/go", OscArgKind::String, None).unwrap();
         match decode_packet(&bytes).unwrap() {
             PatchEvent::Unknown(m) => assert!(m.args.is_empty()),
             other => panic!("expected Unknown, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn encode_osc_builds_the_arg_type_matching_osc_type() {
+        let bytes = encode_osc("/cue/1/start", OscArgKind::Int, Some("3")).unwrap();
+        match decode_packet(&bytes).unwrap() {
+            PatchEvent::Unknown(m) => assert_eq!(m.args, vec![OscType::Int(3)]),
+            other => panic!("expected Unknown, got {:?}", other),
+        }
+
+        let bytes = encode_osc("/fader/1", OscArgKind::Float, Some("0.75")).unwrap();
+        match decode_packet(&bytes).unwrap() {
+            PatchEvent::Unknown(m) => assert_eq!(m.args, vec![OscType::Float(0.75)]),
+            other => panic!("expected Unknown, got {:?}", other),
+        }
+
+        let bytes = encode_osc("/scene", OscArgKind::String, Some("blackout")).unwrap();
+        match decode_packet(&bytes).unwrap() {
+            PatchEvent::Unknown(m) => {
+                assert_eq!(m.args, vec![OscType::String("blackout".into())])
+            }
+            other => panic!("expected Unknown, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn encode_osc_rejects_a_value_that_does_not_match_arg_type() {
+        assert!(encode_osc("/cue/1/start", OscArgKind::Int, Some("abc")).is_err());
+        assert!(encode_osc("/fader/1", OscArgKind::Float, Some("loud")).is_err());
+        // A String arg_type accepts anything — no parse failure possible.
+        assert!(encode_osc("/scene", OscArgKind::String, Some("3")).is_ok());
     }
 
     #[test]

@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::osc::types::OscArgKind;
+
 fn default_true() -> bool {
     true
 }
@@ -108,7 +110,37 @@ pub struct OscTarget {
     pub port: u16,
     /// OSC address path, must start with '/' (e.g. "/cue/1/start").
     pub path: String,
-    /// Optional single string argument.
+    /// Optional single argument, stored as text regardless of `arg_type` —
+    /// parsed into the matching `OscType` (Int/Float/String) when the macro
+    /// fires (`osc::codec::build_osc_arg`).
     #[serde(default)]
     pub arg: Option<String>,
+    /// How `arg` should be parsed/sent. Defaults to `String` so existing
+    /// macros and hand-edited `patch.toml` files without this field keep
+    /// behaving exactly as before this field was added.
+    #[serde(default)]
+    pub arg_type: OscArgKind,
+}
+
+/// Normalizes a macro's OSC argument to match its declared `arg_type`,
+/// falling back to `OscArgKind::String` and logging a warning on mismatch.
+/// Used when loading untrusted show-file input (a saved show file or a
+/// hand-edited `patch.toml`) so one malformed macro can't fail the whole
+/// load — mirrors the existing invalid-static-peer skip-with-warning pattern.
+pub(crate) fn normalize_macro_osc(macro_msg: &mut MacroMessage) {
+    let Some(target) = &mut macro_msg.osc else {
+        return;
+    };
+    let Some(arg) = &target.arg else {
+        return;
+    };
+    if crate::osc::codec::build_osc_arg(target.arg_type, arg).is_err() {
+        tracing::warn!(
+            "macro {:?}: OSC arg {:?} doesn't match arg_type {:?} — falling back to String",
+            macro_msg.label,
+            arg,
+            target.arg_type
+        );
+        target.arg_type = OscArgKind::String;
+    }
 }

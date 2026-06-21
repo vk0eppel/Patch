@@ -1,5 +1,26 @@
 import 'package:flutter/material.dart';
 
+/// Mirrors the Rust `osc::types::OscArgKind` enum — which `OscType` variant a
+/// macro's OSC `arg` is parsed into when it fires. Serialized by serde as a
+/// plain variant-name string ("String"/"Int"/"Float"), not an int code.
+enum MacroOscArgType {
+  string,
+  int,
+  float;
+
+  factory MacroOscArgType.fromJson(String? j) => switch (j) {
+        'Int' => MacroOscArgType.int,
+        'Float' => MacroOscArgType.float,
+        _ => MacroOscArgType.string,
+      };
+
+  String toJson() => switch (this) {
+        MacroOscArgType.string => 'String',
+        MacroOscArgType.int => 'Int',
+        MacroOscArgType.float => 'Float',
+      };
+}
+
 /// An outbound OSC target attached to a macro — fired alongside the Patch message
 /// (dual action) to trigger external gear (QLab, Companion, vMix…).
 class MacroOsc {
@@ -7,12 +28,14 @@ class MacroOsc {
   final int port;
   final String path;
   final String? arg;
+  final MacroOscArgType argType;
 
   const MacroOsc({
     required this.address,
     required this.port,
     required this.path,
     this.arg,
+    this.argType = MacroOscArgType.string,
   });
 
   factory MacroOsc.fromJson(Map<String, dynamic> j) => MacroOsc(
@@ -20,6 +43,7 @@ class MacroOsc {
         port: (j['port'] as num).toInt(),
         path: j['path'] as String,
         arg: j['arg'] as String?,
+        argType: MacroOscArgType.fromJson(j['arg_type'] as String?),
       );
 }
 
