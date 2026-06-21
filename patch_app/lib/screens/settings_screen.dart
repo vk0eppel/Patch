@@ -7,8 +7,10 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
 import '../models/config.dart';
+import '../models/events.dart';
 import '../models/message.dart';
 import '../theme/patch_theme.dart';
+import '../util/run_guarded.dart';
 import '../widgets/bounded_int_field.dart';
 import '../widgets/interface_picker.dart';
 
@@ -31,6 +33,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _nameCtrl = TextEditingController();
   final _roleCtrl = TextEditingController();
   StreamSubscription<Map<String, dynamic>>? _sub;
+  StreamSubscription<PatchEvent>? _pushSub;
   bool _nameSaved = false;
   bool _roleSaved = false;
   late List<PatchChannel> _channels;
@@ -73,6 +76,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     _channels = List.of(widget.channels);
     _sub = widget.bridge.events.listen(_handleEvent);
+    _pushSub = widget.bridge.pushes.listen(_handlePush);
     widget.bridge.getConfig();
     widget.bridge.getInterfaces();
     widget.bridge.getPeers();
@@ -91,6 +95,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _nameCtrl.dispose();
     _roleCtrl.dispose();
     _sub?.cancel();
+    _pushSub?.cancel();
     super.dispose();
   }
 
@@ -114,8 +119,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _globalMacros = cfg.globalMacros;
           _staticPeers = cfg.staticPeers;
         });
-      case 'config_updated':
-        widget.bridge.getConfig();
       case 'interfaces':
         final data = event['data'] as List<dynamic>;
         setState(() {
@@ -131,31 +134,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Future.delayed(const Duration(seconds: 3), () {
           if (mounted) setState(() => _interfaceApplied = false);
         });
-      case 'client_name_changed':
-        setState(() => _nameSaved = true);
-        Future.delayed(const Duration(seconds: 2), () {
-          if (mounted) setState(() => _nameSaved = false);
-        });
       case 'channels':
         final data = event['data'] as List<PatchChannel>;
         setState(() {
           _channels = data;
         });
-      case 'channel_list_updated':
-        widget.bridge.getChannels();
       case 'peers':
         final data = event['data'] as List<PeerInfo>;
         setState(() {
           _peers = data;
         });
-      case 'channels_offered':
-        if (!_awaitingOffer) break; // ignore unsolicited announces
-        _awaitingOffer = false;
-        final channels =
-            (event['channels'] as List<dynamic>?)?.cast<PatchChannel>() ??
-                const <PatchChannel>[];
-        final fromName = event['from_name'] as String? ?? 'peer';
-        if (mounted) _showOfferDialog(fromName, channels);
       case 'channels_adopted':
         final added = (event['added'] as num?)?.toInt() ?? 0;
         if (mounted) {
@@ -169,6 +157,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
           );
         }
     }
+  }
+
+  /// Typed engine pushes (slice 1.3, ADR-0004). Exhaustive over [PatchEvent];
+  /// variants this screen doesn't consume are explicitly ignored so a new event
+  /// can't be silently dropped.
+  void _handlePush(PatchEvent event) {
+    switch (event) {
+      case ClientNameChanged():
+        // The local name was saved — flash the "saved" tick (payload unused).
+        setState(() => _nameSaved = true);
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) setState(() => _nameSaved = false);
+        });
+      case ChannelsChanged():
+        widget.bridge.getChannels();
+      case ChannelsOffered(:final fromName, :final channels):
+        if (!_awaitingOffer) break; // ignore unsolicited announces
+        _awaitingOffer = false;
+        if (mounted) _showOfferDialog(fromName, channels);
+      // Not consumed by settings — handled on the home screen.
+      case MessageReceived():
+      case DeliveryUpdated():
+      case Flashed():
+      case PeerExpired():
+      case PeersChanged():
+      case PermissionDenied():
+        break;
+    }
+  }
+
+  /// Run a config-mutating command, then refetch the config so the UI reflects
+  /// the new state. Replaces the old `config_updated` round-trip event
+  /// (ADR-0004); failures surface via [runGuarded].
+  void _applyConfigChange(Future<void> Function() action) {
+    runGuarded(context, () async {
+      await action();
+      await widget.bridge.getConfig();
+    });
   }
 
   void _saveName() {
@@ -560,9 +586,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onPressed: () => _showAddPeerDialog(context, widget.bridge),
               ),
               _resetButton('Static Peers', () {
-                for (final peer in List.of(_staticPeers)) {
-                  widget.bridge.removeStaticPeer(peer.address, peer.port);
-                }
+                runGuarded(context, () async {
+                  for (final peer in List.of(_staticPeers)) {
+                    await widget.bridge.removeStaticPeer(peer.address, peer.port);
+                  }
+                  await widget.bridge.getConfig();
+                });
               }),
             ],
           ),
@@ -605,8 +634,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           else
             ..._staticPeers.map((peer) => _StaticPeerRow(
                   peer: peer,
-                  onDelete: () =>
-                      widget.bridge.removeStaticPeer(peer.address, peer.port),
+                  onDelete: () => _applyConfigChange(
+                      () => widget.bridge.removeStaticPeer(peer.address, peer.port)),
                 )),
 
           const SizedBox(height: 32),
@@ -623,9 +652,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _audibleAlert = false;
                 _macrosColumns = 1;
               });
-              widget.bridge.setFlashOnCritical(true);
-              widget.bridge.setFlashOnMessage(false);
-              widget.bridge.setFlashCount(4);
+              _applyConfigChange(() => widget.bridge.setFlashOnCritical(true));
+              _applyConfigChange(() => widget.bridge.setFlashOnMessage(false));
+              _applyConfigChange(() => widget.bridge.setFlashCount(4));
               widget.bridge.setHideKeyboard(true);
               widget.bridge.setAudibleAlert(false);
               widget.bridge.setMacrosColumns(1);
@@ -646,7 +675,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             contentPadding: EdgeInsets.zero,
             onChanged: (val) {
               setState(() => _flashOnMessage = val);
-              widget.bridge.setFlashOnMessage(val);
+              _applyConfigChange(() => widget.bridge.setFlashOnMessage(val));
             },
           ),
           SwitchListTile(
@@ -663,7 +692,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             contentPadding: EdgeInsets.zero,
             onChanged: (val) {
               setState(() => _flashOnCritical = val);
-              widget.bridge.setFlashOnCritical(val);
+              _applyConfigChange(() => widget.bridge.setFlashOnCritical(val));
             },
           ),
           SwitchListTile(
@@ -710,7 +739,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (val) {
                   if (val == null) return; // global picker never yields null
                   setState(() => _flashCount = val);
-                  widget.bridge.setFlashCount(val);
+                  _applyConfigChange(() => widget.bridge.setFlashCount(val));
                 },
               ),
             ],
@@ -788,7 +817,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // default quick-sends; per-channel customisation is the next step.
           Row(children: [
             Expanded(child: _SectionHeader('Global Macros')),
-            _resetButton('Global Macros', () => widget.bridge.resetGlobalMacros()),
+            _resetButton('Global Macros',
+                () => _applyConfigChange(() => widget.bridge.resetGlobalMacros())),
           ]),
           const SizedBox(height: 4),
           const Text(
@@ -1507,21 +1537,33 @@ class _GlobalMacrosEditor extends StatelessWidget {
       macros: macros,
       keyFor: (m) => '__global__:${m.label}',
       emptyText: 'No global macros yet',
-      onUpsert: (l, p, k, pr, mn, mc, osc) => bridge.upsertGlobalMacro(
-        label: l,
-        payload: p,
-        keyBinding: k,
-        priority: pr,
-        midiNote: mn,
-        midiCc: mc,
-        oscAddress: osc?.address,
-        oscPort: osc?.port,
-        oscPath: osc?.path,
-        oscArg: osc?.arg,
-        oscArgType: osc?.argType ?? MacroOscArgType.string,
-      ),
-      onDelete: (m) => bridge.deleteGlobalMacro(m.label),
-      onReorder: (labels) => bridge.reorderGlobalMacros(labels),
+      // These don't optimistically update the list, so refetch config after
+      // the mutation so the parent's `config` arm refreshes _globalMacros
+      // (replaces the old config_updated round-trip — ADR-0004).
+      onUpsert: (l, p, k, pr, mn, mc, osc) => runGuarded(context, () async {
+        await bridge.upsertGlobalMacro(
+          label: l,
+          payload: p,
+          keyBinding: k,
+          priority: pr,
+          midiNote: mn,
+          midiCc: mc,
+          oscAddress: osc?.address,
+          oscPort: osc?.port,
+          oscPath: osc?.path,
+          oscArg: osc?.arg,
+          oscArgType: osc?.argType ?? MacroOscArgType.string,
+        );
+        await bridge.getConfig();
+      }),
+      onDelete: (m) => runGuarded(context, () async {
+        await bridge.deleteGlobalMacro(m.label);
+        await bridge.getConfig();
+      }),
+      onReorder: (labels) => runGuarded(context, () async {
+        await bridge.reorderGlobalMacros(labels);
+        await bridge.getConfig();
+      }),
     );
   }
 }
@@ -1988,11 +2030,17 @@ void _showAddPeerDialog(BuildContext context, BridgeClient bridge) {
                 return;
               }
               final label = labelCtrl.text.trim();
-              bridge.addStaticPeer(
-                address,
-                port,
-                label: label.isEmpty ? null : label,
-              );
+              // Refetch config after adding so the parent's `config` arm
+              // refreshes _staticPeers (replaces config_updated — ADR-0004).
+              // Use the outer `context` (the dialog `ctx` is about to pop).
+              runGuarded(context, () async {
+                await bridge.addStaticPeer(
+                  address,
+                  port,
+                  label: label.isEmpty ? null : label,
+                );
+                await bridge.getConfig();
+              });
               Navigator.pop(ctx);
             },
             child: const Text('Add'),

@@ -281,23 +281,14 @@ class BridgeClient {
     }
   }
 
-  Future<void> addStaticPeer(String address, int port, {String? label}) async {
-    try {
-      await rust.addStaticPeer(address: address, port: port, label: label);
-      _emit({'event': 'config_updated'});
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  /// Add a Static Peer. Throws on failure; the caller refetches config
+  /// (`_applyConfigChange`) — slice 1.3 (ADR-0004).
+  Future<void> addStaticPeer(String address, int port, {String? label}) =>
+      rust.addStaticPeer(address: address, port: port, label: label);
 
-  Future<void> removeStaticPeer(String address, int port) async {
-    try {
-      await rust.removeStaticPeer(address: address, port: port);
-      _emit({'event': 'config_updated'});
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  /// Remove a Static Peer. Throws on failure.
+  Future<void> removeStaticPeer(String address, int port) =>
+      rust.removeStaticPeer(address: address, port: port);
 
   Future<void> upsertChannel(
     String id,
@@ -411,9 +402,8 @@ class BridgeClient {
     String? oscPath,
     String? oscArg,
     MacroOscArgType oscArgType = MacroOscArgType.string,
-  }) async {
-    try {
-      await rust.upsertGlobalMacro(
+  }) =>
+      rust.upsertGlobalMacro(
         label: label,
         payload: payload,
         priority: priority,
@@ -422,11 +412,6 @@ class BridgeClient {
         midiCc: midiCc,
         osc: _buildOsc(oscAddress, oscPort, oscPath, oscArg, oscArgType),
       );
-      _emit({'event': 'config_updated'});
-    } catch (e) {
-      _emitError(e);
-    }
-  }
 
   /// Build a typed `OscTarget` from flat UI fields — null unless address, port,
   /// and path are all present (an empty `arg` collapses to null).
@@ -470,34 +455,15 @@ class BridgeClient {
     }
   }
 
-  Future<void> deleteGlobalMacro(String label) async {
-    try {
-      await rust.deleteGlobalMacro(label: label);
-      _emit({'event': 'config_updated'});
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  Future<void> deleteGlobalMacro(String label) =>
+      rust.deleteGlobalMacro(label: label);
 
   /// Restore the factory default global macros (replaces the current set).
-  Future<void> resetGlobalMacros() async {
-    try {
-      await rust.resetGlobalMacros();
-      _emit({'event': 'config_updated'});
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  Future<void> resetGlobalMacros() => rust.resetGlobalMacros();
 
   /// Reorder global macros to match [labels] (drag-to-reorder).
-  Future<void> reorderGlobalMacros(List<String> labels) async {
-    try {
-      await rust.reorderGlobalMacros(orderedLabels: labels);
-      _emit({'event': 'config_updated'});
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  Future<void> reorderGlobalMacros(List<String> labels) =>
+      rust.reorderGlobalMacros(orderedLabels: labels);
 
   Future<void> deleteChannel(String id) async {
     try {
@@ -621,33 +587,14 @@ class BridgeClient {
     }
   }
 
-  Future<void> setFlashOnCritical(bool enabled) async {
-    try {
-      await rust.setFlashOnCritical(enabled: enabled);
-      _emit({'event': 'config_updated', 'flash_on_critical': enabled});
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  Future<void> setFlashOnCritical(bool enabled) =>
+      rust.setFlashOnCritical(enabled: enabled);
 
-  Future<void> setFlashOnMessage(bool enabled) async {
-    try {
-      await rust.setFlashOnMessage(enabled: enabled);
-      _emit({'event': 'config_updated', 'flash_on_message': enabled});
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  Future<void> setFlashOnMessage(bool enabled) =>
+      rust.setFlashOnMessage(enabled: enabled);
 
   /// Set the global flash pulse count (3–7).
-  Future<void> setFlashCount(int count) async {
-    try {
-      await rust.setFlashCount(count: count);
-      _emit({'event': 'config_updated', 'flash_count': count});
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  Future<void> setFlashCount(int count) => rust.setFlashCount(count: count);
 
   Future<void> setHideKeyboard(bool enabled) async {
     try {
