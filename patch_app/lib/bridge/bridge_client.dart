@@ -3,6 +3,7 @@ import 'dart:ui' show Color;
 
 import '../models/channel.dart';
 import '../models/config.dart';
+import '../models/events.dart';
 import '../models/message.dart';
 import '../src/rust/api.dart' as rust;
 import '../src/rust/frb_generated.dart';
@@ -24,6 +25,13 @@ import '../src/rust/transport.dart' as rust_transport;
 /// Lifecycle: construct → `await connect()` → use. `dispose()` to clean up.
 class BridgeClient {
   final _eventController = StreamController<Map<String, dynamic>>.broadcast();
+
+  /// Typed engine-push stream (slice 1.1). Emitted *alongside* the legacy map
+  /// [events] during migration — consumers move onto this on their own
+  /// schedule (slices 1.2/1.3); slice 1.4 deletes the map-push path. See
+  /// ADR-0004.
+  final _pushController = StreamController<PatchEvent>.broadcast();
+
   StreamSubscription<rust.PatchAppEvent>? _engineSub;
   bool _connected = false;
 
@@ -34,6 +42,9 @@ class BridgeClient {
 
   /// Stream of legacy-shaped events: `{"event": "<type>", ...}`.
   Stream<Map<String, dynamic>> get events => _eventController.stream;
+
+  /// Typed engine pushes — the migration target for the legacy [events] map.
+  Stream<PatchEvent> get pushes => _pushController.stream;
 
   /// Boot the Rust engine and start forwarding events into [events].
   /// Safe to call again after a failed attempt (used by the boot Retry path).
@@ -114,6 +125,11 @@ class BridgeClient {
       },
     };
     _eventController.add(map);
+
+    // Slice 1.1: also emit the typed event. `patchEventFromRust` returns null
+    // for variants intentionally not surfaced to the UI (e.g. MessageAcked).
+    final typed = patchEventFromRust(event);
+    if (typed != null) _pushController.add(typed);
   }
 
   void _emit(Map<String, dynamic> event) => _eventController.add(event);
@@ -734,6 +750,7 @@ class BridgeClient {
     await shutdown();
     await _engineSub?.cancel();
     await _eventController.close();
+    await _pushController.close();
   }
 }
 
@@ -743,6 +760,61 @@ class BridgeClient {
 // FRB-generated types — one conversion instead of the previous Rust struct →
 // legacy JSON Map → model round trip (the Map added nothing: the models'
 // fields already mirror these structs field-for-field).
+
+/// Pure wire→model mapping for engine pushes (slice 1.1). The seam the typed
+/// event surface is tested through — callable without booting the engine, since
+/// the FRB event values are plain data classes.
+///
+/// Exhaustive `switch` *expression* over the generated FFI event type: a new
+/// engine event variant won't compile here until it is mapped or explicitly
+/// dropped (`=> null`). Returns null for variants intentionally not surfaced to
+/// the UI. See ADR-0004.
+PatchEvent? patchEventFromRust(rust.PatchAppEvent event) => switch (event) {
+      rust.PatchAppEvent_Message(:final field0) =>
+        MessageReceived(_messageFromRust(field0)),
+      rust.PatchAppEvent_MessageDelivery(
+        :final messageId,
+        :final delivered,
+        :final total,
+        :final failed,
+        :final failedPeers,
+      ) =>
+        DeliveryUpdated(
+          messageId,
+          MessageDeliveryStatus(
+            delivered: delivered,
+            total: total,
+            failed: failed,
+            failedPeers: failedPeers,
+          ),
+        ),
+      rust.PatchAppEvent_ChannelFlash(:final field0) => Flashed(
+          channelId: field0.channelId,
+          senderId: field0.senderId.toString(),
+          senderName: field0.senderName,
+        ),
+      rust.PatchAppEvent_PeerExpired(:final peerId) => PeerExpired(peerId),
+      rust.PatchAppEvent_ChannelsOffered(
+        :final fromPeerId,
+        :final fromName,
+        :final channels,
+      ) =>
+        ChannelsOffered(
+          fromPeerId: fromPeerId,
+          fromName: fromName,
+          channels: channels.map(_channelFromRust).toList(),
+        ),
+      rust.PatchAppEvent_ClientNameChanged(:final name) =>
+        ClientNameChanged(name),
+      rust.PatchAppEvent_PermissionDenied(:final context) =>
+        PermissionDenied(context),
+      // Payload intentionally dropped — presence lacks address/status, so the
+      // UI refetches regardless (ADR-0004).
+      rust.PatchAppEvent_PeerUpdated() => const PeersChanged(),
+      rust.PatchAppEvent_ChannelListUpdated() => const ChannelsChanged(),
+      // Intentionally not surfaced — no UI consumer reads the per-Peer ack.
+      rust.PatchAppEvent_MessageAcked() => null,
+    };
 
 PatchChannel _channelFromRust(rust_channel.Channel c) => PatchChannel(
       id: c.id,
