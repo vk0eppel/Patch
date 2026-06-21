@@ -25,7 +25,7 @@ use crate::osc::codec::{
 };
 use crate::osc::types::{ChannelFlash, OscArgKind, PatchMessage, Priority};
 use crate::reliability::ReliabilityManager;
-use crate::state::channel::{Channel, MacroMessage, OscTarget};
+use crate::state::channel::{self, Channel, MacroMessage, OscTarget};
 use crate::state::show_file::{self, ShowFileConfig, ShowFileMeta};
 use crate::state::{config::StaticPeer, peer, AppEvent, AppState, Config};
 use crate::transport::{list_interfaces, InterfaceInfo, Transport};
@@ -739,28 +739,6 @@ pub async fn adopt_channels(channels: Vec<Channel>) -> Result<u32> {
     Ok(engine().state.merge_channels(channels).await? as u32)
 }
 
-/// Validate an OSC macro target before storing it: address parses as an IP, port
-/// is non-zero, path is a valid OSC address (starts with '/'), and — when an
-/// argument is set — it parses per its declared `arg_type`. This is the single
-/// source of truth for OSC macro validation; the Flutter UI does not duplicate
-/// this parsing logic, it only surfaces whatever `Err` comes back from here.
-#[frb(ignore)]
-fn validate_osc(t: &OscTarget) -> Result<()> {
-    t.address
-        .parse::<IpAddr>()
-        .map_err(|_| anyhow::anyhow!("invalid OSC address '{}'", t.address))?;
-    if t.port == 0 {
-        anyhow::bail!("OSC port 0 is not valid");
-    }
-    if !t.path.starts_with('/') {
-        anyhow::bail!("OSC path must start with '/'");
-    }
-    if let Some(arg) = &t.arg {
-        crate::osc::codec::build_osc_arg(t.arg_type, arg)?;
-    }
-    Ok(())
-}
-
 #[allow(clippy::too_many_arguments)]
 pub async fn upsert_macro(
     channel_id: String,
@@ -777,7 +755,7 @@ pub async fn upsert_macro(
         anyhow::bail!("label must be non-empty");
     }
     if let Some(o) = &osc {
-        validate_osc(o)?;
+        channel::validate_osc_target(o)?;
     }
     engine()
         .state
@@ -828,7 +806,7 @@ pub async fn upsert_global_macro(
         anyhow::bail!("label must be non-empty");
     }
     if let Some(o) = &osc {
-        validate_osc(o)?;
+        channel::validate_osc_target(o)?;
     }
     engine()
         .state
@@ -1145,24 +1123,6 @@ mod tests {
         )
         .await
         .is_err());
-    }
-
-    /// A matched arg_type/arg pair passes `validate_osc` — this assertion
-    /// itself happens before `engine()` is touched, so it doesn't need a
-    /// running engine even though the call would fail past validation.
-    #[test]
-    fn validate_osc_accepts_a_matched_arg_type() {
-        use crate::osc::types::OscArgKind;
-        use crate::state::channel::OscTarget;
-
-        let good = OscTarget {
-            address: "127.0.0.1".into(),
-            port: 53000,
-            path: "/cue/1/start".into(),
-            arg: Some("3".into()),
-            arg_type: OscArgKind::Int,
-        };
-        assert!(super::validate_osc(&good).is_ok());
     }
 
     #[test]

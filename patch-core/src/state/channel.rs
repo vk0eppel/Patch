@@ -1,3 +1,5 @@
+use std::net::IpAddr;
+
 use serde::{Deserialize, Serialize};
 
 use crate::osc::types::OscArgKind;
@@ -122,25 +124,93 @@ pub struct OscTarget {
     pub arg_type: OscArgKind,
 }
 
-/// Normalizes a macro's OSC argument to match its declared `arg_type`,
-/// falling back to `OscArgKind::String` and logging a warning on mismatch.
-/// Used when loading untrusted show-file input (a saved show file or a
-/// hand-edited `patch.toml`) so one malformed macro can't fail the whole
-/// load — mirrors the existing invalid-static-peer skip-with-warning pattern.
-pub(crate) fn normalize_macro_osc(macro_msg: &mut MacroMessage) {
-    let Some(target) = &mut macro_msg.osc else {
-        return;
-    };
-    let Some(arg) = &target.arg else {
-        return;
-    };
-    if crate::osc::codec::build_osc_arg(target.arg_type, arg).is_err() {
-        tracing::warn!(
-            "macro {:?}: OSC arg {:?} doesn't match arg_type {:?} — falling back to String",
-            macro_msg.label,
-            arg,
-            target.arg_type
+/// Single source of truth for "is this OscTarget legal": address parses as an
+/// IP, port is non-zero, path is a valid OSC address (starts with '/'), and —
+/// when an argument is set — it parses per its declared `arg_type`
+/// (`osc::codec::build_osc_arg`).
+///
+/// Every caller uses this same check, but applies its own policy on top
+/// depending on how trustworthy its input is — see ADR-0002. An Operator
+/// editing a macro in the UI rejects immediately; loading a local show file
+/// rejects the whole file atomically (mirroring `validate_channel_id`);
+/// adopting a peer's offered channels over the network drops just the one
+/// bad macro and keeps the rest. There is no fallback policy here — that
+/// choice belongs to the caller, not to this check.
+pub(crate) fn validate_osc_target(t: &OscTarget) -> anyhow::Result<()> {
+    t.address
+        .parse::<IpAddr>()
+        .map_err(|_| anyhow::anyhow!("invalid OSC address '{}'", t.address))?;
+    if t.port == 0 {
+        anyhow::bail!("OSC port 0 is not valid");
+    }
+    if !t.path.starts_with('/') {
+        anyhow::bail!("OSC path must start with '/'");
+    }
+    if let Some(arg) = &t.arg {
+        crate::osc::codec::build_osc_arg(t.arg_type, arg)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn target(
+        address: &str,
+        port: u16,
+        path: &str,
+        arg: Option<&str>,
+        arg_type: OscArgKind,
+    ) -> OscTarget {
+        OscTarget {
+            address: address.into(),
+            port,
+            path: path.into(),
+            arg: arg.map(String::from),
+            arg_type,
+        }
+    }
+
+    #[test]
+    fn validate_osc_target_accepts_a_fully_valid_target() {
+        let t = target(
+            "127.0.0.1",
+            53000,
+            "/cue/1/start",
+            Some("3"),
+            OscArgKind::Int,
         );
-        target.arg_type = OscArgKind::String;
+        assert!(validate_osc_target(&t).is_ok());
+    }
+
+    #[test]
+    fn validate_osc_target_rejects_bad_address() {
+        let t = target("not-an-ip", 53000, "/cue/1/start", None, OscArgKind::String);
+        assert!(validate_osc_target(&t).is_err());
+    }
+
+    #[test]
+    fn validate_osc_target_rejects_port_zero() {
+        let t = target("127.0.0.1", 0, "/cue/1/start", None, OscArgKind::String);
+        assert!(validate_osc_target(&t).is_err());
+    }
+
+    #[test]
+    fn validate_osc_target_rejects_path_without_leading_slash() {
+        let t = target("127.0.0.1", 53000, "cue/1/start", None, OscArgKind::String);
+        assert!(validate_osc_target(&t).is_err());
+    }
+
+    #[test]
+    fn validate_osc_target_rejects_mismatched_arg_type() {
+        let t = target(
+            "127.0.0.1",
+            53000,
+            "/cue/1/start",
+            Some("loud"),
+            OscArgKind::Float,
+        );
+        assert!(validate_osc_target(&t).is_err());
     }
 }

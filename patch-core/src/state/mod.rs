@@ -681,17 +681,24 @@ impl AppState {
     /// warning (and de-duplicated by `address:port`) rather than failing the load.
     pub async fn apply_show_file_full(
         &self,
-        mut channels: Vec<channel::Channel>,
+        channels: Vec<channel::Channel>,
         static_peers: Vec<config::StaticPeer>,
     ) -> anyhow::Result<()> {
         for ch in &channels {
             channel::validate_channel_id(&ch.id).map_err(|e| {
                 anyhow::anyhow!("show file contains invalid channel id {:?} — {}", ch.id, e)
             })?;
-        }
-        for ch in &mut channels {
-            for m in &mut ch.macros {
-                channel::normalize_macro_osc(m);
+            for m in &ch.macros {
+                if let Some(osc) = &m.osc {
+                    channel::validate_osc_target(osc).map_err(|e| {
+                        anyhow::anyhow!(
+                            "show file macro {:?} on channel {:?} has an invalid OSC target — {}",
+                            m.label,
+                            ch.id,
+                            e
+                        )
+                    })?;
+                }
             }
         }
         let mut validated_peers: Vec<config::StaticPeer> = Vec::with_capacity(static_peers.len());
@@ -770,9 +777,24 @@ impl AppState {
                 ch.flash_on_critical = flash_on_critical;
                 ch.flash_on_message = flash_on_message;
                 ch.flash_count = None;
-                for m in &mut ch.macros {
-                    channel::normalize_macro_osc(m);
-                }
+                // Untrusted peer input (possibly a different/older Patch build) —
+                // drop just the one macro with an invalid OSC target rather than
+                // rejecting the whole channel; see ADR-0002.
+                ch.macros.retain(|m| {
+                    let Some(osc) = &m.osc else { return true };
+                    match channel::validate_osc_target(osc) {
+                        Ok(()) => true,
+                        Err(e) => {
+                            tracing::warn!(
+                                "merge_channels: dropping macro {:?} on channel {:?} — invalid OSC target: {}",
+                                m.label,
+                                ch.id,
+                                e
+                            );
+                            false
+                        }
+                    }
+                });
                 map.insert(ch.id.clone(), ch);
                 added += 1;
             }
@@ -785,7 +807,7 @@ impl AppState {
     }
 
     /// Replace all channels with those from a loaded show file.
-    pub async fn apply_show_file(&self, mut channels: Vec<channel::Channel>) -> anyhow::Result<()> {
+    pub async fn apply_show_file(&self, channels: Vec<channel::Channel>) -> anyhow::Result<()> {
         // A show file is untrusted input (shared between machines, possibly
         // hand-edited). Validate every channel id against the OSC-path slug rule
         // *before* mutating anything — an invalid id would otherwise be embedded
@@ -795,10 +817,17 @@ impl AppState {
             channel::validate_channel_id(&ch.id).map_err(|e| {
                 anyhow::anyhow!("show file contains invalid channel id {:?} — {}", ch.id, e)
             })?;
-        }
-        for ch in &mut channels {
-            for m in &mut ch.macros {
-                channel::normalize_macro_osc(m);
+            for m in &ch.macros {
+                if let Some(osc) = &m.osc {
+                    channel::validate_osc_target(osc).map_err(|e| {
+                        anyhow::anyhow!(
+                            "show file macro {:?} on channel {:?} has an invalid OSC target — {}",
+                            m.label,
+                            ch.id,
+                            e
+                        )
+                    })?;
+                }
             }
         }
         {
@@ -1610,19 +1639,15 @@ mod tests {
 
     /// A macro whose `arg_type`/`arg` pair doesn't parse (e.g. hand-edited
     /// `patch.toml`, or an imported show file from an older/buggier build)
-    /// must not fail the whole show file load — it falls back to
-    /// `OscArgKind::String`, mirroring the invalid-static-peer skip pattern
-    /// in `apply_show_file_full_restores_static_peers` above.
+    /// must reject the whole show file load atomically — mirroring how
+    /// `apply_show_file_rejects_invalid_channel_id` treats a bad channel id.
+    /// See ADR-0002: a local show file load is held to the strictest policy,
+    /// unlike `merge_channels`' untrusted-peer skip (tested separately below).
     #[tokio::test]
-    async fn apply_show_file_full_normalizes_mismatched_macro_arg_type() {
+    async fn apply_show_file_full_rejects_mismatched_macro_arg_type() {
         use crate::osc::types::OscArgKind;
 
-        let _guard = config::test_data_dir_guard().await;
-        let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-        config::set_data_dir(dir.clone());
-
-        let st = AppState::new(Config::default());
+        let st = test_state();
 
         let mut ch = channel::Channel::new("rf", "RF", "#1E88E5").unwrap();
         ch.macros = vec![channel::MacroMessage {
@@ -1641,24 +1666,8 @@ mod tests {
             }),
         }];
 
-        st.apply_show_file_full(vec![ch], Vec::new()).await.unwrap();
-
-        let channels = st.get_channels().await;
-        let macro_osc = channels
-            .iter()
-            .find(|c| c.id == "rf")
-            .unwrap()
-            .macros
-            .iter()
-            .find(|m| m.label == "GO")
-            .unwrap()
-            .osc
-            .as_ref()
-            .unwrap();
-        assert_eq!(macro_osc.arg_type, OscArgKind::String);
-        assert_eq!(macro_osc.arg.as_deref(), Some("loud"));
-
-        let _ = std::fs::remove_dir_all(&dir);
+        assert!(st.apply_show_file_full(vec![ch], Vec::new()).await.is_err());
+        assert!(st.get_channels().await.is_empty());
     }
 
     #[tokio::test]
@@ -1745,6 +1754,67 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(again, 0);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A peer's channel is untrusted network input (possibly a different/older
+    /// Patch build) — one macro with an invalid OSC target must not block
+    /// adopting the channel or its other macros, per ADR-0002. Contrast with
+    /// `apply_show_file_full_rejects_mismatched_macro_arg_type` above, where the
+    /// same kind of bad macro rejects the whole load instead.
+    #[tokio::test]
+    async fn merge_channels_drops_only_the_invalid_macro() {
+        use crate::osc::types::OscArgKind;
+        use channel::Channel;
+
+        // merge_channels persists when it adds anything — pin a temp data dir.
+        let _guard = config::test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        config::set_data_dir(dir.clone());
+
+        let st = test_state();
+
+        let mut incoming = Channel::new("rf", "RF", "#1E88E5").unwrap();
+        incoming.macros = vec![
+            channel::MacroMessage {
+                label: "GOOD".into(),
+                payload: "go".into(),
+                key_binding: None,
+                priority: 1,
+                midi_note: None,
+                midi_cc: None,
+                osc: None,
+            },
+            channel::MacroMessage {
+                label: "BAD".into(),
+                payload: "loud".into(),
+                key_binding: None,
+                priority: 1,
+                midi_note: None,
+                midi_cc: None,
+                osc: Some(channel::OscTarget {
+                    address: "10.0.0.10".into(),
+                    port: 53000,
+                    path: "/cue/1/start".into(),
+                    arg: Some("loud".into()),
+                    arg_type: OscArgKind::Float,
+                }),
+            },
+        ];
+
+        let added = st.merge_channels(vec![incoming]).await.unwrap();
+        assert_eq!(added, 1);
+
+        let rf = st
+            .get_channels()
+            .await
+            .into_iter()
+            .find(|c| c.id == "rf")
+            .unwrap();
+        let labels: Vec<_> = rf.macros.iter().map(|m| m.label.as_str()).collect();
+        assert_eq!(labels, vec!["GOOD"]);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -730,7 +730,7 @@ the target (dual action). Engine: `osc::codec::encode_osc` (validates path start
 `api::dispatch_osc` (validates IP + non-zero port, sends via the transport socket), the FFI
 `api::send_osc_macro` (used by the UI's `_fireMacro`), and `midi::fire` → `resolve_osc` (fires once per
 matched macro, engine-side, so footswitches trigger gear too). `upsert_macro`/`upsert_global_macro` take an
-`Option<OscTarget>` and validate it (`validate_osc`). UI: an "Also send OSC" toggle + IP/port/path/arg fields
+`Option<OscTarget>` and validate it (`channel::validate_osc_target`). UI: an "Also send OSC" toggle + IP/port/path/arg fields
 in the macro editor (`settings_screen.dart`), an **OSC** badge on `_MacroRow`, and the firing wired in
 `home_screen._fireMacro`. Bridge: `sendOscMacro` + osc carried through the macro maps + `upsertMacro`/
 `upsertGlobalMacro`. FRB regenerated. Tests: `encode_osc` round-trip/validation + `resolve_osc` (once per

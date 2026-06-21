@@ -19,6 +19,8 @@ All OSC encoding/decoding belongs in `patch-core/src/osc/codec.rs`. Add and test
 
 `valid_channel_id` (`pub(crate)` in `codec.rs`) is the single source of truth for the channel slug rule (`[a-z0-9_-]`, ≤64 chars). Call it from `upsert_channel` and `apply_show_file` — never duplicate the check elsewhere.
 
+`validate_osc_target` (`pub(crate)` in `state/channel.rs`) is the single source of truth for "is this macro's OSC target legal" (address/port/path/arg+arg_type). Every caller uses this same check but applies its own policy on top depending on trust level — see ADR-0002. Don't add a fallback/normalize path here; that choice belongs at the call site.
+
 `csv_escape` in `api.rs` neutralises formula injection (cells starting with `= + - @` get a `'` prefix). Apply to any network-sourced export data.
 
 ## Async / I/O
