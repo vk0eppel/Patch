@@ -139,59 +139,42 @@ class BridgeClient {
 
   // ── Commands (legacy fire-and-forget shape) ──────────────────────────────
 
-  Future<void> sendMessage({
+  /// Send a Message on a channel. Returns the message id; throws on failure
+  /// (callers wrap in `runGuarded`). Slice 1.2: return/throw instead of the
+  /// old `ack_send`/`error` events (ADR-0004).
+  Future<String> sendMessage({
     required String channelId,
     required String payload,
     int priority = 1,
-  }) async {
-    try {
-      final id = await rust.sendMessage(
+  }) =>
+      rust.sendMessage(
         channelId: channelId,
         payload: payload,
         priority: priority,
       );
-      _emit({'event': 'ack_send', 'message_id': id});
-    } catch (e) {
-      _emitError(e);
-    }
-  }
 
   /// Send a direct (peer-to-peer) message to one peer. Stored locally under a
-  /// `dm:<peerId>` key and unicast only to that peer.
-  Future<void> sendDirectMessage({
+  /// `dm:<peerId>` key and unicast only to that peer. Returns the message id;
+  /// throws on failure.
+  Future<String> sendDirectMessage({
     required String peerId,
     required String payload,
     int priority = 1,
-  }) async {
-    try {
-      final id = await rust.sendDirectMessage(
+  }) =>
+      rust.sendDirectMessage(
         peerId: peerId,
         payload: payload,
         priority: priority,
       );
-      _emit({'event': 'ack_send', 'message_id': id});
-    } catch (e) {
-      _emitError(e);
-    }
-  }
 
-  Future<void> sendFlash(String channelId) async {
-    try {
-      await rust.sendFlash(channelId: channelId);
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  /// Flash a channel. Throws on failure.
+  Future<void> sendFlash(String channelId) =>
+      rust.sendFlash(channelId: channelId);
 
   /// Send a direct flash (attention ping) to one peer — unicast only; flashes
-  /// the recipient's DM thread with us (and our own thread locally).
-  Future<void> sendDmFlash(String peerId) async {
-    try {
-      await rust.sendDmFlash(peerId: peerId);
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  /// the recipient's DM thread with us (and our own thread locally). Throws on
+  /// failure.
+  Future<void> sendDmFlash(String peerId) => rust.sendDmFlash(peerId: peerId);
 
   Future<void> getChannels() async {
     try {
