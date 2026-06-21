@@ -8,6 +8,7 @@
 pub mod discovery;
 pub mod midi;
 pub mod osc;
+pub(crate) mod protocol;
 pub mod reliability;
 pub mod state;
 pub mod transport;

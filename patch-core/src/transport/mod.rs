@@ -10,23 +10,16 @@ use tokio::sync::{mpsc, watch, Mutex};
 use tracing::{debug, error, warn};
 use uuid::Uuid;
 
-use crate::osc::codec::{
-    decode_packet, encode_ack, encode_channels_announce, encode_message, PatchEvent,
-};
+use crate::osc::codec::decode_packet;
 #[cfg(test)]
 use crate::osc::types::PeerPresence;
-use crate::osc::types::{ChannelFlash, PatchMessage};
 use crate::reliability::ReliabilityManager;
-use crate::state::channel::Channel;
-use crate::state::{is_self, AppEvent, AppState, Config, PeerSighting};
-
-/// Defensive cap on how many channels a peer may offer in one announce.
-const MAX_OFFERED_CHANNELS: usize = 64;
+use crate::state::{AppState, Config};
 
 /// A queued outgoing packet, processed by the single `send_loop` task. Routing
 /// everything through one task means the per-interface broadcast can set/clear
 /// the socket's `IP_BOUND_IF` option without racing concurrent unicast sends.
-enum Outgoing {
+pub(crate) enum Outgoing {
     /// Unicast these bytes to a specific peer via the default route.
     To(Vec<u8>, SocketAddr),
     /// Best-effort broadcast (presence/discovery beacon). Send failures are
@@ -198,7 +191,7 @@ impl Transport {
     /// Target resolution (skip self, skip unaddressed peers, dedup by
     /// `SocketAddr` so a static peer also seen dynamically isn't double-fired)
     /// lives in `AppState::reachable_peer_addrs` — shared with the `/patch/say`
-    /// relay in `handle_event`, which sends the same target list a different
+    /// relay in `protocol::handle`, which sends the same target list a different
     /// way (queued via `send_tx` instead of direct socket send).
     ///
     /// Returns the addresses actually contacted (used for ACK tracking). If no
@@ -253,8 +246,13 @@ async fn receive_loop(
                     debug!("OSC packet from {} ({} bytes)", peer_addr, len);
                     match decode_packet(&buf[..len]) {
                         Ok(event) => {
-                            handle_event(event, peer_addr, &state, client_id, &send_tx, &reliability)
-                                .await
+                            let outgoing = crate::protocol::handle(
+                                event, peer_addr, &state, client_id, &reliability,
+                            )
+                            .await;
+                            for item in outgoing {
+                                let _ = send_tx.send(item).await;
+                            }
                         }
                         Err(e) => warn!("Decode error from {}: {}", peer_addr, e),
                     }
@@ -280,248 +278,6 @@ async fn receive_loop(
                 socket = socket_rx.borrow_and_update().clone();
                 debug!("Receive loop switched to rebound socket");
             }
-        }
-    }
-}
-
-/// Records that `peer_id`/`peer_name` was just heard from at `from` — the
-/// sighting every inbound Message/DirectMessage/DirectFlash/Flash arm needs to
-/// log so the sender appears in the peers panel (and an already-known
-/// sender's address stays current), even when AP isolation blocks their
-/// broadcast heartbeats.
-async fn record_sender_sighting(
-    state: &AppState,
-    peer_id: Uuid,
-    peer_name: String,
-    from: SocketAddr,
-) {
-    state
-        .record_sighting(
-            PeerSighting::Heartbeat { peer_id, peer_name },
-            from.ip().to_string(),
-            from.port(),
-        )
-        .await;
-}
-
-async fn handle_event(
-    event: PatchEvent,
-    from: SocketAddr,
-    state: &AppState,
-    client_id: Uuid,
-    send_tx: &mpsc::Sender<Outgoing>,
-    reliability: &Arc<Mutex<ReliabilityManager>>,
-) {
-    match event {
-        PatchEvent::Message(msg) => {
-            // Record the sighting so the sender appears in the peers panel
-            // immediately (even when AP isolation blocks their broadcast
-            // heartbeats) and so an already-known sender's address stays
-            // current. Skip our own — broadcasts don't echo back to self in
-            // practice (Messages are unicast-only, never broadcast), but the
-            // guard costs nothing and matches every other sender-recording arm.
-            if !is_self(msg.sender_id, client_id) {
-                record_sender_sighting(state, msg.sender_id, msg.sender_name.clone(), from).await;
-            }
-            // ACK critical messages so the sender can stop retransmitting.
-            if msg.is_critical() {
-                match encode_ack(msg.message_id, client_id) {
-                    Ok(ack_bytes) => {
-                        let _ = send_tx.send(Outgoing::To(ack_bytes, from)).await;
-                    }
-                    Err(e) => warn!("Failed to encode ACK: {}", e),
-                }
-            }
-            state.store_message(msg).await;
-        }
-        PatchEvent::DirectMessage { msg, target_id } => {
-            // Only accept DMs addressed to us (they're unicast, so this should
-            // always hold — defensive).
-            if !is_self(target_id, client_id) {
-                return;
-            }
-            // Record the sighting so the DM thread + peers panel show them.
-            record_sender_sighting(state, msg.sender_id, msg.sender_name.clone(), from).await;
-            // msg.channel_id is already `dm:{sender_id}` (set by decode_dm).
-            state.store_message(msg).await;
-        }
-        PatchEvent::DirectFlash {
-            sender_id,
-            sender_name,
-            target_id,
-        } => {
-            // Only accept pings addressed to us (unicast — defensive check).
-            if !is_self(target_id, client_id) {
-                return;
-            }
-            // Record the sighting so the DM thread + peers panel show them.
-            record_sender_sighting(state, sender_id, sender_name.clone(), from).await;
-            // Flash our DM thread with the sender (keyed by the *other* peer,
-            // exactly like an inbound DM). The id is built locally, so it never
-            // passes through valid_channel_id (which rejects `dm:` keys).
-            state
-                .publish(AppEvent::ChannelFlash(ChannelFlash {
-                    channel_id: format!("dm:{}", sender_id),
-                    sender_id,
-                    sender_name,
-                }))
-                .await;
-        }
-        PatchEvent::Ack {
-            message_id,
-            peer_id,
-        } => {
-            // Record the ACK (matched by the ACK's source address — see
-            // reliability::ReliabilityManager::ack). On a tracked target this
-            // returns delivery progress, which we surface so the sender's UI can
-            // show "delivered N/M" and a check once every peer has it.
-            let progress = reliability.lock().await.ack(message_id, from);
-            if let Some((delivered, total)) = progress {
-                state
-                    .publish(AppEvent::MessageDelivery {
-                        message_id,
-                        delivered,
-                        total,
-                        failed: false,
-                        failed_peers: Vec::new(),
-                    })
-                    .await;
-            }
-            state
-                .publish(AppEvent::MessageAcked {
-                    message_id,
-                    peer_id,
-                })
-                .await;
-        }
-        PatchEvent::Presence(p) => {
-            // Ignore our own presence broadcast — we receive it on the same socket.
-            if is_self(p.peer_id, client_id) {
-                return;
-            }
-            state
-                .record_sighting(
-                    PeerSighting::Presence(p),
-                    from.ip().to_string(),
-                    from.port(),
-                )
-                .await;
-        }
-        PatchEvent::Bye { peer_id } => {
-            // Graceful departure — mark the peer offline (grey) immediately
-            // instead of waiting out the heartbeat timeout, but keep it in the
-            // list so the operator still sees who was connected.
-            if !is_self(peer_id, client_id) {
-                tracing::info!("Received /patch/bye from {} — marking offline", peer_id);
-                state.mark_peer_offline(peer_id).await;
-            }
-        }
-        PatchEvent::Flash(f) => {
-            // Same sighting as for Message.
-            record_sender_sighting(state, f.sender_id, f.sender_name.clone(), from).await;
-            state.publish(AppEvent::ChannelFlash(f)).await;
-        }
-        PatchEvent::Say {
-            channel_id,
-            payload,
-            priority,
-        } => {
-            // External OSC injection (e.g. QLab). This node *originates* the
-            // message — its identity, a fresh id + timestamp — then relays it to
-            // every known peer and stores it locally, so an OSC source can post to
-            // the whole crew through this node (exactly as if typed here).
-            let config = state.config().await;
-            let msg = PatchMessage::new(
-                config.client_id,
-                &config.client_name,
-                channel_id,
-                priority,
-                payload,
-            );
-            match encode_message(&msg) {
-                Ok(bytes) => {
-                    // Same target resolution as `Transport::send_to_peers` — this
-                    // path just queues onto `send_tx` instead of sending directly.
-                    let targets = state.reachable_peer_addrs(config.client_id).await;
-                    for addr in &targets {
-                        let _ = send_tx.send(Outgoing::To(bytes.clone(), *addr)).await;
-                    }
-                    // Track criticals for retransmit, like a hand-sent message —
-                    // same offline-peer filter `dispatch_message` applies, so an
-                    // injected critical doesn't retransmit against peers already
-                    // known to be gone.
-                    if msg.is_critical() {
-                        crate::reliability::track_critical(
-                            reliability,
-                            state,
-                            config.heartbeat_interval_secs,
-                            msg.message_id,
-                            bytes,
-                            targets,
-                        )
-                        .await;
-                    }
-                }
-                Err(e) => warn!("Failed to encode OSC-injected message: {}", e),
-            }
-            state.store_message(msg).await;
-        }
-        PatchEvent::ChannelsRequest { peer_id } => {
-            if is_self(peer_id, client_id) {
-                return; // don't answer our own request
-            }
-            // Reply with our current channel layout, unicast back to the requester.
-            let config = state.config().await;
-            let channels = state.get_channels().await;
-            match serde_json::to_string(&channels) {
-                Ok(json) => {
-                    match encode_channels_announce(config.client_id, &config.client_name, &json) {
-                        Ok(bytes) => {
-                            debug!("Replying to channels request from {} ({})", peer_id, from);
-                            let _ = send_tx.send(Outgoing::To(bytes, from)).await;
-                        }
-                        Err(e) => warn!("Failed to encode channels announce: {}", e),
-                    }
-                }
-                Err(e) => warn!("Failed to serialise channels for announce: {}", e),
-            }
-        }
-        PatchEvent::ChannelsAnnounce {
-            peer_id,
-            peer_name,
-            channels_json,
-        } => {
-            if is_self(peer_id, client_id) {
-                return;
-            }
-            match serde_json::from_str::<Vec<Channel>>(&channels_json) {
-                Ok(channels) => {
-                    if channels.len() > MAX_OFFERED_CHANNELS {
-                        warn!(
-                            "Channels announce from {} has {} channels (> {}), dropping",
-                            peer_name,
-                            channels.len(),
-                            MAX_OFFERED_CHANNELS
-                        );
-                        return;
-                    }
-                    // Surface for a UI preview/merge prompt — never auto-applied.
-                    state
-                        .publish(AppEvent::ChannelsOffered {
-                            from_peer_id: peer_id,
-                            from_name: peer_name,
-                            channels,
-                        })
-                        .await;
-                }
-                Err(e) => warn!(
-                    "Failed to parse channels announce from {}: {}",
-                    peer_name, e
-                ),
-            }
-        }
-        PatchEvent::Unknown(msg) => {
-            debug!("Unknown OSC: {}", msg.addr);
         }
     }
 }

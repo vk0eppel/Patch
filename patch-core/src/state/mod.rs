@@ -1320,7 +1320,7 @@ mod tests {
         // different address — a reconnect over a different NIC/VPN) updates
         // the address. This single call now also covers what the deleted
         // generic per-packet `touch_peer_address` used to do for every event
-        // in `transport::handle_event` before this peer was registered.
+        // in the protocol dispatch before this peer was registered.
         st.record_sighting(
             PeerSighting::Heartbeat {
                 peer_id: id,
