@@ -31,7 +31,6 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final _nameCtrl = TextEditingController();
   final _roleCtrl = TextEditingController();
-  StreamSubscription<Map<String, dynamic>>? _sub;
   StreamSubscription<PatchEvent>? _pushSub;
   bool _nameSaved = false;
   bool _roleSaved = false;
@@ -73,10 +72,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _sub = widget.bridge.events.listen(_handleEvent);
     _pushSub = widget.bridge.pushes.listen(_handlePush);
-    // Config is owned by the AppStore (#56); interfaces are still a local fetch.
-    widget.bridge.getInterfaces();
+    // Config/peers/channels are owned by the AppStore; the interface list is a
+    // local, single-consumer fetch (#59).
+    _loadInterfaces();
     // Refresh peers via the store now that the screen is up (peers are owned by
     // the AppStore — #55). Post-frame so the InheritedNotifier is available.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -97,7 +96,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _store?.removeListener(_seedControllersFromConfig);
     _nameCtrl.dispose();
     _roleCtrl.dispose();
-    _sub?.cancel();
     _pushSub?.cancel();
     super.dispose();
   }
@@ -129,19 +127,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _roleCtrl.text = cfg.role ?? '';
   }
 
-  void _handleEvent(Map<String, dynamic> event) {
-    final type = event['event'] as String?;
-    switch (type) {
-      case 'interfaces':
-        final data = event['data'] as List<dynamic>;
-        setState(() {
-          _interfaces = data
-              .map((i) => {
-                    'name': (i as Map<String, dynamic>)['name'] as String,
-                    'ip': i['ip'] as String,
-                  })
-              .toList();
-        });
+  Future<void> _loadInterfaces() async {
+    try {
+      final ifaces = await widget.bridge.getInterfaces();
+      if (!mounted) return;
+      setState(() {
+        _interfaces =
+            ifaces.map((i) => {'name': i.name, 'ip': i.ip}).toList();
+      });
+    } catch (e) {
+      debugPrint('getInterfaces failed: $e'); // non-critical — picker stays empty
     }
   }
 

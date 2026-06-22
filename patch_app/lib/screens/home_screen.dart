@@ -121,7 +121,6 @@ class _HomeScreenState extends State<HomeScreen> {
   /// one-shot pulse on the peers toggle ([PulsingPeersButton]).
   int _dmPulseNotify = 0;
 
-  StreamSubscription<Map<String, dynamic>>? _eventSub;
   StreamSubscription<PatchEvent>? _pushSub;
 
   // ── Derived state ───────────────────────────────────────────────────────────
@@ -294,7 +293,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _eventSub = widget.bridge.events.listen(_handleEvent);
     _pushSub = widget.bridge.pushes.listen(_handlePush);
     // Peers, config, and channels are all loaded by the AppStore (see main).
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
@@ -384,7 +382,6 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     _store?.removeListener(_onStoreChanged);
-    _eventSub?.cancel();
     _pushSub?.cancel();
     _alertPlayer.dispose();
     super.dispose();
@@ -450,32 +447,6 @@ class _HomeScreenState extends State<HomeScreen> {
         },
       );
     });
-  }
-
-  void _handleEvent(Map<String, dynamic> event) {
-    try {
-      _dispatch(event);
-    } catch (e, stack) {
-      debugPrint('Bridge event error [${event['event']}]: $e\n$stack');
-    }
-  }
-
-  void _dispatch(Map<String, dynamic> event) {
-    final type = event['event'] as String?;
-    switch (type) {
-      case 'error':
-        final msg = event['message'] as String? ?? 'Something went wrong';
-        debugPrint('Bridge error: $msg');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(msg),
-              backgroundColor: PatchTheme.critical,
-              duration: const Duration(seconds: 5),
-            ),
-          );
-        }
-    }
   }
 
   /// Typed engine pushes (slice 1.2, ADR-0004). Exhaustive over [PatchEvent]:

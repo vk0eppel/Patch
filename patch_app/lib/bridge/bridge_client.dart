@@ -24,12 +24,9 @@ import '../src/rust/transport.dart' as rust_transport;
 ///
 /// Lifecycle: construct → `await connect()` → use. `dispose()` to clean up.
 class BridgeClient {
-  final _eventController = StreamController<Map<String, dynamic>>.broadcast();
-
-  /// Typed engine-push stream (slice 1.1). Emitted *alongside* the legacy map
-  /// [events] during migration — consumers move onto this on their own
-  /// schedule (slices 1.2/1.3); slice 1.4 deletes the map-push path. See
-  /// ADR-0004.
+  /// Typed engine-push stream — the sole event channel. Reads return `Future`s
+  /// and commands throw; the legacy stringly-typed map stream is gone (#59,
+  /// ADR-0004).
   final _pushController = StreamController<PatchEvent>.broadcast();
 
   StreamSubscription<rust.PatchAppEvent>? _engineSub;
@@ -40,13 +37,10 @@ class BridgeClient {
   /// failed `rust.init()` (e.g. socket bind error) doesn't re-init the lib.
   static bool _rustLibInitialized = false;
 
-  /// Stream of legacy-shaped events: `{"event": "<type>", ...}`.
-  Stream<Map<String, dynamic>> get events => _eventController.stream;
-
-  /// Typed engine pushes — the migration target for the legacy [events] map.
+  /// Typed engine pushes — consumed by the AppStore and the screens.
   Stream<PatchEvent> get pushes => _pushController.stream;
 
-  /// Boot the Rust engine and start forwarding events into [events].
+  /// Boot the Rust engine and start forwarding pushes onto [pushes].
   /// Safe to call again after a failed attempt (used by the boot Retry path).
   Future<void> connect() async {
     if (_connected) return;
@@ -67,11 +61,6 @@ class BridgeClient {
     final typed = patchEventFromRust(event);
     if (typed != null) _pushController.add(typed);
   }
-
-  void _emit(Map<String, dynamic> event) => _eventController.add(event);
-
-  void _emitError(Object e) =>
-      _emit({'event': 'error', 'message': e.toString()});
 
   // ── Commands (legacy fire-and-forget shape) ──────────────────────────────
 
@@ -135,16 +124,11 @@ class BridgeClient {
     return messages.map(_messageFromRust).toList();
   }
 
-  Future<void> getInterfaces() async {
-    try {
-      final ifaces = await rust.getInterfaces();
-      _emit({
-        'event': 'interfaces',
-        'data': ifaces.map((i) => {'name': i.name, 'ip': i.ip}).toList(),
-      });
-    } catch (e) {
-      _emitError(e);
-    }
+  /// Available network interfaces (name + ip). Returns directly (single
+  /// consumer — settings); throws on failure (#59, ADR-0004).
+  Future<List<({String name, String ip})>> getInterfaces() async {
+    final ifaces = await rust.getInterfaces();
+    return ifaces.map((i) => (name: i.name, ip: i.ip)).toList();
   }
 
   /// The current config snapshot. Returns directly (owned by `AppStore` —
@@ -371,16 +355,11 @@ class BridgeClient {
     return (name: s.name, channelCount: s.channelCount);
   }
 
-  Future<void> listShowFiles() async {
-    try {
-      final list = await rust.listShowFiles();
-      _emit({
-        'event': 'show_files',
-        'data': list.map(_showFileMetaFromRust).toList(),
-      });
-    } catch (e) {
-      _emitError(e);
-    }
+  /// Saved show files. Returns directly (single consumer — the show-files
+  /// dialog); throws on failure (#59, ADR-0004).
+  Future<List<ShowFileMeta>> listShowFiles() async {
+    final list = await rust.listShowFiles();
+    return list.map(_showFileMetaFromRust).toList();
   }
 
   Future<void> deleteShowFile(String slug) => rust.deleteShowFile(slug: slug);
@@ -444,7 +423,6 @@ class BridgeClient {
   Future<void> dispose() async {
     await shutdown();
     await _engineSub?.cancel();
-    await _eventController.close();
     await _pushController.close();
   }
 }
