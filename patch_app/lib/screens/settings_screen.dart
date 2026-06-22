@@ -9,6 +9,7 @@ import '../models/channel.dart';
 import '../models/config.dart';
 import '../models/events.dart';
 import '../models/message.dart';
+import '../store/app_store.dart';
 import '../theme/patch_theme.dart';
 import '../util/run_guarded.dart';
 import '../widgets/bounded_int_field.dart';
@@ -63,8 +64,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Static peers
   List<StaticPeerInfo> _staticPeers = [];
 
-  // Live peers (for "import channels from a peer")
-  List<PeerInfo> _peers = [];
+  // Live peers (for "import channels from a peer") — owned by the AppStore.
+  List<PeerInfo> get _peers => AppStoreScope.of(context).peers;
 
   /// True between sending a channels request and receiving the offer, so an
   /// unsolicited `channels_offered` (a peer announcing without us asking) is
@@ -79,7 +80,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _pushSub = widget.bridge.pushes.listen(_handlePush);
     widget.bridge.getConfig();
     widget.bridge.getInterfaces();
-    widget.bridge.getPeers();
+    // Refresh peers via the store now that the screen is up (peers are owned by
+    // the AppStore — #55). Post-frame so the InheritedNotifier is available.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) AppStoreScope.read(context).refreshPeers();
+    });
     // Read the version straight from the bundle (same source as the OS-native
     // About panel) so this label can't itself drift from what's installed.
     PackageInfo.fromPlatform().then((info) {
@@ -133,11 +138,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final data = event['data'] as List<PatchChannel>;
         setState(() {
           _channels = data;
-        });
-      case 'peers':
-        final data = event['data'] as List<PeerInfo>;
-        setState(() {
-          _peers = data;
         });
     }
   }
@@ -200,7 +200,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// Pick a peer (with a resolved address) to request a channel layout from.
   void _showImportFromPeer() {
-    widget.bridge.getPeers(); // refresh the list before showing it
+    AppStoreScope.read(context).refreshPeers(); // refresh before showing it
     final candidates =
         _peers.where((p) => p.address.isNotEmpty && p.oscPort > 0).toList();
     showDialog(
@@ -588,12 +588,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onPressed: () => _showAddPeerDialog(context, widget.bridge),
               ),
               _resetButton('Static Peers', () {
+                final store = AppStoreScope.read(context);
                 runGuarded(context, () async {
                   for (final peer in List.of(_staticPeers)) {
                     await widget.bridge.removeStaticPeer(peer.address, peer.port);
                   }
                   await widget.bridge.getConfig();
-                  await widget.bridge.getPeers();
+                  await store.refreshPeers();
                 });
               }),
             ],
@@ -637,11 +638,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
           else
             ..._staticPeers.map((peer) => _StaticPeerRow(
                   peer: peer,
-                  onDelete: () => runGuarded(context, () async {
-                    await widget.bridge.removeStaticPeer(peer.address, peer.port);
-                    await widget.bridge.getConfig();
-                    await widget.bridge.getPeers();
-                  }),
+                  onDelete: () {
+                    final store = AppStoreScope.read(context);
+                    runGuarded(context, () async {
+                      await widget.bridge.removeStaticPeer(peer.address, peer.port);
+                      await widget.bridge.getConfig();
+                      await store.refreshPeers();
+                    });
+                  },
                 )),
 
           const SizedBox(height: 32),
@@ -2047,6 +2051,7 @@ void _showAddPeerDialog(BuildContext context, BridgeClient bridge) {
               // Refetch config after adding so the parent's `config` arm
               // refreshes _staticPeers (replaces config_updated — ADR-0004).
               // Use the outer `context` (the dialog `ctx` is about to pop).
+              final store = AppStoreScope.read(context);
               runGuarded(context, () async {
                 await bridge.addStaticPeer(
                   address,
@@ -2054,9 +2059,9 @@ void _showAddPeerDialog(BuildContext context, BridgeClient bridge) {
                   label: label.isEmpty ? null : label,
                 );
                 await bridge.getConfig();
-                // Refresh peers too — a static peer shows in the peers panel
-                // (was home's old config_updated → getPeers; ADR-0004).
-                await bridge.getPeers();
+                // Refresh peers too — a static peer shows in the peers panel.
+                // The store owns peers now (#55).
+                await store.refreshPeers();
               });
               Navigator.pop(ctx);
             },

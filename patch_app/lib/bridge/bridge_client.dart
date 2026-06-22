@@ -124,13 +124,11 @@ class BridgeClient {
     }
   }
 
-  Future<void> getPeers() async {
-    try {
-      final peers = await rust.getPeers();
-      _emit({'event': 'peers', 'data': peers.map(_peerFromRust).toList()});
-    } catch (e) {
-      _emitError(e);
-    }
+  /// The current peer list. Returns directly (owned by `AppStore` — candidate
+  /// 2, ADR-0004); throws on failure.
+  Future<List<PeerInfo>> getPeers() async {
+    final peers = await rust.getPeers();
+    return peers.map(_peerFromRust).toList();
   }
 
   Future<void> getMessages(String channelId, {int limit = 500}) async {

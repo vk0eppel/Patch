@@ -13,6 +13,7 @@ import '../models/events.dart';
 import '../models/flash.dart';
 import '../models/message.dart';
 import '../models/selection.dart';
+import '../store/app_store.dart';
 import '../theme/patch_theme.dart';
 import '../util/message_filter.dart';
 import '../util/run_guarded.dart';
@@ -84,7 +85,9 @@ class _HomeScreenState extends State<HomeScreen> {
   /// in-memory list doesn't grow unbounded over a long show.
   static const int _kMaxMessagesPerChannel = 500;
 
-  List<PeerInfo> _peers = [];
+  /// Peers are owned by the shared [AppStore]; reading via `of(context)`
+  /// rebuilds the screen when the list changes (candidate 2, ADR-0004).
+  List<PeerInfo> get _peers => AppStoreScope.of(context).peers;
   bool _showPeers = false;
   bool _showMacros = false;
   /// First-run name prompt: shown at most once per session. Reset on relaunch,
@@ -118,11 +121,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   StreamSubscription<Map<String, dynamic>>? _eventSub;
   StreamSubscription<PatchEvent>? _pushSub;
-
-  /// Coalesces `peer_updated` bursts into one `getPeers()` fetch. `last_seen` is
-  /// refreshed on every received packet, so a busy channel fires `peer_updated`
-  /// per message; without this each one would do a full peer-list FFI round-trip.
-  Timer? _peersRefresh;
 
   // ── Derived state ───────────────────────────────────────────────────────────
 
@@ -297,7 +295,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _eventSub = widget.bridge.events.listen(_handleEvent);
     _pushSub = widget.bridge.pushes.listen(_handlePush);
     widget.bridge.getChannels();
-    widget.bridge.getPeers();
+    // Peers are loaded by the AppStore (see main); channels/config still
+    // fire-and-forget until their slices (#57/#56).
     widget.bridge.getConfig();
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     // Use the playback audio category so the alert sounds on iOS even with the
@@ -315,19 +314,10 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
-    _peersRefresh?.cancel();
     _eventSub?.cancel();
     _pushSub?.cancel();
     _alertPlayer.dispose();
     super.dispose();
-  }
-
-  /// Debounced full peer-list refresh (trailing edge, ~800 ms).
-  void _schedulePeersRefresh() {
-    _peersRefresh ??= Timer(const Duration(milliseconds: 800), () {
-      _peersRefresh = null;
-      widget.bridge.getPeers();
-    });
   }
 
   /// Global F-key handler — fires the first shortcut whose keyBinding matches.
@@ -434,12 +424,6 @@ class _HomeScreenState extends State<HomeScreen> {
           _messages[chId] = data;
         });
 
-      case 'peers':
-        final data = event['data'] as List<PeerInfo>;
-        setState(() {
-          _peers = data;
-        });
-
       case 'config':
         final cfg = event['data'] as AppConfig;
         setState(() {
@@ -485,16 +469,10 @@ class _HomeScreenState extends State<HomeScreen> {
           _onDeliveryUpdated(messageId, status);
         case Flashed(:final channelId):
           _onChannelFlashed(channelId);
+        // Peers are owned by the AppStore now — it reduces these (#55).
         case PeerExpired():
-          // Full refetch (not a targeted removal): a static-peer-backed entry
-          // should immediately reappear as ManualIp (gray dot) rather than
-          // vanishing. The variant carries the peer id if a future
-          // optimisation wants it.
-          widget.bridge.getPeers();
         case PeersChanged():
-          // Fires on every received packet, so coalesce bursts into one
-          // full-list refresh rather than a getPeers() per message.
-          _schedulePeersRefresh();
+          break;
         case ChannelsChanged():
           widget.bridge.getChannels();
         case ClientNameChanged(:final name):
@@ -776,7 +754,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   unreadPeerIds: {
                     for (final k in _unreadDms) k.substring(3),
                   },
-                  onRefresh: () => widget.bridge.getPeers(),
+                  onRefresh: () => AppStoreScope.read(context).refreshPeers(),
                 ),
               ),
             ),
@@ -902,7 +880,8 @@ class _ChannelStrip extends StatelessWidget {
                       // peers aren't push-backed, so refresh them here (ADR-0004).
                       builder: (_) => ShowFilesDialog(
                         bridge: bridge,
-                        onShowFileLoaded: () => bridge.getPeers(),
+                        onShowFileLoaded: () =>
+                            AppStoreScope.read(context).refreshPeers(),
                       ),
                     ),
                   ),
