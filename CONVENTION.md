@@ -37,7 +37,7 @@ If a Rust crate emits `cargo:rustc-link-lib=framework=Foo`, add `-framework Foo`
 
 ## Dart
 
-Every domain shape the bridge emits gets a model class with a `fromJson` factory in `patch_app/lib/models/` (`PatchChannel`, `MacroMessage`, `AppConfig`, …) — never hand-unpack a raw `Map<String, dynamic>` field-by-field in a screen. If two screens need the same event's data, that's a sign the parsing belongs in a shared model, not duplicated in both screens.
+The bridge exposes typed values only — `Future<T>` reads, throwing commands, and a sealed `PatchEvent` push stream (`models/events.dart`); there is no `Map<String, dynamic>` event envelope. Shared domain state (peers, config, channels, messages) lives in the single `AppStore` (`store/app_store.dart`); screens read it through `AppStoreScope.of(context)` rather than holding their own copies — if two screens need the same data, it belongs in the store, not duplicated in both. Screen-local UI state (selection, flash counters, form controllers) stays in the widget. Commands throw on failure and are wrapped in `runGuarded` (`util/run_guarded.dart`) so the error surfaces once. See ADR-0004 (event seam) and ADR-0005 (AppStore).
 
 `macros_panel.dart` exports both `MacrosPanel` and `ChannelMacro`. Import with `show MacrosPanel, ChannelMacro`.
 

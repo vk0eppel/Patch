@@ -33,8 +33,10 @@ Generated Dart bindings live in `patch_app/lib/src/rust/` — excluded from anal
 
 `BridgeClient` (`bridge/bridge_client.dart`) wraps the generated bindings:
 1. Calls `RustLib.init()` then `api.init()` once on startup.
-2. Subscribes to `api.subscribeEvents()`, forwards typed `PatchAppEvent` into a `Stream<Map<String, dynamic>>` the screens consume — only the outer `{event: ..., data: ...}` envelope is a Map; `data` itself is the plain Dart model (`PatchChannel`, `PatchMessage`, `PeerInfo`, `AppConfig`, …) built directly from the FRB type via a `_xFromRust()` helper, not a JSON-shaped Map re-parsed by the model's `fromJson`.
-3. Wraps command functions to emit response events (e.g. `getChannels()` → `{event: 'channels', data: […]}`).
+2. Subscribes to `api.subscribeEvents()` and maps each typed `PatchAppEvent` to a sealed Dart `PatchEvent` (`models/events.dart`) via the pure `patchEventFromRust` function, exposed as a single `Stream<PatchEvent> pushes`. Variants carry plain Dart models (`PatchMessage`, `PatchChannel`, `PeerInfo`, …) built from the FRB type via `_xFromRust()` helpers. See ADR-0004.
+3. Reads return `Future<T>` (`getChannels()` → `Future<List<PatchChannel>>`, `getConfig()` → `Future<AppConfig>`, …); commands return their outcome or throw. There is **no** stringly-typed `Map<String, dynamic>` event envelope — `BridgeClient` exposes exactly the typed `pushes` stream plus those futures and throwing commands.
+
+The shared **`AppStore`** (`store/app_store.dart`) — a `ChangeNotifier` provided above the Navigator via `AppStoreScope` (`InheritedNotifier`) so pushed routes like Settings can read it — owns the fetched UI-side domain state (peers, config, channels, messages), reduces the `pushes` that affect it, and `notifyListeners()`. Both screens read that state through the store, so a change made in one screen is reflected in the other with no event round-trip. Commands are wrapped in `runGuarded` (`util/run_guarded.dart`), which surfaces a thrown failure as a snackbar. See ADR-0005.
 
 `subscribe_events` is `async` so FRB calls it inside its Tokio runtime — the `tokio::spawn` inside requires that ambient runtime. The `rust-async` FRB feature enables this; without it `tokio::spawn` panics with "there is no reactor running".
 

@@ -24,7 +24,7 @@ Proven mistakes — these have caused real bugs. Read before touching the releva
 
 ## FFI Bridge
 
-**Every new `ConfigSnapshot` field in Rust must be added to `bridge_client.dart::getConfig()`'s manual map, and to `AppConfig.fromJson` (`patch_app/lib/models/config.dart`).** Both `home_screen.dart` and `settings_screen.dart` parse the `'config'` event through `AppConfig.fromJson` now — fixing it there fixes both screens at once, but the Rust→Map hop in `getConfig()` is still hand-listed. A Rust test (`api::tests::config_snapshot_field_set_is_pinned`) pins `ConfigSnapshot`'s serialized field set, so forgetting to update these fails `cargo test` loudly instead of silently resetting a Dart state variable to its `?? default`.
+**Every new `ConfigSnapshot` field in Rust must be added to the hand-written `bridge_client.dart::_configFromRust()` mapping that builds `AppConfig`.** `getConfig()` returns `Future<AppConfig>`, and the shared `AppStore` is the single consumer — both `home_screen.dart` and `settings_screen.dart` read config-derived values from `store.config`, so wiring the field through `_configFromRust` once surfaces it on both screens. That Rust→`AppConfig` hop is still hand-listed. A Rust test (`api::tests::config_snapshot_field_set_is_pinned`) pins `ConfigSnapshot`'s serialized field set, so forgetting to update it fails `cargo test` loudly instead of silently resetting a Dart state variable to its `?? default`.
 
 **`rust-async` is a load-bearing FRB feature.** Without it, async functions in `api.rs` have no Tokio reactor and `tokio::spawn` panics with "there is no reactor running".
 
