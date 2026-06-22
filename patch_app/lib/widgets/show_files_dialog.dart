@@ -6,13 +6,20 @@ import 'package:flutter/material.dart';
 import '../bridge/bridge_client.dart';
 import '../models/message.dart';
 import '../theme/patch_theme.dart';
+import '../util/run_guarded.dart';
 
 /// Modal show files panel — shows named show files and file import/export.
 /// Open with: showDialog(context: ctx, builder: (_) => ShowFilesDialog(bridge: bridge))
 class ShowFilesDialog extends StatefulWidget {
   final BridgeClient bridge;
 
-  const ShowFilesDialog({super.key, required this.bridge});
+  /// Called after a show file is loaded/imported so the parent can refresh
+  /// state the ChannelsChanged push doesn't cover — restored static peers and
+  /// the channel selection (replaces the cross-screen show_file_loaded event;
+  /// ADR-0004).
+  final VoidCallback? onShowFileLoaded;
+
+  const ShowFilesDialog({super.key, required this.bridge, this.onShowFileLoaded});
 
   @override
   State<ShowFilesDialog> createState() => _ShowFilesDialogState();
@@ -44,9 +51,8 @@ class _ShowFilesDialogState extends State<ShowFilesDialog> {
             _showFiles = data;
           });
         }
-      case 'show_file_saved':
-      case 'show_file_loaded':
-        widget.bridge.listShowFiles();
+      // show_file_saved / show_file_loaded are handled at their call sites now
+      // (ADR-0004) — saving/loading no longer emit on the legacy stream.
     }
   }
 
@@ -60,7 +66,11 @@ class _ShowFilesDialogState extends State<ShowFilesDialog> {
     );
     if (result == null || result.files.isEmpty || result.files.first.path == null) return;
     final path = result.files.first.path!;
-    await widget.bridge.importLayout(path);
+    if (!mounted) return;
+    await runGuarded(context, () async {
+      await widget.bridge.importLayout(path);
+      widget.onShowFileLoaded?.call();
+    });
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -74,14 +84,17 @@ class _ShowFilesDialogState extends State<ShowFilesDialog> {
       allowedExtensions: ['toml'],
       type: FileType.custom,
     );
-    if (path == null) return;
-    await widget.bridge.exportLayout(path, name: name);
+    if (path == null || !mounted) return;
+    await runGuarded(context, () => widget.bridge.exportLayout(path, name: name));
   }
 
   Future<void> _saveNew() async {
     final name = await _askName(context, title: 'Save Show File', hint: 'Show file name (e.g. "Festival Day 1")');
-    if (name == null) return;
-    await widget.bridge.saveShowFile(name);
+    if (name == null || !mounted) return;
+    await runGuarded(context, () async {
+      await widget.bridge.saveShowFile(name);
+      await widget.bridge.listShowFiles(); // refresh the saved-files list
+    });
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -180,6 +193,7 @@ class _ShowFilesDialogState extends State<ShowFilesDialog> {
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       itemCount: _showFiles.length,
                       itemBuilder: (_, i) => _ShowFileRow(
+                        onShowFileLoaded: widget.onShowFileLoaded,
                         showFile: _showFiles[i],
                         bridge: widget.bridge,
                         onLoaded: () => Navigator.of(context).pop(),
@@ -212,10 +226,14 @@ class _ShowFileRow extends StatelessWidget {
   final BridgeClient bridge;
   final VoidCallback onLoaded;
 
+  /// Forwarded to the parent after a successful load (ADR-0004).
+  final VoidCallback? onShowFileLoaded;
+
   const _ShowFileRow({
     required this.showFile,
     required this.bridge,
     required this.onLoaded,
+    this.onShowFileLoaded,
   });
 
   @override
@@ -254,8 +272,11 @@ class _ShowFileRow extends StatelessWidget {
           TextButton(
             style: TextButton.styleFrom(foregroundColor: PatchTheme.accent),
             onPressed: () {
-              bridge.loadShowFile(showFile.slug);
-              onLoaded();
+              runGuarded(context, () async {
+                await bridge.loadShowFile(showFile.slug);
+                onShowFileLoaded?.call(); // parent refreshes peers + selection
+                onLoaded(); // closes the dialog
+              });
             },
             child: const Text('Load'),
           ),
@@ -291,7 +312,7 @@ class _ShowFileRow extends StatelessWidget {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: PatchTheme.critical),
             onPressed: () {
-              bridge.deleteShowFile(showFile.slug);
+              runGuarded(context, () => bridge.deleteShowFile(showFile.slug));
               Navigator.pop(context);
             },
             child: const Text('Delete', style: TextStyle(color: Colors.white)),

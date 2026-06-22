@@ -9,11 +9,13 @@ import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
 import '../models/config.dart';
 import '../models/delivery_tracker.dart';
+import '../models/events.dart';
 import '../models/flash.dart';
 import '../models/message.dart';
 import '../models/selection.dart';
 import '../theme/patch_theme.dart';
 import '../util/message_filter.dart';
+import '../util/run_guarded.dart';
 import '../widgets/channel_tab.dart';
 import '../widgets/flash_button.dart';
 import '../widgets/message_list.dart';
@@ -115,6 +117,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int _dmPulseNotify = 0;
 
   StreamSubscription<Map<String, dynamic>>? _eventSub;
+  StreamSubscription<PatchEvent>? _pushSub;
 
   /// Coalesces `peer_updated` bursts into one `getPeers()` fetch. `last_seen` is
   /// refreshed on every received packet, so a busy channel fires `peer_updated`
@@ -241,10 +244,13 @@ class _HomeScreenState extends State<HomeScreen> {
   /// broadcasts on `__all__`.
   void _fireMacro(ChannelMacro cm) {
     if (_isDmMode) {
-      widget.bridge.sendDirectMessage(
-        peerId: _dmPeerId!,
-        payload: cm.macro.payload,
-        priority: cm.macro.priority,
+      runGuarded(
+        context,
+        () => widget.bridge.sendDirectMessage(
+          peerId: _dmPeerId!,
+          payload: cm.macro.payload,
+          priority: cm.macro.priority,
+        ),
       );
       _warnIfDmPeerOffline();
     } else if (cm.channelId.isEmpty) {
@@ -254,23 +260,32 @@ class _HomeScreenState extends State<HomeScreen> {
         DmSelection() => const <String>[], // unreachable: _isDmMode handled above
       };
       for (final id in targets) {
-        widget.bridge.sendMessage(
-          channelId: id,
-          payload: cm.macro.payload,
-          priority: cm.macro.priority,
+        runGuarded(
+          context,
+          () => widget.bridge.sendMessage(
+            channelId: id,
+            payload: cm.macro.payload,
+            priority: cm.macro.priority,
+          ),
         );
       }
     } else {
-      widget.bridge.sendMessage(
-        channelId: cm.channelId,
-        payload: cm.macro.payload,
-        priority: cm.macro.priority,
+      runGuarded(
+        context,
+        () => widget.bridge.sendMessage(
+          channelId: cm.channelId,
+          payload: cm.macro.payload,
+          priority: cm.macro.priority,
+        ),
       );
     }
     // Dual action: also fire the macro's OSC packet to external gear (once).
     final osc = cm.macro.osc;
     if (osc != null) {
-      widget.bridge.sendOscMacro(osc.address, osc.port, osc.path, osc.arg, osc.argType);
+      runGuarded(
+          context,
+          () => widget.bridge
+              .sendOscMacro(osc.address, osc.port, osc.path, osc.arg, osc.argType));
     }
   }
 
@@ -280,6 +295,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _eventSub = widget.bridge.events.listen(_handleEvent);
+    _pushSub = widget.bridge.pushes.listen(_handlePush);
     widget.bridge.getChannels();
     widget.bridge.getPeers();
     widget.bridge.getConfig();
@@ -301,6 +317,7 @@ class _HomeScreenState extends State<HomeScreen> {
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     _peersRefresh?.cancel();
     _eventSub?.cancel();
+    _pushSub?.cancel();
     _alertPlayer.dispose();
     super.dispose();
   }
@@ -360,9 +377,10 @@ class _HomeScreenState extends State<HomeScreen> {
       showNamePrompt(
         context,
         currentName: currentName,
-        onSaveName: (name) => widget.bridge.setClientName(name),
-        onSaveRole: (role) =>
-            widget.bridge.setRole(role.isEmpty ? null : role),
+        onSaveName: (name) =>
+            runGuarded(context, () => widget.bridge.setClientName(name)),
+        onSaveRole: (role) => runGuarded(
+            context, () => widget.bridge.setRole(role.isEmpty ? null : role)),
       );
     });
   }
@@ -416,116 +434,11 @@ class _HomeScreenState extends State<HomeScreen> {
           _messages[chId] = data;
         });
 
-      case 'message':
-        final msg = event['data'] as PatchMessage;
-        setState(() {
-          final list = _messages.putIfAbsent(msg.channelId, () => [])..add(msg);
-          // Keep the in-memory list bounded, mirroring the engine ring buffer.
-          if (list.length > _kMaxMessagesPerChannel) {
-            list.removeRange(0, list.length - _kMaxMessagesPerChannel);
-          }
-        });
-        final flash = decideMessageFlash(
-          msg: msg,
-          channels: _channels,
-          globalOnCritical: _flashOnCritical,
-          globalOnMessage: _flashOnMessage,
-          globalPulseCount: _globalFlashCount,
-        );
-        if (flash != null) {
-          _applyFlash(flash);
-        } else if (msg.channelId.startsWith('dm:') &&
-            !_selection.containsRawId(msg.channelId)) {
-          // A non-critical DM that isn't flashing still needs a silent unread
-          // dot when its thread isn't in view — that's DM-visibility, not a
-          // flash decision (see decideMessageFlash's doc comment).
-          setState(() {
-            _unreadDms.add(msg.channelId);
-            // Pulse the peers toggle only when the panel is closed (open → the
-            // unread dot on the peer row is already visible).
-            if (!_showPeers) _dmPulseNotify++;
-          });
-        }
-
-      case 'ack_send':
-        break;
-
-      case 'message_delivery':
-        final id = event['message_id'] as String;
-        final status = MessageDeliveryStatus.fromEvent(event);
-        setState(() => _delivery.track(id, status));
-        // A failed critical can't go unnoticed — also raise a red SnackBar.
-        if (status.failed && mounted) {
-          final who = status.total == 0
-              ? 'no peers were online'
-              : status.failedPeers.isNotEmpty
-                  ? 'not received by ${status.failedPeers.join(', ')}'
-                  : 'not received by all peers';
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Critical message $who'),
-              backgroundColor: PatchTheme.critical,
-              duration: const Duration(seconds: 6),
-            ),
-          );
-        }
-
       case 'peers':
         final data = event['data'] as List<PeerInfo>;
         setState(() {
           _peers = data;
         });
-
-      case 'peer_updated':
-        // The event carries only PeerPresence (no address) and fires on every
-        // received packet, so coalesce bursts into one full-list refresh rather
-        // than a getPeers() per message.
-        _schedulePeersRefresh();
-
-      case 'peer_expired':
-        // Refresh the full list — a static-peer-backed entry should
-        // immediately reappear as ManualIp (gray dot) rather than disappearing.
-        widget.bridge.getPeers();
-
-      case 'channel_flash':
-        final chId = event['data']['channel_id'] as String;
-        if (chId == kAllChannelId) {
-          _applyFlash(BroadcastFlashEvent(pulseCount: _globalFlashCount));
-        } else if (chId.startsWith('dm:')) {
-          _applyFlash(DmFlashEvent(peerId: chId.substring(3)));
-        } else {
-          final ch = _channels
-              .cast<PatchChannel?>()
-              .firstWhere((c) => c?.id == chId, orElse: () => null);
-          _applyFlash(ChannelFlashEvent(
-            channelId: chId,
-            color: ch?.color ?? Colors.white,
-            pulseCount: ch?.flashCount ?? _globalFlashCount,
-          ));
-        }
-
-      case 'channel_list_updated':
-        widget.bridge.getChannels();
-
-      case 'messages_cleared':
-        final clearedId = event['channel_id'] as String?;
-        setState(() {
-          if (clearedId != null) {
-            final removed = _messages.remove(clearedId);
-            if (removed != null) {
-              _delivery.clearForMessageIds(removed.map((m) => m.messageId));
-            }
-          } else {
-            _messages.clear();
-            _delivery.clearAll();
-          }
-        });
-
-      case 'show_file_loaded':
-        widget.bridge.getChannels();
-        // A show file also restores static peers — refresh the peers panel.
-        widget.bridge.getPeers();
-        setState(() => _selection = const ChannelSelection({}));
 
       case 'config':
         final cfg = event['data'] as AppConfig;
@@ -545,31 +458,6 @@ class _HomeScreenState extends State<HomeScreen> {
           currentName: cfg.clientName,
         );
 
-      case 'show_file_saved':
-      case 'interface_changed':
-        break;
-
-      case 'client_name_changed':
-        setState(() => _clientName = event['name'] as String? ?? _clientName);
-
-      case 'config_updated':
-        // Re-fetch config (flash flags) and peers (static peer list may have changed).
-        widget.bridge.getConfig();
-        widget.bridge.getPeers();
-
-      case 'permission_denied':
-        final msg = event['message'] as String? ??
-            'Network access denied — check Local Network permission in System Settings';
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(msg),
-              backgroundColor: PatchTheme.critical,
-              duration: const Duration(seconds: 8),
-            ),
-          );
-        }
-
       case 'error':
         final msg = event['message'] as String? ?? 'Something went wrong';
         debugPrint('Bridge error: $msg');
@@ -583,6 +471,138 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         }
     }
+  }
+
+  /// Typed engine pushes (slice 1.2, ADR-0004). Exhaustive over [PatchEvent]:
+  /// the compiler forces every variant to be handled or explicitly ignored, so
+  /// a new engine event can't be silently dropped here.
+  void _handlePush(PatchEvent event) {
+    try {
+      switch (event) {
+        case MessageReceived(:final message):
+          _onMessageReceived(message);
+        case DeliveryUpdated(:final messageId, :final status):
+          _onDeliveryUpdated(messageId, status);
+        case Flashed(:final channelId):
+          _onChannelFlashed(channelId);
+        case PeerExpired():
+          // Full refetch (not a targeted removal): a static-peer-backed entry
+          // should immediately reappear as ManualIp (gray dot) rather than
+          // vanishing. The variant carries the peer id if a future
+          // optimisation wants it.
+          widget.bridge.getPeers();
+        case PeersChanged():
+          // Fires on every received packet, so coalesce bursts into one
+          // full-list refresh rather than a getPeers() per message.
+          _schedulePeersRefresh();
+        case ChannelsChanged():
+          widget.bridge.getChannels();
+        case ClientNameChanged(:final name):
+          setState(() => _clientName = name);
+        case PermissionDenied(:final context):
+          _onPermissionDenied(context);
+        case ChannelsOffered():
+          break; // settings_screen handles the adopt/merge prompt
+      }
+    } catch (e, stack) {
+      debugPrint('Push event error [$event]: $e\n$stack');
+    }
+  }
+
+  void _onMessageReceived(PatchMessage msg) {
+    setState(() {
+      final list = _messages.putIfAbsent(msg.channelId, () => [])..add(msg);
+      // Keep the in-memory list bounded, mirroring the engine ring buffer.
+      if (list.length > _kMaxMessagesPerChannel) {
+        list.removeRange(0, list.length - _kMaxMessagesPerChannel);
+      }
+    });
+    final flash = decideMessageFlash(
+      msg: msg,
+      channels: _channels,
+      globalOnCritical: _flashOnCritical,
+      globalOnMessage: _flashOnMessage,
+      globalPulseCount: _globalFlashCount,
+    );
+    if (flash != null) {
+      _applyFlash(flash);
+    } else if (msg.channelId.startsWith('dm:') &&
+        !_selection.containsRawId(msg.channelId)) {
+      // A non-critical DM that isn't flashing still needs a silent unread dot
+      // when its thread isn't in view — that's DM-visibility, not a flash
+      // decision (see decideMessageFlash's doc comment).
+      setState(() {
+        _unreadDms.add(msg.channelId);
+        // Pulse the peers toggle only when the panel is closed (open → the
+        // unread dot on the peer row is already visible).
+        if (!_showPeers) _dmPulseNotify++;
+      });
+    }
+  }
+
+  void _onDeliveryUpdated(String id, MessageDeliveryStatus status) {
+    setState(() => _delivery.track(id, status));
+    // A failed critical can't go unnoticed — also raise a red SnackBar.
+    if (status.failed && mounted) {
+      final who = status.total == 0
+          ? 'no peers were online'
+          : status.failedPeers.isNotEmpty
+              ? 'not received by ${status.failedPeers.join(', ')}'
+              : 'not received by all peers';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Critical message $who'),
+          backgroundColor: PatchTheme.critical,
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    }
+  }
+
+  void _onChannelFlashed(String chId) {
+    if (chId == kAllChannelId) {
+      _applyFlash(BroadcastFlashEvent(pulseCount: _globalFlashCount));
+    } else if (chId.startsWith('dm:')) {
+      _applyFlash(DmFlashEvent(peerId: chId.substring(3)));
+    } else {
+      final ch = _channels
+          .cast<PatchChannel?>()
+          .firstWhere((c) => c?.id == chId, orElse: () => null);
+      _applyFlash(ChannelFlashEvent(
+        channelId: chId,
+        color: ch?.color ?? Colors.white,
+        pulseCount: ch?.flashCount ?? _globalFlashCount,
+      ));
+    }
+  }
+
+  /// Drop the local copy of cleared messages after a `clearMessages` command
+  /// (was the `messages_cleared` event — ADR-0004). `channelId` null = all.
+  void _onMessagesCleared(String? channelId) {
+    setState(() {
+      if (channelId != null) {
+        final removed = _messages.remove(channelId);
+        if (removed != null) {
+          _delivery.clearForMessageIds(removed.map((m) => m.messageId));
+        }
+      } else {
+        _messages.clear();
+        _delivery.clearAll();
+      }
+    });
+  }
+
+  void _onPermissionDenied(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message.isEmpty
+            ? 'Network access denied — check Local Network permission in System Settings'
+            : message),
+        backgroundColor: PatchTheme.critical,
+        duration: const Duration(seconds: 8),
+      ),
+    );
   }
 
   /// Short audible alert played alongside a flash, when enabled in Settings.
@@ -712,8 +732,9 @@ class _HomeScreenState extends State<HomeScreen> {
   /// MIDI macro fired while a DM thread is open goes to that peer instead of
   /// silently matching no selected channel (see `_fireMacro`'s DM-mode rule).
   void _syncSelection() {
-    widget.bridge.setSelectedChannels(_selection.tabIds.toList());
-    widget.bridge.setDmTarget(_selection.dmPeerId);
+    runGuarded(context,
+        () => widget.bridge.setSelectedChannels(_selection.tabIds.toList()));
+    runGuarded(context, () => widget.bridge.setDmTarget(_selection.dmPeerId));
   }
 
   // ── Build ───────────────────────────────────────────────────────────────────
@@ -748,7 +769,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 child: PeersPanel(
                   peers: _peers,
-                  onClearStale: () => widget.bridge.clearStalePeers(),
+                  onClearStale: () =>
+                      runGuarded(context, () => widget.bridge.clearStalePeers()),
                   onClose: () => setState(() => _showPeers = false),
                   onDm: _openDm,
                   unreadPeerIds: {
@@ -776,6 +798,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       dmPeerName:
                           _dmPeerId == null ? null : _dmPeerName(_dmPeerId!),
                       onDmSent: _warnIfDmPeerOffline,
+                      onMessagesCleared: _onMessagesCleared,
                       messages: _combinedMessages,
                       channelColors: _channelColors,
                       delivery: _delivery.all,
@@ -874,7 +897,13 @@ class _ChannelStrip extends StatelessWidget {
                     tooltip: 'Show Files',
                     onPressed: () => showDialog(
                       context: context,
-                      builder: (_) => ShowFilesDialog(bridge: bridge),
+                      // After a load, channels refresh via the ChannelsChanged
+                      // push (the 'channels' arm also fixes a stale selection);
+                      // peers aren't push-backed, so refresh them here (ADR-0004).
+                      builder: (_) => ShowFilesDialog(
+                        bridge: bridge,
+                        onShowFileLoaded: () => bridge.getPeers(),
+                      ),
                     ),
                   ),
                 ),
@@ -962,6 +991,10 @@ class _ChannelView extends StatefulWidget {
   /// Called by the parent after a DM is sent (typed or flash) so it can warn
   /// when the recipient looks offline — the parent owns the peer list + context.
   final VoidCallback onDmSent;
+
+  /// Called after messages are cleared (null = all channels) so the parent can
+  /// drop them from its buffer — the parent owns `_messages` (ADR-0004).
+  final void Function(String? channelId) onMessagesCleared;
   final List<PatchMessage> messages;
   final Map<String, Color> channelColors; // empty when single channel
   final Map<String, MessageDeliveryStatus> delivery;
@@ -990,6 +1023,7 @@ class _ChannelView extends StatefulWidget {
     required this.channels,
     required this.dmPeerName,
     required this.onDmSent,
+    required this.onMessagesCleared,
     required this.messages,
     required this.channelColors,
     required this.delivery,
@@ -1063,30 +1097,39 @@ class _ChannelViewState extends State<_ChannelView> {
 
   void _sendMessage(String text) {
     if (widget.isDmMode) {
-      widget.bridge.sendDirectMessage(peerId: widget.dmPeerId!, payload: text);
+      runGuarded(context,
+          () => widget.bridge.sendDirectMessage(peerId: widget.dmPeerId!, payload: text));
       widget.onDmSent();
     } else if (widget.isAllMode) {
-      widget.bridge.sendMessage(channelId: kAllChannelId, payload: text);
+      runGuarded(
+          context, () => widget.bridge.sendMessage(channelId: kAllChannelId, payload: text));
       widget.onOneShotSent?.call();
     } else {
       for (final ch in widget.selectedChannels) {
-        widget.bridge.sendMessage(channelId: ch.id, payload: text);
+        runGuarded(context, () => widget.bridge.sendMessage(channelId: ch.id, payload: text));
       }
     }
   }
 
   void _sendFlash() {
     if (widget.isDmMode) {
-      widget.bridge.sendDmFlash(widget.dmPeerId!);
+      runGuarded(context, () => widget.bridge.sendDmFlash(widget.dmPeerId!));
       widget.onDmSent();
     } else if (widget.isAllMode) {
-      widget.bridge.sendFlash(kAllChannelId);
+      runGuarded(context, () => widget.bridge.sendFlash(kAllChannelId));
       widget.onOneShotSent?.call();
     } else {
       for (final ch in widget.selectedChannels) {
-        widget.bridge.sendFlash(ch.id);
+        runGuarded(context, () => widget.bridge.sendFlash(ch.id));
       }
     }
+  }
+
+  void _clear(String? channelId) {
+    runGuarded(context, () async {
+      await widget.bridge.clearMessages(channelId: channelId);
+      widget.onMessagesCleared(channelId);
+    });
   }
 
   Future<void> _exportMessages() async {
@@ -1103,14 +1146,15 @@ class _ChannelViewState extends State<_ChannelView> {
       allowedExtensions: ['csv'],
       type: FileType.custom,
     );
-    if (path == null) return;
+    if (path == null || !mounted) return;
     // DM → that thread; ALL / multi-channel → everything (null); single → that one.
     final channelId = widget.isDmMode
         ? 'dm:${widget.dmPeerId}'
         : (!widget.isAllMode && widget.selectedChannels.length == 1)
             ? widget.selectedChannels.first.id
             : null;
-    widget.bridge.exportMessages(channelId: channelId, path: path);
+    runGuarded(
+        context, () => widget.bridge.exportMessages(channelId: channelId, path: path));
   }
 
   void _confirmClear(BuildContext context) {
@@ -1142,12 +1186,12 @@ class _ChannelViewState extends State<_ChannelView> {
             style: ElevatedButton.styleFrom(backgroundColor: PatchTheme.critical),
             onPressed: () {
               if (widget.isDmMode) {
-                widget.bridge.clearMessages(channelId: 'dm:${widget.dmPeerId}');
+                _clear('dm:${widget.dmPeerId}');
               } else if (widget.isAllMode) {
-                widget.bridge.clearMessages(channelId: null); // clear everything
+                _clear(null); // clear everything
               } else {
                 for (final ch in widget.selectedChannels) {
-                  widget.bridge.clearMessages(channelId: ch.id);
+                  _clear(ch.id);
                 }
               }
               Navigator.pop(context);

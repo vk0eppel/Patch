@@ -7,8 +7,10 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
 import '../models/config.dart';
+import '../models/events.dart';
 import '../models/message.dart';
 import '../theme/patch_theme.dart';
+import '../util/run_guarded.dart';
 import '../widgets/bounded_int_field.dart';
 import '../widgets/interface_picker.dart';
 
@@ -31,6 +33,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _nameCtrl = TextEditingController();
   final _roleCtrl = TextEditingController();
   StreamSubscription<Map<String, dynamic>>? _sub;
+  StreamSubscription<PatchEvent>? _pushSub;
   bool _nameSaved = false;
   bool _roleSaved = false;
   late List<PatchChannel> _channels;
@@ -73,6 +76,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     _channels = List.of(widget.channels);
     _sub = widget.bridge.events.listen(_handleEvent);
+    _pushSub = widget.bridge.pushes.listen(_handlePush);
     widget.bridge.getConfig();
     widget.bridge.getInterfaces();
     widget.bridge.getPeers();
@@ -91,6 +95,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _nameCtrl.dispose();
     _roleCtrl.dispose();
     _sub?.cancel();
+    _pushSub?.cancel();
     super.dispose();
   }
 
@@ -114,8 +119,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _globalMacros = cfg.globalMacros;
           _staticPeers = cfg.staticPeers;
         });
-      case 'config_updated':
-        widget.bridge.getConfig();
       case 'interfaces':
         final data = event['data'] as List<dynamic>;
         setState(() {
@@ -126,61 +129,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   })
               .toList();
         });
-      case 'interface_changed':
-        setState(() => _interfaceApplied = true);
-        Future.delayed(const Duration(seconds: 3), () {
-          if (mounted) setState(() => _interfaceApplied = false);
-        });
-      case 'client_name_changed':
-        setState(() => _nameSaved = true);
-        Future.delayed(const Duration(seconds: 2), () {
-          if (mounted) setState(() => _nameSaved = false);
-        });
       case 'channels':
         final data = event['data'] as List<PatchChannel>;
         setState(() {
           _channels = data;
         });
-      case 'channel_list_updated':
-        widget.bridge.getChannels();
       case 'peers':
         final data = event['data'] as List<PeerInfo>;
         setState(() {
           _peers = data;
         });
-      case 'channels_offered':
+    }
+  }
+
+  /// Typed engine pushes (slice 1.3, ADR-0004). Exhaustive over [PatchEvent];
+  /// variants this screen doesn't consume are explicitly ignored so a new event
+  /// can't be silently dropped.
+  void _handlePush(PatchEvent event) {
+    switch (event) {
+      case ClientNameChanged():
+        // The local name was saved — flash the "saved" tick (payload unused).
+        setState(() => _nameSaved = true);
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) setState(() => _nameSaved = false);
+        });
+      case ChannelsChanged():
+        widget.bridge.getChannels();
+      case ChannelsOffered(:final fromName, :final channels):
         if (!_awaitingOffer) break; // ignore unsolicited announces
         _awaitingOffer = false;
-        final channels =
-            (event['channels'] as List<dynamic>?)?.cast<PatchChannel>() ??
-                const <PatchChannel>[];
-        final fromName = event['from_name'] as String? ?? 'peer';
         if (mounted) _showOfferDialog(fromName, channels);
-      case 'channels_adopted':
-        final added = (event['added'] as num?)?.toInt() ?? 0;
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(added == 0
-                  ? 'No new channels to add — you already have them all'
-                  : 'Added $added channel${added == 1 ? '' : 's'}'),
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
+      // Not consumed by settings — handled on the home screen.
+      case MessageReceived():
+      case DeliveryUpdated():
+      case Flashed():
+      case PeerExpired():
+      case PeersChanged():
+      case PermissionDenied():
+        break;
     }
+  }
+
+  /// Run a config-mutating command, then refetch the config so the UI reflects
+  /// the new state. Replaces the old `config_updated` round-trip event
+  /// (ADR-0004); failures surface via [runGuarded].
+  void _applyConfigChange(Future<void> Function() action) {
+    runGuarded(context, () async {
+      await action();
+      await widget.bridge.getConfig();
+    });
   }
 
   void _saveName() {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) return;
-    widget.bridge.setClientName(name);
+    runGuarded(context, () => widget.bridge.setClientName(name));
   }
 
   /// Save the role (empty string clears it). No engine event echoes back, so
   /// show the "saved" tick optimistically for a moment.
   void _saveRole() {
-    widget.bridge.setRole(_roleCtrl.text);
+    runGuarded(context, () => widget.bridge.setRole(_roleCtrl.text));
     setState(() => _roleSaved = true);
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) setState(() => _roleSaved = false);
@@ -245,7 +254,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _requestFromPeer(String peerId, String name) {
     setState(() => _awaitingOffer = true);
-    widget.bridge.requestChannels(peerId);
+    runGuarded(context, () => widget.bridge.requestChannels(peerId));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Requesting channels from $name…'),
@@ -330,7 +339,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onPressed: fresh.isEmpty
                 ? null
                 : () {
-                    widget.bridge.adoptChannels(fresh);
+                    final messenger = ScaffoldMessenger.of(context);
+                    runGuarded(context, () async {
+                      final added = await widget.bridge.adoptChannels(fresh);
+                      messenger.showSnackBar(SnackBar(
+                        content: Text(added == 0
+                            ? 'No new channels to add — you already have them all'
+                            : 'Added $added channel${added == 1 ? '' : 's'}'),
+                        duration: const Duration(seconds: 3),
+                      ));
+                    });
                     Navigator.pop(ctx);
                   },
             child: Text(fresh.isEmpty ? 'Nothing to add' : 'Add ${fresh.length}'),
@@ -357,7 +375,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: PatchTheme.critical),
             onPressed: () {
-              widget.bridge.deleteChannel(channel.id);
+              runGuarded(context, () => widget.bridge.deleteChannel(channel.id));
               Navigator.pop(context);
             },
             child: const Text('Delete', style: TextStyle(color: Colors.white)),
@@ -429,9 +447,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Platform.environment['USERNAME'] ??
                   'crew';
               _nameCtrl.text = name;
-              widget.bridge.setClientName(name);
+              runGuarded(context, () => widget.bridge.setClientName(name));
               _roleCtrl.clear();
-              widget.bridge.setRole(null);
+              runGuarded(context, () => widget.bridge.setRole(null));
             }),
           ]),
           const SizedBox(height: 4),
@@ -477,7 +495,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             applied: _interfaceApplied,
             onSelect: (name) {
               setState(() => _selectedInterface = name);
-              widget.bridge.setInterface(name ?? 'auto');
+              runGuarded(context, () async {
+                await widget.bridge.setInterface(name ?? 'auto');
+                if (!mounted) return;
+                // Flash the "applied" tick (was the interface_changed event).
+                setState(() => _interfaceApplied = true);
+                Future.delayed(const Duration(seconds: 3), () {
+                  if (mounted) setState(() => _interfaceApplied = false);
+                });
+              });
             },
           ),
           const SizedBox(height: 16),
@@ -510,7 +536,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 min: 1,
                 max: 60,
                 suffix: 's',
-                onSubmit: (secs) => widget.bridge.setHeartbeatInterval(secs),
+                onSubmit: (secs) =>
+                    runGuarded(context, () => widget.bridge.setHeartbeatInterval(secs)),
               ),
             ],
           ),
@@ -542,7 +569,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 value: _oscPort,
                 min: 1024,
                 max: 65535,
-                onSubmit: (port) => widget.bridge.setOscPort(port),
+                onSubmit: (port) =>
+                    runGuarded(context, () => widget.bridge.setOscPort(port)),
               ),
             ],
           ),
@@ -560,9 +588,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onPressed: () => _showAddPeerDialog(context, widget.bridge),
               ),
               _resetButton('Static Peers', () {
-                for (final peer in List.of(_staticPeers)) {
-                  widget.bridge.removeStaticPeer(peer.address, peer.port);
-                }
+                runGuarded(context, () async {
+                  for (final peer in List.of(_staticPeers)) {
+                    await widget.bridge.removeStaticPeer(peer.address, peer.port);
+                  }
+                  await widget.bridge.getConfig();
+                  await widget.bridge.getPeers();
+                });
               }),
             ],
           ),
@@ -605,8 +637,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           else
             ..._staticPeers.map((peer) => _StaticPeerRow(
                   peer: peer,
-                  onDelete: () =>
-                      widget.bridge.removeStaticPeer(peer.address, peer.port),
+                  onDelete: () => runGuarded(context, () async {
+                    await widget.bridge.removeStaticPeer(peer.address, peer.port);
+                    await widget.bridge.getConfig();
+                    await widget.bridge.getPeers();
+                  }),
                 )),
 
           const SizedBox(height: 32),
@@ -623,12 +658,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _audibleAlert = false;
                 _macrosColumns = 1;
               });
-              widget.bridge.setFlashOnCritical(true);
-              widget.bridge.setFlashOnMessage(false);
-              widget.bridge.setFlashCount(4);
-              widget.bridge.setHideKeyboard(true);
-              widget.bridge.setAudibleAlert(false);
-              widget.bridge.setMacrosColumns(1);
+              _applyConfigChange(() => widget.bridge.setFlashOnCritical(true));
+              _applyConfigChange(() => widget.bridge.setFlashOnMessage(false));
+              _applyConfigChange(() => widget.bridge.setFlashCount(4));
+              runGuarded(context, () => widget.bridge.setHideKeyboard(true));
+              runGuarded(context, () => widget.bridge.setAudibleAlert(false));
+              runGuarded(context, () => widget.bridge.setMacrosColumns(1));
             }),
           ]),
           const SizedBox(height: 4),
@@ -646,7 +681,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             contentPadding: EdgeInsets.zero,
             onChanged: (val) {
               setState(() => _flashOnMessage = val);
-              widget.bridge.setFlashOnMessage(val);
+              _applyConfigChange(() => widget.bridge.setFlashOnMessage(val));
             },
           ),
           SwitchListTile(
@@ -663,7 +698,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             contentPadding: EdgeInsets.zero,
             onChanged: (val) {
               setState(() => _flashOnCritical = val);
-              widget.bridge.setFlashOnCritical(val);
+              _applyConfigChange(() => widget.bridge.setFlashOnCritical(val));
             },
           ),
           SwitchListTile(
@@ -680,7 +715,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             contentPadding: EdgeInsets.zero,
             onChanged: (val) {
               setState(() => _audibleAlert = val);
-              widget.bridge.setAudibleAlert(val);
+              runGuarded(context, () => widget.bridge.setAudibleAlert(val));
             },
           ),
           const SizedBox(height: 8),
@@ -710,7 +745,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (val) {
                   if (val == null) return; // global picker never yields null
                   setState(() => _flashCount = val);
-                  widget.bridge.setFlashCount(val);
+                  _applyConfigChange(() => widget.bridge.setFlashCount(val));
                 },
               ),
             ],
@@ -748,7 +783,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onSelectionChanged: (s) {
                   final val = s.first;
                   setState(() => _macrosColumns = val);
-                  widget.bridge.setMacrosColumns(val);
+                  runGuarded(context, () => widget.bridge.setMacrosColumns(val));
                 },
                 style: SegmentedButton.styleFrom(
                   foregroundColor: PatchTheme.textSecondary,
@@ -776,7 +811,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               contentPadding: EdgeInsets.zero,
               onChanged: (val) {
                 setState(() => _hideKeyboard = val);
-                widget.bridge.setHideKeyboard(val);
+                runGuarded(context, () => widget.bridge.setHideKeyboard(val));
               },
             ),
           ],
@@ -788,7 +823,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // default quick-sends; per-channel customisation is the next step.
           Row(children: [
             Expanded(child: _SectionHeader('Global Macros')),
-            _resetButton('Global Macros', () => widget.bridge.resetGlobalMacros()),
+            _resetButton('Global Macros',
+                () => _applyConfigChange(() => widget.bridge.resetGlobalMacros())),
           ]),
           const SizedBox(height: 4),
           const Text(
@@ -826,7 +862,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               _resetButton('Channels & Macros', () {
-                widget.bridge.resetChannels();
+                runGuarded(context, () => widget.bridge.resetChannels());
               }),
             ],
           ),
@@ -972,22 +1008,28 @@ class _ChannelMacroEditor extends StatelessWidget {
       macros: channel.macros,
       keyFor: (m) => '${channel.id}:${m.label}',
       emptyText: 'No macros yet',
-      onUpsert: (l, p, k, pr, mn, mc, osc) => bridge.upsertMacro(
-        channelId: channel.id,
-        label: l,
-        payload: p,
-        keyBinding: k,
-        priority: pr,
-        midiNote: mn,
-        midiCc: mc,
-        oscAddress: osc?.address,
-        oscPort: osc?.port,
-        oscPath: osc?.path,
-        oscArg: osc?.arg,
-        oscArgType: osc?.argType ?? MacroOscArgType.string,
-      ),
-      onDelete: (m) => bridge.deleteMacro(channelId: channel.id, label: m.label),
-      onReorder: (labels) => bridge.reorderMacros(channel.id, labels),
+      // Channel-macro CRUD refreshes the screens via the ChannelsChanged push
+      // (no config refetch needed); runGuarded surfaces failures (ADR-0004).
+      onUpsert: (l, p, k, pr, mn, mc, osc) => runGuarded(
+          context,
+          () => bridge.upsertMacro(
+                channelId: channel.id,
+                label: l,
+                payload: p,
+                keyBinding: k,
+                priority: pr,
+                midiNote: mn,
+                midiCc: mc,
+                oscAddress: osc?.address,
+                oscPort: osc?.port,
+                oscPath: osc?.path,
+                oscArg: osc?.arg,
+                oscArgType: osc?.argType ?? MacroOscArgType.string,
+              )),
+      onDelete: (m) => runGuarded(
+          context, () => bridge.deleteMacro(channelId: channel.id, label: m.label)),
+      onReorder: (labels) =>
+          runGuarded(context, () => bridge.reorderMacros(channel.id, labels)),
       trailingActions: [
         IconButton(
           icon: const Icon(Icons.edit_outlined, size: 16, color: PatchTheme.textMuted),
@@ -1034,8 +1076,8 @@ class _ChannelMacroEditor extends StatelessWidget {
               ),
               value: channel.flashOnMessage,
               activeThumbColor: PatchTheme.accent,
-              onChanged: (val) =>
-                  bridge.setChannelFlash(channel.id, flashOnMessage: val),
+              onChanged: (val) => runGuarded(
+                  context, () => bridge.setChannelFlash(channel.id, flashOnMessage: val)),
             ),
             SwitchListTile(
               dense: true,
@@ -1049,8 +1091,8 @@ class _ChannelMacroEditor extends StatelessWidget {
               ),
               value: channel.flashOnCritical,
               activeThumbColor: PatchTheme.accent,
-              onChanged: (val) =>
-                  bridge.setChannelFlash(channel.id, flashOnCritical: val),
+              onChanged: (val) => runGuarded(
+                  context, () => bridge.setChannelFlash(channel.id, flashOnCritical: val)),
             ),
             const SizedBox(height: 4),
             Row(
@@ -1067,11 +1109,13 @@ class _ChannelMacroEditor extends StatelessWidget {
                 // null = use global; picker shows "–" for global
                 _FlashCountPicker(
                   value: channel.flashCount,
-                  onChanged: (val) => bridge.setChannelFlash(
-                    channel.id,
-                    // 0 signals "clear override" to the Rust side
-                    flashCount: val ?? 0,
-                  ),
+                  onChanged: (val) => runGuarded(
+                      context,
+                      () => bridge.setChannelFlash(
+                            channel.id,
+                            // 0 signals "clear override" to the Rust side
+                            flashCount: val ?? 0,
+                          )),
                 ),
               ],
             ),
@@ -1507,21 +1551,33 @@ class _GlobalMacrosEditor extends StatelessWidget {
       macros: macros,
       keyFor: (m) => '__global__:${m.label}',
       emptyText: 'No global macros yet',
-      onUpsert: (l, p, k, pr, mn, mc, osc) => bridge.upsertGlobalMacro(
-        label: l,
-        payload: p,
-        keyBinding: k,
-        priority: pr,
-        midiNote: mn,
-        midiCc: mc,
-        oscAddress: osc?.address,
-        oscPort: osc?.port,
-        oscPath: osc?.path,
-        oscArg: osc?.arg,
-        oscArgType: osc?.argType ?? MacroOscArgType.string,
-      ),
-      onDelete: (m) => bridge.deleteGlobalMacro(m.label),
-      onReorder: (labels) => bridge.reorderGlobalMacros(labels),
+      // These don't optimistically update the list, so refetch config after
+      // the mutation so the parent's `config` arm refreshes _globalMacros
+      // (replaces the old config_updated round-trip — ADR-0004).
+      onUpsert: (l, p, k, pr, mn, mc, osc) => runGuarded(context, () async {
+        await bridge.upsertGlobalMacro(
+          label: l,
+          payload: p,
+          keyBinding: k,
+          priority: pr,
+          midiNote: mn,
+          midiCc: mc,
+          oscAddress: osc?.address,
+          oscPort: osc?.port,
+          oscPath: osc?.path,
+          oscArg: osc?.arg,
+          oscArgType: osc?.argType ?? MacroOscArgType.string,
+        );
+        await bridge.getConfig();
+      }),
+      onDelete: (m) => runGuarded(context, () async {
+        await bridge.deleteGlobalMacro(m.label);
+        await bridge.getConfig();
+      }),
+      onReorder: (labels) => runGuarded(context, () async {
+        await bridge.reorderGlobalMacros(labels);
+        await bridge.getConfig();
+      }),
     );
   }
 }
@@ -1846,7 +1902,7 @@ void _showChannelDialog(
                   setDialogState(() => error = 'A channel with ID "$id" already exists.');
                   return;
                 }
-                bridge.upsertChannel(id, name, _colorToHex(color));
+                runGuarded(context, () => bridge.upsertChannel(id, name, _colorToHex(color)));
                 Navigator.pop(ctx);
               },
               child: const Text('Save'),
@@ -1988,11 +2044,20 @@ void _showAddPeerDialog(BuildContext context, BridgeClient bridge) {
                 return;
               }
               final label = labelCtrl.text.trim();
-              bridge.addStaticPeer(
-                address,
-                port,
-                label: label.isEmpty ? null : label,
-              );
+              // Refetch config after adding so the parent's `config` arm
+              // refreshes _staticPeers (replaces config_updated — ADR-0004).
+              // Use the outer `context` (the dialog `ctx` is about to pop).
+              runGuarded(context, () async {
+                await bridge.addStaticPeer(
+                  address,
+                  port,
+                  label: label.isEmpty ? null : label,
+                );
+                await bridge.getConfig();
+                // Refresh peers too — a static peer shows in the peers panel
+                // (was home's old config_updated → getPeers; ADR-0004).
+                await bridge.getPeers();
+              });
               Navigator.pop(ctx);
             },
             child: const Text('Add'),
