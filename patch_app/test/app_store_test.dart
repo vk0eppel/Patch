@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:flutter/widgets.dart' show Color;
+
 import 'package:patch/bridge/bridge_client.dart';
+import 'package:patch/models/channel.dart';
 import 'package:patch/models/config.dart';
 import 'package:patch/models/events.dart';
 import 'package:patch/models/message.dart';
@@ -17,8 +20,10 @@ class _FakeBridge extends BridgeClient {
   final StreamController<PatchEvent> _pushController;
   List<PeerInfo> peersToReturn = const [];
   AppConfig configToReturn = _cfg();
+  List<PatchChannel> channelsToReturn = const [];
   int getPeersCalls = 0;
   int getConfigCalls = 0;
+  int getChannelsCalls = 0;
 
   @override
   Stream<PatchEvent> get pushes => _pushController.stream;
@@ -34,7 +39,16 @@ class _FakeBridge extends BridgeClient {
     getConfigCalls++;
     return configToReturn;
   }
+
+  @override
+  Future<List<PatchChannel>> getChannels() async {
+    getChannelsCalls++;
+    return channelsToReturn;
+  }
 }
+
+PatchChannel _chan(String id) =>
+    PatchChannel(id: id, displayName: id.toUpperCase(), color: const Color(0xFF1E88E5));
 
 AppConfig _cfg({String clientName = 'Me', bool nameIsDefault = false}) =>
     AppConfig(
@@ -77,9 +91,11 @@ void main() {
     await pushes.close();
   });
 
-  test('start() loads peers and config and notifies for each', () async {
+  test('start() loads peers, config, and channels and notifies for each',
+      () async {
     bridge.peersToReturn = [_peer('a'), _peer('b')];
     bridge.configToReturn = _cfg(clientName: 'FOH');
+    bridge.channelsToReturn = [_chan('rf')];
     var notified = 0;
     store.addListener(() => notified++);
 
@@ -87,7 +103,24 @@ void main() {
 
     expect(store.peers.map((p) => p.peerId), ['a', 'b']);
     expect(store.config?.clientName, 'FOH');
-    expect(notified, 2); // one for peers, one for config
+    expect(store.channels.single.id, 'rf');
+    expect(notified, 3); // peers + config + channels
+  });
+
+  test('ChannelsChanged push refetches channels and notifies', () async {
+    bridge.channelsToReturn = [_chan('rf')];
+    await store.refreshChannels();
+    expect(store.channels.single.id, 'rf');
+
+    bridge.channelsToReturn = [_chan('rf'), _chan('audio')];
+    var notified = 0;
+    store.addListener(() => notified++);
+
+    pushes.add(const ChannelsChanged());
+    await pumpEventQueue();
+
+    expect(store.channels.map((c) => c.id), ['rf', 'audio']);
+    expect(notified, 1);
   });
 
   test('ClientNameChanged push refetches config and notifies', () async {

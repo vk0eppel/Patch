@@ -112,16 +112,11 @@ class BridgeClient {
   /// failure.
   Future<void> sendDmFlash(String peerId) => rust.sendDmFlash(peerId: peerId);
 
-  Future<void> getChannels() async {
-    try {
-      final channels = await rust.getChannels();
-      _emit({
-        'event': 'channels',
-        'data': channels.map(_channelFromRust).toList(),
-      });
-    } catch (e) {
-      _emitError(e);
-    }
+  /// The current channel list. Returns directly (owned by `AppStore` —
+  /// candidate 2, ADR-0004); throws on failure.
+  Future<List<PatchChannel>> getChannels() async {
+    final channels = await rust.getChannels();
+    return channels.map(_channelFromRust).toList();
   }
 
   /// The current peer list. Returns directly (owned by `AppStore` — candidate

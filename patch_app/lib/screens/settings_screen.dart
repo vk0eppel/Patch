@@ -18,12 +18,10 @@ import '../widgets/interface_picker.dart';
 /// Settings screen — identity, channels, shortcuts, and show file management.
 class SettingsScreen extends StatefulWidget {
   final BridgeClient bridge;
-  final List<PatchChannel> channels;
 
   const SettingsScreen({
     super.key,
     required this.bridge,
-    required this.channels,
   });
 
   @override
@@ -37,7 +35,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   StreamSubscription<PatchEvent>? _pushSub;
   bool _nameSaved = false;
   bool _roleSaved = false;
-  late List<PatchChannel> _channels;
+  // Channels are owned by the AppStore (#57).
+  List<PatchChannel> get _channels => AppStoreScope.of(context).channels;
 
   /// "vX.Y.Z (build)" from the bundle's own Info.plist — null until
   /// PackageInfo resolves (fast, but not synchronous on first build).
@@ -74,7 +73,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _channels = List.of(widget.channels);
     _sub = widget.bridge.events.listen(_handleEvent);
     _pushSub = widget.bridge.pushes.listen(_handlePush);
     // Config is owned by the AppStore (#56); interfaces are still a local fetch.
@@ -144,11 +142,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   })
               .toList();
         });
-      case 'channels':
-        final data = event['data'] as List<PatchChannel>;
-        setState(() {
-          _channels = data;
-        });
     }
   }
 
@@ -163,8 +156,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Future.delayed(const Duration(seconds: 2), () {
           if (mounted) setState(() => _nameSaved = false);
         });
+      // Channels are owned by the AppStore now — it reduces ChannelsChanged.
       case ChannelsChanged():
-        widget.bridge.getChannels();
+        break;
       case ChannelsOffered(:final fromName, :final channels):
         if (!_awaitingOffer) break; // ignore unsolicited announces
         _awaitingOffer = false;

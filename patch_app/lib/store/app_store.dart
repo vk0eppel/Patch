@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../bridge/bridge_client.dart';
+import '../models/channel.dart';
 import '../models/config.dart';
 import '../models/events.dart';
 import '../models/message.dart';
@@ -39,9 +40,22 @@ class AppStore extends ChangeNotifier {
   AppConfig? _config;
   AppConfig? get config => _config;
 
+  List<PatchChannel> _channels = const [];
+  List<PatchChannel> get channels => _channels;
+
   /// Load initial domain state. Call once after the engine has connected.
   Future<void> start() async {
-    await Future.wait([refreshPeers(), refreshConfig()]);
+    await Future.wait([refreshPeers(), refreshConfig(), refreshChannels()]);
+  }
+
+  /// Refetch the channel list and notify; throws are swallowed.
+  Future<void> refreshChannels() async {
+    try {
+      _channels = await _bridge.getChannels();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('AppStore.refreshChannels failed: $e');
+    }
   }
 
   /// Refetch the config and notify; throws are swallowed (keep the last good
@@ -89,13 +103,14 @@ class AppStore extends ChangeNotifier {
       // The local name changed — refetch config so both screens reflect it.
       case ClientNameChanged():
         refreshConfig();
+      case ChannelsChanged():
+        refreshChannels();
       // Not yet owned by the store — handled by the screens.
       case MessageReceived():
       case DeliveryUpdated():
       case Flashed():
       case ChannelsOffered():
       case PermissionDenied():
-      case ChannelsChanged():
         break;
     }
   }

@@ -42,7 +42,9 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  List<PatchChannel> _channels = [];
+  /// Channels are owned by the AppStore (#57); selection reconciliation on
+  /// change happens in the store listener (`_onStoreChanged`).
+  List<PatchChannel> get _channels => AppStoreScope.of(context).channels;
 
   /// What the message area currently shows/targets — Channel(s), ALL compose,
   /// or a DM thread. See models/selection.dart.
@@ -298,9 +300,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _eventSub = widget.bridge.events.listen(_handleEvent);
     _pushSub = widget.bridge.pushes.listen(_handlePush);
-    widget.bridge.getChannels();
-    // Peers + config are loaded by the AppStore (see main); channels still
-    // fire-and-forget until #57.
+    // Peers, config, and channels are all loaded by the AppStore (see main).
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     // Use the playback audio category so the alert sounds on iOS even with the
     // ring/silent switch on (an operational alert must not be muted by silent).
@@ -315,23 +315,24 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   AppStore? _store;
+  List<String>? _lastChannelIds;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Watch the store for the one-shot first-run name prompt (the config arm
-    // used to drive this). Rebuilds on config change are handled separately by
-    // the `of(context)` reads in build (#56).
+    // Watch the store for side effects on its changes: the one-shot first-run
+    // name prompt (config) and selection reconciliation (channels). Rebuilds on
+    // store changes are handled separately by the `of(context)` reads in build.
     final store = AppStoreScope.of(context);
     if (!identical(_store, store)) {
-      _store?.removeListener(_maybePromptFromConfig);
+      _store?.removeListener(_onStoreChanged);
       _store = store;
-      _store!.addListener(_maybePromptFromConfig);
-      _maybePromptFromConfig();
+      _store!.addListener(_onStoreChanged);
+      _onStoreChanged();
     }
   }
 
-  void _maybePromptFromConfig() {
+  void _onStoreChanged() {
     final cfg = _store?.config;
     if (cfg != null) {
       _maybeShowNamePrompt(
@@ -339,12 +340,54 @@ class _HomeScreenState extends State<HomeScreen> {
         currentName: cfg.clientName,
       );
     }
+    // Reconcile the selection only when the channel set actually changed (the
+    // listener fires on any store notify, incl. peers/config).
+    final ids = _store?.channels.map((c) => c.id).toList();
+    if (ids != null && !_sameIds(ids, _lastChannelIds)) {
+      _lastChannelIds = ids;
+      _reconcileSelectionWithChannels();
+    }
+  }
+
+  static bool _sameIds(List<String> a, List<String>? b) {
+    if (b == null || a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  /// Drop stale ids from a Channel selection (or seed the first channel when
+  /// empty) after the channel list changes, then load messages for whatever's
+  /// now selected. ALL/DM selections don't depend on the channel list. Was the
+  /// `'channels'` arm's body (#57).
+  void _reconcileSelectionWithChannels() {
+    final channels = _store?.channels ?? const [];
+    setState(() {
+      final sel = _selection;
+      if (sel is ChannelSelection) {
+        final validIds = channels.map((c) => c.id).toSet();
+        final kept = sel.ids.where(validIds.contains).toSet();
+        _selection = kept.isNotEmpty
+            ? ChannelSelection(kept)
+            : (channels.isNotEmpty
+                ? ChannelSelection({channels.first.id})
+                : const ChannelSelection({}));
+      }
+      final idsNeeded = _selection.dmPeerId != null
+          ? {'dm:${_selection.dmPeerId}'}
+          : _selection.tabIds;
+      for (final id in idsNeeded) {
+        if (!_messages.containsKey(id)) widget.bridge.getMessages(id);
+      }
+    });
+    _syncSelection();
   }
 
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
-    _store?.removeListener(_maybePromptFromConfig);
+    _store?.removeListener(_onStoreChanged);
     _eventSub?.cancel();
     _pushSub?.cancel();
     _alertPlayer.dispose();
@@ -424,37 +467,6 @@ class _HomeScreenState extends State<HomeScreen> {
   void _dispatch(Map<String, dynamic> event) {
     final type = event['event'] as String?;
     switch (type) {
-      case 'channels':
-        final data = event['data'] as List<PatchChannel>;
-        setState(() {
-          _channels = data;
-          // Remove stale ids (deleted channels) from a Channel selection, or
-          // seed with the first channel if nothing was selected yet. ALL/DM
-          // selections don't depend on the channel list, so a reload never
-          // kicks the user out of either (see Selection's doc comment).
-          final sel = _selection;
-          if (sel is ChannelSelection) {
-            final validIds = _channels.map((c) => c.id).toSet();
-            final kept = sel.ids.where(validIds.contains).toSet();
-            _selection = kept.isNotEmpty
-                ? ChannelSelection(kept)
-                : (_channels.isNotEmpty
-                    ? ChannelSelection({_channels.first.id})
-                    : const ChannelSelection({}));
-          }
-          // Load messages for whatever's now selected, if not already fetched.
-          final idsNeeded = _selection.dmPeerId != null
-              ? {'dm:${_selection.dmPeerId}'}
-              : _selection.tabIds;
-          for (final id in idsNeeded) {
-            if (!_messages.containsKey(id)) {
-              widget.bridge.getMessages(id);
-            }
-          }
-        });
-        // Keep the engine's view of the selection current (for MIDI global macros).
-        _syncSelection();
-
       case 'messages':
         final chId = event['channel_id'] as String;
         final data = event['data'] as List<PatchMessage>;
@@ -493,8 +505,10 @@ class _HomeScreenState extends State<HomeScreen> {
         case PeerExpired():
         case PeersChanged():
           break;
+        // Channels are owned by the AppStore now — it reduces ChannelsChanged;
+        // home reconciles its selection in the store listener (#57).
         case ChannelsChanged():
-          widget.bridge.getChannels();
+          break;
         // Config (incl. the client name) is owned by the AppStore now — it
         // reduces ClientNameChanged by refetching config (#56).
         case ClientNameChanged():
@@ -919,8 +933,7 @@ class _ChannelStrip extends StatelessWidget {
                     // No post-return refresh needed: settings mutates the
                     // shared AppStore directly, so home already reflects it (#56).
                     onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                          builder: (_) => SettingsScreen(
-                              bridge: bridge, channels: channels),
+                          builder: (_) => SettingsScreen(bridge: bridge),
                         )),
                   ),
                 ),
@@ -967,8 +980,7 @@ class _ChannelStrip extends StatelessWidget {
             name: clientName,
             role: clientRole,
             onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) =>
-                      SettingsScreen(bridge: bridge, channels: channels),
+                  builder: (_) => SettingsScreen(bridge: bridge),
                 )),
           ),
         ],
