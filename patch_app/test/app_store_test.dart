@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:patch/bridge/bridge_client.dart';
+import 'package:patch/models/config.dart';
 import 'package:patch/models/events.dart';
 import 'package:patch/models/message.dart';
 import 'package:patch/store/app_store.dart';
@@ -15,7 +16,9 @@ class _FakeBridge extends BridgeClient {
 
   final StreamController<PatchEvent> _pushController;
   List<PeerInfo> peersToReturn = const [];
+  AppConfig configToReturn = _cfg();
   int getPeersCalls = 0;
+  int getConfigCalls = 0;
 
   @override
   Stream<PatchEvent> get pushes => _pushController.stream;
@@ -25,7 +28,27 @@ class _FakeBridge extends BridgeClient {
     getPeersCalls++;
     return peersToReturn;
   }
+
+  @override
+  Future<AppConfig> getConfig() async {
+    getConfigCalls++;
+    return configToReturn;
+  }
 }
+
+AppConfig _cfg({String clientName = 'Me', bool nameIsDefault = false}) =>
+    AppConfig(
+      clientName: clientName,
+      oscPort: 9000,
+      flashOnCritical: true,
+      flashOnMessage: false,
+      flashCount: 4,
+      macrosColumns: 1,
+      hideKeyboard: true,
+      audibleAlert: false,
+      heartbeatIntervalSecs: 7,
+      nameIsDefault: nameIsDefault,
+    );
 
 PeerInfo _peer(String id) => PeerInfo(
       peerId: id,
@@ -54,14 +77,32 @@ void main() {
     await pushes.close();
   });
 
-  test('start() loads peers and notifies', () async {
+  test('start() loads peers and config and notifies for each', () async {
     bridge.peersToReturn = [_peer('a'), _peer('b')];
+    bridge.configToReturn = _cfg(clientName: 'FOH');
     var notified = 0;
     store.addListener(() => notified++);
 
     await store.start();
 
     expect(store.peers.map((p) => p.peerId), ['a', 'b']);
+    expect(store.config?.clientName, 'FOH');
+    expect(notified, 2); // one for peers, one for config
+  });
+
+  test('ClientNameChanged push refetches config and notifies', () async {
+    bridge.configToReturn = _cfg(clientName: 'Old');
+    await store.refreshConfig();
+    expect(store.config?.clientName, 'Old');
+
+    bridge.configToReturn = _cfg(clientName: 'New');
+    var notified = 0;
+    store.addListener(() => notified++);
+
+    pushes.add(const ClientNameChanged('New'));
+    await pumpEventQueue();
+
+    expect(store.config?.clientName, 'New');
     expect(notified, 1);
   });
 

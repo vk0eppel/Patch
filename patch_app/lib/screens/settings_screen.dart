@@ -43,26 +43,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// PackageInfo resolves (fast, but not synchronous on first build).
   String? _versionLabel;
 
-  // Behavior
-  bool _flashOnCritical = true;
-  bool _flashOnMessage = false;
-  int _flashCount = 4;
-  bool _hideKeyboard = true;
-  bool _audibleAlert = false;
-  int _macrosColumns = 1;
+  // Config-derived values are owned by the AppStore (#56); reading via
+  // `of(context)` rebuilds when config changes. Defaults apply before first load.
+  AppConfig? get _config => AppStoreScope.of(context).config;
+  bool get _flashOnCritical => _config?.flashOnCritical ?? true;
+  bool get _flashOnMessage => _config?.flashOnMessage ?? false;
+  int get _flashCount => _config?.flashCount ?? 4;
+  bool get _hideKeyboard => _config?.hideKeyboard ?? true;
+  bool get _audibleAlert => _config?.audibleAlert ?? false;
+  int get _macrosColumns => _config?.macrosColumns ?? 1;
+  List<MacroMessage> get _globalMacros => _config?.globalMacros ?? const [];
+  String? get _selectedInterface => _config?.networkInterface; // null = auto
+  int get _heartbeatInterval => _config?.heartbeatIntervalSecs ?? 7;
+  int get _oscPort => _config?.oscPort ?? 9000;
+  List<StaticPeerInfo> get _staticPeers => _config?.staticPeers ?? const [];
 
-  // Global macros (shown on every channel)
-  List<MacroMessage> _globalMacros = [];
-
-  // Network interfaces
+  // Available network interfaces (from getInterfaces — not config) + the
+  // transient "applied" tick.
   List<Map<String, String>> _interfaces = [];
-  String? _selectedInterface; // null = auto
   bool _interfaceApplied = false;
-  int _heartbeatInterval = 7;
-  int _oscPort = 9000;
-
-  // Static peers
-  List<StaticPeerInfo> _staticPeers = [];
 
   // Live peers (for "import channels from a peer") — owned by the AppStore.
   List<PeerInfo> get _peers => AppStoreScope.of(context).peers;
@@ -78,7 +77,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _channels = List.of(widget.channels);
     _sub = widget.bridge.events.listen(_handleEvent);
     _pushSub = widget.bridge.pushes.listen(_handlePush);
-    widget.bridge.getConfig();
+    // Config is owned by the AppStore (#56); interfaces are still a local fetch.
     widget.bridge.getInterfaces();
     // Refresh peers via the store now that the screen is up (peers are owned by
     // the AppStore — #55). Post-frame so the InheritedNotifier is available.
@@ -97,6 +96,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
+    _store?.removeListener(_seedControllersFromConfig);
     _nameCtrl.dispose();
     _roleCtrl.dispose();
     _sub?.cancel();
@@ -104,26 +104,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.dispose();
   }
 
+  AppStore? _store;
+  bool _controllersSeeded = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Seed the name/role text controllers from config once it's loaded (the
+    // config arm used to do this on every event). Seed-once so the user's edits
+    // aren't clobbered by a later config notify (#56).
+    final store = AppStoreScope.of(context);
+    if (!identical(_store, store)) {
+      _store?.removeListener(_seedControllersFromConfig);
+      _store = store;
+      _store!.addListener(_seedControllersFromConfig);
+    }
+    _seedControllersFromConfig();
+  }
+
+  void _seedControllersFromConfig() {
+    if (_controllersSeeded) return;
+    final cfg = _store?.config;
+    if (cfg == null) return;
+    _controllersSeeded = true;
+    _nameCtrl.text = cfg.clientName;
+    _roleCtrl.text = cfg.role ?? '';
+  }
+
   void _handleEvent(Map<String, dynamic> event) {
     final type = event['event'] as String?;
     switch (type) {
-      case 'config':
-        final cfg = event['data'] as AppConfig;
-        setState(() {
-          _nameCtrl.text = cfg.clientName;
-          _roleCtrl.text = cfg.role ?? '';
-          _selectedInterface = cfg.networkInterface;
-          _flashOnCritical = cfg.flashOnCritical;
-          _flashOnMessage = cfg.flashOnMessage;
-          _flashCount = cfg.flashCount;
-          _hideKeyboard = cfg.hideKeyboard;
-          _audibleAlert = cfg.audibleAlert;
-          _macrosColumns = cfg.macrosColumns;
-          _heartbeatInterval = cfg.heartbeatIntervalSecs;
-          _oscPort = cfg.oscPort;
-          _globalMacros = cfg.globalMacros;
-          _staticPeers = cfg.staticPeers;
-        });
       case 'interfaces':
         final data = event['data'] as List<dynamic>;
         setState(() {
@@ -174,9 +184,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// the new state. Replaces the old `config_updated` round-trip event
   /// (ADR-0004); failures surface via [runGuarded].
   void _applyConfigChange(Future<void> Function() action) {
+    final store = AppStoreScope.read(context);
     runGuarded(context, () async {
       await action();
-      await widget.bridge.getConfig();
+      await store.refreshConfig();
     });
   }
 
@@ -189,7 +200,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// Save the role (empty string clears it). No engine event echoes back, so
   /// show the "saved" tick optimistically for a moment.
   void _saveRole() {
-    runGuarded(context, () => widget.bridge.setRole(_roleCtrl.text));
+    _applyConfigChange(() => widget.bridge.setRole(_roleCtrl.text));
     setState(() => _roleSaved = true);
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) setState(() => _roleSaved = false);
@@ -447,9 +458,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Platform.environment['USERNAME'] ??
                   'crew';
               _nameCtrl.text = name;
+              // setClientName is push-driven (ClientNameChanged → store);
+              // setRole has no push, so refetch config via _applyConfigChange.
               runGuarded(context, () => widget.bridge.setClientName(name));
               _roleCtrl.clear();
-              runGuarded(context, () => widget.bridge.setRole(null));
+              _applyConfigChange(() => widget.bridge.setRole(null));
             }),
           ]),
           const SizedBox(height: 4),
@@ -494,9 +507,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             selected: _selectedInterface,
             applied: _interfaceApplied,
             onSelect: (name) {
-              setState(() => _selectedInterface = name);
+              final store = AppStoreScope.read(context);
               runGuarded(context, () async {
                 await widget.bridge.setInterface(name ?? 'auto');
+                await store.refreshConfig(); // picker reflects the new NIC
                 if (!mounted) return;
                 // Flash the "applied" tick (was the interface_changed event).
                 setState(() => _interfaceApplied = true);
@@ -537,7 +551,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 max: 60,
                 suffix: 's',
                 onSubmit: (secs) =>
-                    runGuarded(context, () => widget.bridge.setHeartbeatInterval(secs)),
+                    _applyConfigChange(() => widget.bridge.setHeartbeatInterval(secs)),
               ),
             ],
           ),
@@ -570,7 +584,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 min: 1024,
                 max: 65535,
                 onSubmit: (port) =>
-                    runGuarded(context, () => widget.bridge.setOscPort(port)),
+                    _applyConfigChange(() => widget.bridge.setOscPort(port)),
               ),
             ],
           ),
@@ -593,7 +607,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   for (final peer in List.of(_staticPeers)) {
                     await widget.bridge.removeStaticPeer(peer.address, peer.port);
                   }
-                  await widget.bridge.getConfig();
+                  await store.refreshConfig();
                   await store.refreshPeers();
                 });
               }),
@@ -642,7 +656,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     final store = AppStoreScope.read(context);
                     runGuarded(context, () async {
                       await widget.bridge.removeStaticPeer(peer.address, peer.port);
-                      await widget.bridge.getConfig();
+                      await store.refreshConfig();
                       await store.refreshPeers();
                     });
                   },
@@ -654,20 +668,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Row(children: [
             Expanded(child: _SectionHeader('Behavior')),
             _resetButton('Behavior', () {
-              setState(() {
-                _flashOnCritical = true;
-                _flashOnMessage = false;
-                _flashCount = 4;
-                _hideKeyboard = true;
-                _audibleAlert = false;
-                _macrosColumns = 1;
-              });
+              // Values reflect after each mutation's config refetch (#56).
               _applyConfigChange(() => widget.bridge.setFlashOnCritical(true));
               _applyConfigChange(() => widget.bridge.setFlashOnMessage(false));
               _applyConfigChange(() => widget.bridge.setFlashCount(4));
-              runGuarded(context, () => widget.bridge.setHideKeyboard(true));
-              runGuarded(context, () => widget.bridge.setAudibleAlert(false));
-              runGuarded(context, () => widget.bridge.setMacrosColumns(1));
+              _applyConfigChange(() => widget.bridge.setHideKeyboard(true));
+              _applyConfigChange(() => widget.bridge.setAudibleAlert(false));
+              _applyConfigChange(() => widget.bridge.setMacrosColumns(1));
             }),
           ]),
           const SizedBox(height: 4),
@@ -683,10 +690,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             value: _flashOnMessage,
             activeThumbColor: PatchTheme.accent,
             contentPadding: EdgeInsets.zero,
-            onChanged: (val) {
-              setState(() => _flashOnMessage = val);
-              _applyConfigChange(() => widget.bridge.setFlashOnMessage(val));
-            },
+            onChanged: (val) =>
+                _applyConfigChange(() => widget.bridge.setFlashOnMessage(val)),
           ),
           SwitchListTile(
             title: const Text(
@@ -700,10 +705,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             value: _flashOnCritical,
             activeThumbColor: PatchTheme.accent,
             contentPadding: EdgeInsets.zero,
-            onChanged: (val) {
-              setState(() => _flashOnCritical = val);
-              _applyConfigChange(() => widget.bridge.setFlashOnCritical(val));
-            },
+            onChanged: (val) =>
+                _applyConfigChange(() => widget.bridge.setFlashOnCritical(val)),
           ),
           SwitchListTile(
             title: const Text(
@@ -717,10 +720,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             value: _audibleAlert,
             activeThumbColor: PatchTheme.accent,
             contentPadding: EdgeInsets.zero,
-            onChanged: (val) {
-              setState(() => _audibleAlert = val);
-              runGuarded(context, () => widget.bridge.setAudibleAlert(val));
-            },
+            onChanged: (val) =>
+                _applyConfigChange(() => widget.bridge.setAudibleAlert(val)),
           ),
           const SizedBox(height: 8),
           Row(
@@ -748,7 +749,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 value: _flashCount,
                 onChanged: (val) {
                   if (val == null) return; // global picker never yields null
-                  setState(() => _flashCount = val);
                   _applyConfigChange(() => widget.bridge.setFlashCount(val));
                 },
               ),
@@ -784,11 +784,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ButtonSegment(value: 3, label: Text('3')),
                 ],
                 selected: {_macrosColumns},
-                onSelectionChanged: (s) {
-                  final val = s.first;
-                  setState(() => _macrosColumns = val);
-                  runGuarded(context, () => widget.bridge.setMacrosColumns(val));
-                },
+                onSelectionChanged: (s) =>
+                    _applyConfigChange(() => widget.bridge.setMacrosColumns(s.first)),
                 style: SegmentedButton.styleFrom(
                   foregroundColor: PatchTheme.textSecondary,
                   selectedForegroundColor: PatchTheme.accent,
@@ -813,10 +810,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               value: _hideKeyboard,
               activeThumbColor: PatchTheme.accent,
               contentPadding: EdgeInsets.zero,
-              onChanged: (val) {
-                setState(() => _hideKeyboard = val);
-                runGuarded(context, () => widget.bridge.setHideKeyboard(val));
-              },
+              onChanged: (val) =>
+                  _applyConfigChange(() => widget.bridge.setHideKeyboard(val)),
             ),
           ],
 
@@ -1555,10 +1550,10 @@ class _GlobalMacrosEditor extends StatelessWidget {
       macros: macros,
       keyFor: (m) => '__global__:${m.label}',
       emptyText: 'No global macros yet',
-      // These don't optimistically update the list, so refetch config after
-      // the mutation so the parent's `config` arm refreshes _globalMacros
-      // (replaces the old config_updated round-trip — ADR-0004).
+      // Global macros live on the config — refetch it through the store after
+      // each mutation so both screens reflect the change (#56).
       onUpsert: (l, p, k, pr, mn, mc, osc) => runGuarded(context, () async {
+        final store = AppStoreScope.read(context);
         await bridge.upsertGlobalMacro(
           label: l,
           payload: p,
@@ -1572,15 +1567,17 @@ class _GlobalMacrosEditor extends StatelessWidget {
           oscArg: osc?.arg,
           oscArgType: osc?.argType ?? MacroOscArgType.string,
         );
-        await bridge.getConfig();
+        await store.refreshConfig();
       }),
       onDelete: (m) => runGuarded(context, () async {
+        final store = AppStoreScope.read(context);
         await bridge.deleteGlobalMacro(m.label);
-        await bridge.getConfig();
+        await store.refreshConfig();
       }),
       onReorder: (labels) => runGuarded(context, () async {
+        final store = AppStoreScope.read(context);
         await bridge.reorderGlobalMacros(labels);
-        await bridge.getConfig();
+        await store.refreshConfig();
       }),
     );
   }
@@ -2058,7 +2055,7 @@ void _showAddPeerDialog(BuildContext context, BridgeClient bridge) {
                   port,
                   label: label.isEmpty ? null : label,
                 );
-                await bridge.getConfig();
+                await store.refreshConfig();
                 // Refresh peers too — a static peer shows in the peers panel.
                 // The store owns peers now (#55).
                 await store.refreshPeers();

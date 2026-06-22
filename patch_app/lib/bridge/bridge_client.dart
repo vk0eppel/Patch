@@ -159,13 +159,11 @@ class BridgeClient {
     }
   }
 
-  Future<void> getConfig() async {
-    try {
-      final cfg = await rust.getConfig();
-      _emit({'event': 'config', 'data': _configFromRust(cfg)});
-    } catch (e) {
-      _emitError(e);
-    }
+  /// The current config snapshot. Returns directly (owned by `AppStore` —
+  /// candidate 2, ADR-0004); throws on failure.
+  Future<AppConfig> getConfig() async {
+    final cfg = await rust.getConfig();
+    return _configFromRust(cfg);
   }
 
   /// Change the network interface (empty/'auto' → all interfaces). Throws on
@@ -178,13 +176,11 @@ class BridgeClient {
   /// `client_name_changed` is emitted by the engine event bus.
   Future<void> setClientName(String name) => rust.setClientName(name: name);
 
-  /// Set (or clear) the self-assigned role. Pass null/empty to clear it.
-  /// Refetches config so the change propagates to both screens; throws on
-  /// failure.
-  Future<void> setRole(String? role) async {
+  /// Set (or clear) the self-assigned role. Pass null/empty to clear it. Throws
+  /// on failure; the caller refetches config via the store (`_applyConfigChange`).
+  Future<void> setRole(String? role) {
     final trimmed = role?.trim();
-    await rust.setRole(role: (trimmed == null || trimmed.isEmpty) ? null : trimmed);
-    await getConfig();
+    return rust.setRole(role: (trimmed == null || trimmed.isEmpty) ? null : trimmed);
   }
 
   /// Remove dynamic peers (OscBeacon / Mdns) not heard from within [maxAgeSecs].
@@ -410,37 +406,26 @@ class BridgeClient {
   /// Set the global flash pulse count (3–7).
   Future<void> setFlashCount(int count) => rust.setFlashCount(count: count);
 
-  /// These setters refetch config so the change propagates to both screens;
-  /// each throws on failure (callers wrap in `runGuarded`).
-  Future<void> setHideKeyboard(bool enabled) async {
-    await rust.setHideKeyboard(enabled: enabled);
-    await getConfig();
-  }
+  /// These setters throw on failure; the caller refetches config via the store
+  /// (`_applyConfigChange`) so both screens reflect the change.
+  Future<void> setHideKeyboard(bool enabled) =>
+      rust.setHideKeyboard(enabled: enabled);
 
-  Future<void> setAudibleAlert(bool enabled) async {
-    await rust.setAudibleAlert(enabled: enabled);
-    await getConfig();
-  }
+  Future<void> setAudibleAlert(bool enabled) =>
+      rust.setAudibleAlert(enabled: enabled);
 
-  Future<void> setMacrosColumns(int columns) async {
-    await rust.setMacrosColumns(columns: columns);
-    await getConfig();
-  }
+  Future<void> setMacrosColumns(int columns) =>
+      rust.setMacrosColumns(columns: columns);
 
   /// Set the presence heartbeat interval (seconds). The engine validates 1–60
   /// and applies it live (the discovery loop re-reads the cadence each cycle).
-  Future<void> setHeartbeatInterval(int secs) async {
-    await rust.setHeartbeatInterval(secs: BigInt.from(secs));
-    await getConfig();
-  }
+  Future<void> setHeartbeatInterval(int secs) =>
+      rust.setHeartbeatInterval(secs: BigInt.from(secs));
 
   /// Set the OSC UDP port (1024–65535). The engine rebinds the socket live; a
   /// bind failure (e.g. port already in use) throws and leaves the persisted
   /// port unchanged.
-  Future<void> setOscPort(int port) async {
-    await rust.setOscPort(port: port);
-    await getConfig();
-  }
+  Future<void> setOscPort(int port) => rust.setOscPort(port: port);
 
   /// Set per-channel flash overrides. Pass 0 as [flashCount] to clear the
   /// per-channel override (revert to global). Throws on failure.

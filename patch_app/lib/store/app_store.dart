@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../bridge/bridge_client.dart';
+import '../models/config.dart';
 import '../models/events.dart';
 import '../models/message.dart';
 
@@ -32,9 +33,26 @@ class AppStore extends ChangeNotifier {
   List<PeerInfo> _peers = const [];
   List<PeerInfo> get peers => _peers;
 
+  /// Null until the first load completes. Both screens read config-derived
+  /// values from here (#56); a mutation in one screen refetches and notifies,
+  /// so the other reflects it with no cross-screen event.
+  AppConfig? _config;
+  AppConfig? get config => _config;
+
   /// Load initial domain state. Call once after the engine has connected.
   Future<void> start() async {
-    await refreshPeers();
+    await Future.wait([refreshPeers(), refreshConfig()]);
+  }
+
+  /// Refetch the config and notify; throws are swallowed (keep the last good
+  /// config rather than blanking the UI).
+  Future<void> refreshConfig() async {
+    try {
+      _config = await _bridge.getConfig();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('AppStore.refreshConfig failed: $e');
+    }
   }
 
   /// Refetch the peer list and notify. Failures are non-critical (a background
@@ -68,12 +86,14 @@ class AppStore extends ChangeNotifier {
       // reappears as ManualIp rather than vanishing.
       case PeerExpired():
         refreshPeers();
+      // The local name changed — refetch config so both screens reflect it.
+      case ClientNameChanged():
+        refreshConfig();
       // Not yet owned by the store — handled by the screens.
       case MessageReceived():
       case DeliveryUpdated():
       case Flashed():
       case ChannelsOffered():
-      case ClientNameChanged():
       case PermissionDenied():
       case ChannelsChanged():
         break;

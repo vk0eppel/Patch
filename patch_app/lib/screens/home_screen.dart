@@ -57,9 +57,13 @@ class _HomeScreenState extends State<HomeScreen> {
   int _flashNotify = 0;
   Color _flashColor = Colors.white;
 
-  bool _flashOnCritical = true;
-  bool _flashOnMessage = false;
-  int _globalFlashCount = 4;
+  // Config-derived values are owned by the AppStore (#56); reading via
+  // `of(context)` rebuilds when config changes. Defaults apply before the
+  // first load completes.
+  AppConfig? get _config => AppStoreScope.of(context).config;
+  bool get _flashOnCritical => _config?.flashOnCritical ?? true;
+  bool get _flashOnMessage => _config?.flashOnMessage ?? false;
+  int get _globalFlashCount => _config?.flashCount ?? 4;
   int _flashPulseCount = 4; // resolved count at the time of the last flash
 
   // ── F-key map ───────────────────────────────────────────────────────────────
@@ -93,21 +97,21 @@ class _HomeScreenState extends State<HomeScreen> {
   /// First-run name prompt: shown at most once per session. Reset on relaunch,
   /// so an unnamed operator is nudged again next time but never nagged twice.
   bool _namePromptShown = false;
-  int _macrosColumns = 1;
-  bool _hideKeyboard = true;
+  int get _macrosColumns => _config?.macrosColumns ?? 1;
+  bool get _hideKeyboard => _config?.hideKeyboard ?? true;
   /// Play a sound when a channel flashes (critical / page / broadcast). Off by default.
-  bool _audibleAlert = false;
+  bool get _audibleAlert => _config?.audibleAlert ?? false;
   /// Plays the bundled alert sound. A single reusable player; the source is
   /// preloaded in initState (ReleaseMode.stop) so even the first alert is instant.
   final AudioPlayer _alertPlayer = AudioPlayer();
   /// Macros shown on every channel (configured once); fired on the currently-
-  /// selected channel(s). Sourced from the engine config via `getConfig`.
-  List<MacroMessage> _globalMacros = [];
+  /// selected channel(s). Owned by the AppStore config (#56).
+  List<MacroMessage> get _globalMacros => _config?.globalMacros ?? const [];
   /// Delivery status for criticals we've sent, keyed by message id.
   final DeliveryTracker _delivery = DeliveryTracker();
 
-  String _clientName = '';
-  String _clientRole = '';
+  String get _clientName => _config?.clientName ?? '';
+  String get _clientRole => _config?.role ?? '';
 
   /// Peer ids with an open DM thread (so history is preserved when returning).
   final Set<String> _openDms = {};
@@ -295,9 +299,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _eventSub = widget.bridge.events.listen(_handleEvent);
     _pushSub = widget.bridge.pushes.listen(_handlePush);
     widget.bridge.getChannels();
-    // Peers are loaded by the AppStore (see main); channels/config still
-    // fire-and-forget until their slices (#57/#56).
-    widget.bridge.getConfig();
+    // Peers + config are loaded by the AppStore (see main); channels still
+    // fire-and-forget until #57.
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     // Use the playback audio category so the alert sounds on iOS even with the
     // ring/silent switch on (an operational alert must not be muted by silent).
@@ -311,9 +314,37 @@ class _HomeScreenState extends State<HomeScreen> {
     unawaited(_alertPlayer.setSource(AssetSource('sounds/alert.wav')));
   }
 
+  AppStore? _store;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Watch the store for the one-shot first-run name prompt (the config arm
+    // used to drive this). Rebuilds on config change are handled separately by
+    // the `of(context)` reads in build (#56).
+    final store = AppStoreScope.of(context);
+    if (!identical(_store, store)) {
+      _store?.removeListener(_maybePromptFromConfig);
+      _store = store;
+      _store!.addListener(_maybePromptFromConfig);
+      _maybePromptFromConfig();
+    }
+  }
+
+  void _maybePromptFromConfig() {
+    final cfg = _store?.config;
+    if (cfg != null) {
+      _maybeShowNamePrompt(
+        nameIsDefault: cfg.nameIsDefault,
+        currentName: cfg.clientName,
+      );
+    }
+  }
+
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
+    _store?.removeListener(_maybePromptFromConfig);
     _eventSub?.cancel();
     _pushSub?.cancel();
     _alertPlayer.dispose();
@@ -367,10 +398,17 @@ class _HomeScreenState extends State<HomeScreen> {
       showNamePrompt(
         context,
         currentName: currentName,
+        // setClientName is push-driven (ClientNameChanged → store); setRole has
+        // no push, so refetch config via the store after it (#56).
         onSaveName: (name) =>
             runGuarded(context, () => widget.bridge.setClientName(name)),
-        onSaveRole: (role) => runGuarded(
-            context, () => widget.bridge.setRole(role.isEmpty ? null : role)),
+        onSaveRole: (role) {
+          final store = AppStoreScope.read(context);
+          runGuarded(context, () async {
+            await widget.bridge.setRole(role.isEmpty ? null : role);
+            await store.refreshConfig();
+          });
+        },
       );
     });
   }
@@ -424,24 +462,6 @@ class _HomeScreenState extends State<HomeScreen> {
           _messages[chId] = data;
         });
 
-      case 'config':
-        final cfg = event['data'] as AppConfig;
-        setState(() {
-          _clientName = cfg.clientName;
-          _clientRole = cfg.role ?? '';
-          _flashOnCritical = cfg.flashOnCritical;
-          _flashOnMessage = cfg.flashOnMessage;
-          _globalFlashCount = cfg.flashCount;
-          _macrosColumns = cfg.macrosColumns;
-          _hideKeyboard = cfg.hideKeyboard;
-          _audibleAlert = cfg.audibleAlert;
-          _globalMacros = cfg.globalMacros;
-        });
-        _maybeShowNamePrompt(
-          nameIsDefault: cfg.nameIsDefault,
-          currentName: cfg.clientName,
-        );
-
       case 'error':
         final msg = event['message'] as String? ?? 'Something went wrong';
         debugPrint('Bridge error: $msg');
@@ -475,8 +495,10 @@ class _HomeScreenState extends State<HomeScreen> {
           break;
         case ChannelsChanged():
           widget.bridge.getChannels();
-        case ClientNameChanged(:final name):
-          setState(() => _clientName = name);
+        // Config (incl. the client name) is owned by the AppStore now — it
+        // reduces ClientNameChanged by refetching config (#56).
+        case ClientNameChanged():
+          break;
         case PermissionDenied(:final context):
           _onPermissionDenied(context);
         case ChannelsOffered():
@@ -894,12 +916,12 @@ class _ChannelStrip extends StatelessWidget {
                     icon: const Icon(Icons.settings_outlined,
                         color: PatchTheme.textMuted),
                     tooltip: 'Settings',
-                    onPressed: () => Navigator.of(context)
-                        .push(MaterialPageRoute(
+                    // No post-return refresh needed: settings mutates the
+                    // shared AppStore directly, so home already reflects it (#56).
+                    onPressed: () => Navigator.of(context).push(MaterialPageRoute(
                           builder: (_) => SettingsScreen(
                               bridge: bridge, channels: channels),
-                        ))
-                        .then((_) => bridge.getConfig()),
+                        )),
                   ),
                 ),
               ],
@@ -944,12 +966,10 @@ class _ChannelStrip extends StatelessWidget {
           _IdentityChip(
             name: clientName,
             role: clientRole,
-            onTap: () => Navigator.of(context)
-                .push(MaterialPageRoute(
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
                   builder: (_) =>
                       SettingsScreen(bridge: bridge, channels: channels),
-                ))
-                .then((_) => bridge.getConfig()),
+                )),
           ),
         ],
       ),
