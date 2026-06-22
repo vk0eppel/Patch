@@ -8,11 +8,11 @@ import 'package:flutter/services.dart';
 import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
 import '../models/config.dart';
-import '../models/delivery_tracker.dart';
 import '../models/events.dart';
 import '../models/flash.dart';
 import '../models/message.dart';
 import '../models/selection.dart';
+import '../store/app_store.dart';
 import '../theme/patch_theme.dart';
 import '../util/message_filter.dart';
 import '../util/run_guarded.dart';
@@ -41,13 +41,18 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  List<PatchChannel> _channels = [];
+  /// Channels are owned by the AppStore (#57); selection reconciliation on
+  /// change happens in the store listener (`_onStoreChanged`).
+  List<PatchChannel> get _channels => AppStoreScope.of(context).channels;
 
   /// What the message area currently shows/targets — Channel(s), ALL compose,
   /// or a DM thread. See models/selection.dart.
   Selection _selection = const ChannelSelection({});
 
-  final Map<String, List<PatchMessage>> _messages = {};
+  /// Message buffers + delivery status are owned by the AppStore (#58); reading
+  /// via `of(context)` rebuilds when a message lands or a buffer changes.
+  Map<String, List<PatchMessage>> get _messages =>
+      AppStoreScope.of(context).messages;
 
   /// Incremented each time a flash arrives per channel — drives tab animation.
   final Map<String, int> _flashCounts = {};
@@ -56,9 +61,13 @@ class _HomeScreenState extends State<HomeScreen> {
   int _flashNotify = 0;
   Color _flashColor = Colors.white;
 
-  bool _flashOnCritical = true;
-  bool _flashOnMessage = false;
-  int _globalFlashCount = 4;
+  // Config-derived values are owned by the AppStore (#56); reading via
+  // `of(context)` rebuilds when config changes. Defaults apply before the
+  // first load completes.
+  AppConfig? get _config => AppStoreScope.of(context).config;
+  bool get _flashOnCritical => _config?.flashOnCritical ?? true;
+  bool get _flashOnMessage => _config?.flashOnMessage ?? false;
+  int get _globalFlashCount => _config?.flashCount ?? 4;
   int _flashPulseCount = 4; // resolved count at the time of the last flash
 
   // ── F-key map ───────────────────────────────────────────────────────────────
@@ -80,31 +89,27 @@ class _HomeScreenState extends State<HomeScreen> {
   static const double _kMacroColumnWidth = 160.0;
   static const double _kPeersPanelWidth = 160.0;
 
-  /// Mirror of the Rust ring buffer cap (`MAX_BUFFER` in `state/mod.rs`) so the
-  /// in-memory list doesn't grow unbounded over a long show.
-  static const int _kMaxMessagesPerChannel = 500;
-
-  List<PeerInfo> _peers = [];
+  /// Peers are owned by the shared [AppStore]; reading via `of(context)`
+  /// rebuilds the screen when the list changes (candidate 2, ADR-0004).
+  List<PeerInfo> get _peers => AppStoreScope.of(context).peers;
   bool _showPeers = false;
   bool _showMacros = false;
   /// First-run name prompt: shown at most once per session. Reset on relaunch,
   /// so an unnamed operator is nudged again next time but never nagged twice.
   bool _namePromptShown = false;
-  int _macrosColumns = 1;
-  bool _hideKeyboard = true;
+  int get _macrosColumns => _config?.macrosColumns ?? 1;
+  bool get _hideKeyboard => _config?.hideKeyboard ?? true;
   /// Play a sound when a channel flashes (critical / page / broadcast). Off by default.
-  bool _audibleAlert = false;
+  bool get _audibleAlert => _config?.audibleAlert ?? false;
   /// Plays the bundled alert sound. A single reusable player; the source is
   /// preloaded in initState (ReleaseMode.stop) so even the first alert is instant.
   final AudioPlayer _alertPlayer = AudioPlayer();
   /// Macros shown on every channel (configured once); fired on the currently-
-  /// selected channel(s). Sourced from the engine config via `getConfig`.
-  List<MacroMessage> _globalMacros = [];
-  /// Delivery status for criticals we've sent, keyed by message id.
-  final DeliveryTracker _delivery = DeliveryTracker();
+  /// selected channel(s). Owned by the AppStore config (#56).
+  List<MacroMessage> get _globalMacros => _config?.globalMacros ?? const [];
 
-  String _clientName = '';
-  String _clientRole = '';
+  String get _clientName => _config?.clientName ?? '';
+  String get _clientRole => _config?.role ?? '';
 
   /// Peer ids with an open DM thread (so history is preserved when returning).
   final Set<String> _openDms = {};
@@ -116,13 +121,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// one-shot pulse on the peers toggle ([PulsingPeersButton]).
   int _dmPulseNotify = 0;
 
-  StreamSubscription<Map<String, dynamic>>? _eventSub;
   StreamSubscription<PatchEvent>? _pushSub;
-
-  /// Coalesces `peer_updated` bursts into one `getPeers()` fetch. `last_seen` is
-  /// refreshed on every received packet, so a busy channel fires `peer_updated`
-  /// per message; without this each one would do a full peer-list FFI round-trip.
-  Timer? _peersRefresh;
 
   // ── Derived state ───────────────────────────────────────────────────────────
 
@@ -294,11 +293,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _eventSub = widget.bridge.events.listen(_handleEvent);
     _pushSub = widget.bridge.pushes.listen(_handlePush);
-    widget.bridge.getChannels();
-    widget.bridge.getPeers();
-    widget.bridge.getConfig();
+    // Peers, config, and channels are all loaded by the AppStore (see main).
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     // Use the playback audio category so the alert sounds on iOS even with the
     // ring/silent switch on (an operational alert must not be muted by silent).
@@ -312,22 +308,83 @@ class _HomeScreenState extends State<HomeScreen> {
     unawaited(_alertPlayer.setSource(AssetSource('sounds/alert.wav')));
   }
 
+  AppStore? _store;
+  List<String>? _lastChannelIds;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Watch the store for side effects on its changes: the one-shot first-run
+    // name prompt (config) and selection reconciliation (channels). Rebuilds on
+    // store changes are handled separately by the `of(context)` reads in build.
+    final store = AppStoreScope.of(context);
+    if (!identical(_store, store)) {
+      _store?.removeListener(_onStoreChanged);
+      _store = store;
+      _store!.addListener(_onStoreChanged);
+      _onStoreChanged();
+    }
+  }
+
+  void _onStoreChanged() {
+    final cfg = _store?.config;
+    if (cfg != null) {
+      _maybeShowNamePrompt(
+        nameIsDefault: cfg.nameIsDefault,
+        currentName: cfg.clientName,
+      );
+    }
+    // Reconcile the selection only when the channel set actually changed (the
+    // listener fires on any store notify, incl. peers/config).
+    final ids = _store?.channels.map((c) => c.id).toList();
+    if (ids != null && !_sameIds(ids, _lastChannelIds)) {
+      _lastChannelIds = ids;
+      _reconcileSelectionWithChannels();
+    }
+  }
+
+  static bool _sameIds(List<String> a, List<String>? b) {
+    if (b == null || a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  /// Drop stale ids from a Channel selection (or seed the first channel when
+  /// empty) after the channel list changes, then load messages for whatever's
+  /// now selected. ALL/DM selections don't depend on the channel list. Was the
+  /// `'channels'` arm's body (#57).
+  void _reconcileSelectionWithChannels() {
+    final channels = _store?.channels ?? const [];
+    setState(() {
+      final sel = _selection;
+      if (sel is ChannelSelection) {
+        final validIds = channels.map((c) => c.id).toSet();
+        final kept = sel.ids.where(validIds.contains).toSet();
+        _selection = kept.isNotEmpty
+            ? ChannelSelection(kept)
+            : (channels.isNotEmpty
+                ? ChannelSelection({channels.first.id})
+                : const ChannelSelection({}));
+      }
+      final idsNeeded = _selection.dmPeerId != null
+          ? {'dm:${_selection.dmPeerId}'}
+          : _selection.tabIds;
+      for (final id in idsNeeded) {
+        AppStoreScope.read(context).ensureMessages(id);
+      }
+    });
+    _syncSelection();
+  }
+
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
-    _peersRefresh?.cancel();
-    _eventSub?.cancel();
+    _store?.removeListener(_onStoreChanged);
     _pushSub?.cancel();
     _alertPlayer.dispose();
     super.dispose();
-  }
-
-  /// Debounced full peer-list refresh (trailing edge, ~800 ms).
-  void _schedulePeersRefresh() {
-    _peersRefresh ??= Timer(const Duration(milliseconds: 800), () {
-      _peersRefresh = null;
-      widget.bridge.getPeers();
-    });
   }
 
   /// Global F-key handler — fires the first shortcut whose keyBinding matches.
@@ -377,100 +434,19 @@ class _HomeScreenState extends State<HomeScreen> {
       showNamePrompt(
         context,
         currentName: currentName,
+        // setClientName is push-driven (ClientNameChanged → store); setRole has
+        // no push, so refetch config via the store after it (#56).
         onSaveName: (name) =>
             runGuarded(context, () => widget.bridge.setClientName(name)),
-        onSaveRole: (role) => runGuarded(
-            context, () => widget.bridge.setRole(role.isEmpty ? null : role)),
+        onSaveRole: (role) {
+          final store = AppStoreScope.read(context);
+          runGuarded(context, () async {
+            await widget.bridge.setRole(role.isEmpty ? null : role);
+            await store.refreshConfig();
+          });
+        },
       );
     });
-  }
-
-  void _handleEvent(Map<String, dynamic> event) {
-    try {
-      _dispatch(event);
-    } catch (e, stack) {
-      debugPrint('Bridge event error [${event['event']}]: $e\n$stack');
-    }
-  }
-
-  void _dispatch(Map<String, dynamic> event) {
-    final type = event['event'] as String?;
-    switch (type) {
-      case 'channels':
-        final data = event['data'] as List<PatchChannel>;
-        setState(() {
-          _channels = data;
-          // Remove stale ids (deleted channels) from a Channel selection, or
-          // seed with the first channel if nothing was selected yet. ALL/DM
-          // selections don't depend on the channel list, so a reload never
-          // kicks the user out of either (see Selection's doc comment).
-          final sel = _selection;
-          if (sel is ChannelSelection) {
-            final validIds = _channels.map((c) => c.id).toSet();
-            final kept = sel.ids.where(validIds.contains).toSet();
-            _selection = kept.isNotEmpty
-                ? ChannelSelection(kept)
-                : (_channels.isNotEmpty
-                    ? ChannelSelection({_channels.first.id})
-                    : const ChannelSelection({}));
-          }
-          // Load messages for whatever's now selected, if not already fetched.
-          final idsNeeded = _selection.dmPeerId != null
-              ? {'dm:${_selection.dmPeerId}'}
-              : _selection.tabIds;
-          for (final id in idsNeeded) {
-            if (!_messages.containsKey(id)) {
-              widget.bridge.getMessages(id);
-            }
-          }
-        });
-        // Keep the engine's view of the selection current (for MIDI global macros).
-        _syncSelection();
-
-      case 'messages':
-        final chId = event['channel_id'] as String;
-        final data = event['data'] as List<PatchMessage>;
-        setState(() {
-          _messages[chId] = data;
-        });
-
-      case 'peers':
-        final data = event['data'] as List<PeerInfo>;
-        setState(() {
-          _peers = data;
-        });
-
-      case 'config':
-        final cfg = event['data'] as AppConfig;
-        setState(() {
-          _clientName = cfg.clientName;
-          _clientRole = cfg.role ?? '';
-          _flashOnCritical = cfg.flashOnCritical;
-          _flashOnMessage = cfg.flashOnMessage;
-          _globalFlashCount = cfg.flashCount;
-          _macrosColumns = cfg.macrosColumns;
-          _hideKeyboard = cfg.hideKeyboard;
-          _audibleAlert = cfg.audibleAlert;
-          _globalMacros = cfg.globalMacros;
-        });
-        _maybeShowNamePrompt(
-          nameIsDefault: cfg.nameIsDefault,
-          currentName: cfg.clientName,
-        );
-
-      case 'error':
-        final msg = event['message'] as String? ?? 'Something went wrong';
-        debugPrint('Bridge error: $msg');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(msg),
-              backgroundColor: PatchTheme.critical,
-              duration: const Duration(seconds: 5),
-            ),
-          );
-        }
-    }
   }
 
   /// Typed engine pushes (slice 1.2, ADR-0004). Exhaustive over [PatchEvent]:
@@ -485,20 +461,18 @@ class _HomeScreenState extends State<HomeScreen> {
           _onDeliveryUpdated(messageId, status);
         case Flashed(:final channelId):
           _onChannelFlashed(channelId);
+        // Peers are owned by the AppStore now — it reduces these (#55).
         case PeerExpired():
-          // Full refetch (not a targeted removal): a static-peer-backed entry
-          // should immediately reappear as ManualIp (gray dot) rather than
-          // vanishing. The variant carries the peer id if a future
-          // optimisation wants it.
-          widget.bridge.getPeers();
         case PeersChanged():
-          // Fires on every received packet, so coalesce bursts into one
-          // full-list refresh rather than a getPeers() per message.
-          _schedulePeersRefresh();
+          break;
+        // Channels are owned by the AppStore now — it reduces ChannelsChanged;
+        // home reconciles its selection in the store listener (#57).
         case ChannelsChanged():
-          widget.bridge.getChannels();
-        case ClientNameChanged(:final name):
-          setState(() => _clientName = name);
+          break;
+        // Config (incl. the client name) is owned by the AppStore now — it
+        // reduces ClientNameChanged by refetching config (#56).
+        case ClientNameChanged():
+          break;
         case PermissionDenied(:final context):
           _onPermissionDenied(context);
         case ChannelsOffered():
@@ -509,14 +483,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Flash/unread reaction to an inbound message. Storage is the store's job
+  /// (#58); this only decides what (if anything) pulses. The store's append +
+  /// notify rebuilds the message list separately.
   void _onMessageReceived(PatchMessage msg) {
-    setState(() {
-      final list = _messages.putIfAbsent(msg.channelId, () => [])..add(msg);
-      // Keep the in-memory list bounded, mirroring the engine ring buffer.
-      if (list.length > _kMaxMessagesPerChannel) {
-        list.removeRange(0, list.length - _kMaxMessagesPerChannel);
-      }
-    });
     final flash = decideMessageFlash(
       msg: msg,
       channels: _channels,
@@ -540,9 +510,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// The store tracks delivery status (#58); this only raises the failure
+  /// SnackBar for a critical that couldn't be delivered.
   void _onDeliveryUpdated(String id, MessageDeliveryStatus status) {
-    setState(() => _delivery.track(id, status));
-    // A failed critical can't go unnoticed — also raise a red SnackBar.
     if (status.failed && mounted) {
       final who = status.total == 0
           ? 'no peers were online'
@@ -576,20 +546,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Drop the local copy of cleared messages after a `clearMessages` command
-  /// (was the `messages_cleared` event — ADR-0004). `channelId` null = all.
+  /// Drop the store's buffer for cleared messages after a `clearMessages`
+  /// command (#58). `channelId` null = all.
   void _onMessagesCleared(String? channelId) {
-    setState(() {
-      if (channelId != null) {
-        final removed = _messages.remove(channelId);
-        if (removed != null) {
-          _delivery.clearForMessageIds(removed.map((m) => m.messageId));
-        }
-      } else {
-        _messages.clear();
-        _delivery.clearAll();
-      }
-    });
+    AppStoreScope.read(context).dropMessages(channelId);
   }
 
   void _onPermissionDenied(String message) {
@@ -674,24 +634,22 @@ class _HomeScreenState extends State<HomeScreen> {
       if (id == kAllChannelId) {
         // Stash the current Channel selection for snap-back after send.
         _selection = AllSelection(sel is ChannelSelection ? sel.ids : {});
-        if (!_messages.containsKey(kAllChannelId)) {
-          widget.bridge.getMessages(kAllChannelId);
-        }
+        AppStoreScope.read(context).ensureMessages(kAllChannelId);
       } else if (id.startsWith('dm:')) {
         _selection = DmSelection(id.substring(3));
         _unreadDms.remove(id);
-        if (!_messages.containsKey(id)) widget.bridge.getMessages(id);
+        AppStoreScope.read(context).ensureMessages(id);
       } else if (sel is AllSelection || sel is DmSelection) {
         // Tapping a channel cancels ALL compose / DM mode.
         _selection = ChannelSelection({id});
-        if (!_messages.containsKey(id)) widget.bridge.getMessages(id);
+        AppStoreScope.read(context).ensureMessages(id);
       } else if (sel is ChannelSelection && sel.ids.contains(id)) {
         if (sel.ids.length > 1) {
           _selection = ChannelSelection({...sel.ids}..remove(id));
         }
       } else if (sel is ChannelSelection) {
         _selection = ChannelSelection({...sel.ids, id});
-        if (!_messages.containsKey(id)) widget.bridge.getMessages(id);
+        AppStoreScope.read(context).ensureMessages(id);
       }
     });
     _syncSelection();
@@ -720,7 +678,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _selection = DmSelection(peerId);
       _unreadDms.remove(key);
     });
-    if (!_messages.containsKey(key)) widget.bridge.getMessages(key);
+    AppStoreScope.read(context).ensureMessages(key);
     _syncSelection();
     if (_hideKeyboard) FocusScope.of(context).unfocus();
   }
@@ -776,7 +734,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   unreadPeerIds: {
                     for (final k in _unreadDms) k.substring(3),
                   },
-                  onRefresh: () => widget.bridge.getPeers(),
+                  onRefresh: () => AppStoreScope.read(context).refreshPeers(),
                 ),
               ),
             ),
@@ -801,7 +759,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       onMessagesCleared: _onMessagesCleared,
                       messages: _combinedMessages,
                       channelColors: _channelColors,
-                      delivery: _delivery.all,
+                      delivery: AppStoreScope.of(context).delivery,
                       aggregatedMacros: _aggregatedMacros,
                       bridge: widget.bridge,
                       showPeers: _showPeers,
@@ -902,7 +860,8 @@ class _ChannelStrip extends StatelessWidget {
                       // peers aren't push-backed, so refresh them here (ADR-0004).
                       builder: (_) => ShowFilesDialog(
                         bridge: bridge,
-                        onShowFileLoaded: () => bridge.getPeers(),
+                        onShowFileLoaded: () =>
+                            AppStoreScope.read(context).refreshPeers(),
                       ),
                     ),
                   ),
@@ -915,12 +874,11 @@ class _ChannelStrip extends StatelessWidget {
                     icon: const Icon(Icons.settings_outlined,
                         color: PatchTheme.textMuted),
                     tooltip: 'Settings',
-                    onPressed: () => Navigator.of(context)
-                        .push(MaterialPageRoute(
-                          builder: (_) => SettingsScreen(
-                              bridge: bridge, channels: channels),
-                        ))
-                        .then((_) => bridge.getConfig()),
+                    // No post-return refresh needed: settings mutates the
+                    // shared AppStore directly, so home already reflects it (#56).
+                    onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => SettingsScreen(bridge: bridge),
+                        )),
                   ),
                 ),
               ],
@@ -965,12 +923,9 @@ class _ChannelStrip extends StatelessWidget {
           _IdentityChip(
             name: clientName,
             role: clientRole,
-            onTap: () => Navigator.of(context)
-                .push(MaterialPageRoute(
-                  builder: (_) =>
-                      SettingsScreen(bridge: bridge, channels: channels),
-                ))
-                .then((_) => bridge.getConfig()),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => SettingsScreen(bridge: bridge),
+                )),
           ),
         ],
       ),

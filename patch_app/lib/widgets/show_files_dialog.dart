@@ -27,32 +27,20 @@ class ShowFilesDialog extends StatefulWidget {
 
 class _ShowFilesDialogState extends State<ShowFilesDialog> {
   List<ShowFileMeta> _showFiles = [];
-  StreamSubscription<Map<String, dynamic>>? _sub;
 
   @override
   void initState() {
     super.initState();
-    _sub = widget.bridge.events.listen(_handleEvent);
-    widget.bridge.listShowFiles();
+    _loadShowFiles();
   }
 
-  @override
-  void dispose() {
-    _sub?.cancel();
-    super.dispose();
-  }
-
-  void _handleEvent(Map<String, dynamic> event) {
-    switch (event['event'] as String?) {
-      case 'show_files':
-        final data = event['data'] as List<ShowFileMeta>;
-        if (mounted) {
-          setState(() {
-            _showFiles = data;
-          });
-        }
-      // show_file_saved / show_file_loaded are handled at their call sites now
-      // (ADR-0004) — saving/loading no longer emit on the legacy stream.
+  /// Fetch the saved show-file list (single consumer — this dialog; #59).
+  Future<void> _loadShowFiles() async {
+    try {
+      final files = await widget.bridge.listShowFiles();
+      if (mounted) setState(() => _showFiles = files);
+    } catch (e) {
+      debugPrint('listShowFiles failed: $e');
     }
   }
 
@@ -93,7 +81,7 @@ class _ShowFilesDialogState extends State<ShowFilesDialog> {
     if (name == null || !mounted) return;
     await runGuarded(context, () async {
       await widget.bridge.saveShowFile(name);
-      await widget.bridge.listShowFiles(); // refresh the saved-files list
+      await _loadShowFiles(); // refresh the saved-files list
     });
   }
 

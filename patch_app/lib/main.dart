@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 
 import 'bridge/bridge_client.dart';
 import 'screens/home_screen.dart';
+import 'store/app_store.dart';
 import 'theme/patch_theme.dart';
 import 'util/orientation_lock.dart';
 
@@ -29,29 +30,16 @@ void main() async {
   runApp(const PatchApp());
 }
 
-class PatchApp extends StatelessWidget {
+class PatchApp extends StatefulWidget {
   const PatchApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'PATCH',
-      debugShowCheckedModeBanner: false,
-      theme: PatchTheme.dark(),
-      home: const AppRoot(),
-    );
-  }
+  State<PatchApp> createState() => _PatchAppState();
 }
 
-class AppRoot extends StatefulWidget {
-  const AppRoot({super.key});
-
-  @override
-  State<AppRoot> createState() => _AppRootState();
-}
-
-class _AppRootState extends State<AppRoot> {
+class _PatchAppState extends State<PatchApp> {
   late final BridgeClient _bridge;
+  late final AppStore _store;
   late final AppLifecycleListener _lifecycle;
   bool _connected = false;
   String? _error;
@@ -60,6 +48,7 @@ class _AppRootState extends State<AppRoot> {
   void initState() {
     super.initState();
     _bridge = BridgeClient();
+    _store = AppStore(_bridge);
     // `onExitRequested` is AWAITED by the framework before the app actually
     // terminates (Cmd-Q / last-window-close on desktop), so the /patch/bye UDP
     // send has time to flush — unlike the fire-and-forget `detached` event,
@@ -86,6 +75,8 @@ class _AppRootState extends State<AppRoot> {
     setState(() => _error = null);
     try {
       await _bridge.connect();
+      // Engine is up — load initial shared state into the store.
+      _store.start();
       if (mounted) setState(() => _connected = true);
     } catch (e) {
       // A failed engine boot (socket bind failure, corrupt patch.toml, denied
@@ -97,12 +88,25 @@ class _AppRootState extends State<AppRoot> {
   @override
   void dispose() {
     _lifecycle.dispose();
+    _store.dispose();
     _bridge.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'PATCH',
+      debugShowCheckedModeBanner: false,
+      theme: PatchTheme.dark(),
+      // Provide the shared store ABOVE the Navigator (via builder) so pushed
+      // routes — e.g. the settings screen — can read it too (candidate 2).
+      builder: (context, child) => AppStoreScope(store: _store, child: child!),
+      home: _gate(),
+    );
+  }
+
+  Widget _gate() {
     if (_error != null) {
       return Scaffold(
         body: Center(

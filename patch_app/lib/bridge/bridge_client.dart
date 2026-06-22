@@ -24,12 +24,9 @@ import '../src/rust/transport.dart' as rust_transport;
 ///
 /// Lifecycle: construct → `await connect()` → use. `dispose()` to clean up.
 class BridgeClient {
-  final _eventController = StreamController<Map<String, dynamic>>.broadcast();
-
-  /// Typed engine-push stream (slice 1.1). Emitted *alongside* the legacy map
-  /// [events] during migration — consumers move onto this on their own
-  /// schedule (slices 1.2/1.3); slice 1.4 deletes the map-push path. See
-  /// ADR-0004.
+  /// Typed engine-push stream — the sole event channel. Reads return `Future`s
+  /// and commands throw; the legacy stringly-typed map stream is gone (#59,
+  /// ADR-0004).
   final _pushController = StreamController<PatchEvent>.broadcast();
 
   StreamSubscription<rust.PatchAppEvent>? _engineSub;
@@ -40,13 +37,10 @@ class BridgeClient {
   /// failed `rust.init()` (e.g. socket bind error) doesn't re-init the lib.
   static bool _rustLibInitialized = false;
 
-  /// Stream of legacy-shaped events: `{"event": "<type>", ...}`.
-  Stream<Map<String, dynamic>> get events => _eventController.stream;
-
-  /// Typed engine pushes — the migration target for the legacy [events] map.
+  /// Typed engine pushes — consumed by the AppStore and the screens.
   Stream<PatchEvent> get pushes => _pushController.stream;
 
-  /// Boot the Rust engine and start forwarding events into [events].
+  /// Boot the Rust engine and start forwarding pushes onto [pushes].
   /// Safe to call again after a failed attempt (used by the boot Retry path).
   Future<void> connect() async {
     if (_connected) return;
@@ -67,11 +61,6 @@ class BridgeClient {
     final typed = patchEventFromRust(event);
     if (typed != null) _pushController.add(typed);
   }
-
-  void _emit(Map<String, dynamic> event) => _eventController.add(event);
-
-  void _emitError(Object e) =>
-      _emit({'event': 'error', 'message': e.toString()});
 
   // ── Commands (legacy fire-and-forget shape) ──────────────────────────────
 
@@ -112,62 +101,41 @@ class BridgeClient {
   /// failure.
   Future<void> sendDmFlash(String peerId) => rust.sendDmFlash(peerId: peerId);
 
-  Future<void> getChannels() async {
-    try {
-      final channels = await rust.getChannels();
-      _emit({
-        'event': 'channels',
-        'data': channels.map(_channelFromRust).toList(),
-      });
-    } catch (e) {
-      _emitError(e);
-    }
+  /// The current channel list. Returns directly (owned by `AppStore` —
+  /// candidate 2, ADR-0004); throws on failure.
+  Future<List<PatchChannel>> getChannels() async {
+    final channels = await rust.getChannels();
+    return channels.map(_channelFromRust).toList();
   }
 
-  Future<void> getPeers() async {
-    try {
-      final peers = await rust.getPeers();
-      _emit({'event': 'peers', 'data': peers.map(_peerFromRust).toList()});
-    } catch (e) {
-      _emitError(e);
-    }
+  /// The current peer list. Returns directly (owned by `AppStore` — candidate
+  /// 2, ADR-0004); throws on failure.
+  Future<List<PeerInfo>> getPeers() async {
+    final peers = await rust.getPeers();
+    return peers.map(_peerFromRust).toList();
   }
 
-  Future<void> getMessages(String channelId, {int limit = 500}) async {
-    try {
-      final messages = await rust.getMessages(
-        channelId: channelId,
-        limit: limit,
-      );
-      _emit({
-        'event': 'messages',
-        'channel_id': channelId,
-        'data': messages.map(_messageFromRust).toList(),
-      });
-    } catch (e) {
-      _emitError(e);
-    }
+  /// Fetch [channelId]'s recent message history. Returns directly (owned by
+  /// `AppStore` — candidate 2, ADR-0004); throws on failure.
+  Future<List<PatchMessage>> getMessages(String channelId,
+      {int limit = 500}) async {
+    final messages =
+        await rust.getMessages(channelId: channelId, limit: limit);
+    return messages.map(_messageFromRust).toList();
   }
 
-  Future<void> getInterfaces() async {
-    try {
-      final ifaces = await rust.getInterfaces();
-      _emit({
-        'event': 'interfaces',
-        'data': ifaces.map((i) => {'name': i.name, 'ip': i.ip}).toList(),
-      });
-    } catch (e) {
-      _emitError(e);
-    }
+  /// Available network interfaces (name + ip). Returns directly (single
+  /// consumer — settings); throws on failure (#59, ADR-0004).
+  Future<List<({String name, String ip})>> getInterfaces() async {
+    final ifaces = await rust.getInterfaces();
+    return ifaces.map((i) => (name: i.name, ip: i.ip)).toList();
   }
 
-  Future<void> getConfig() async {
-    try {
-      final cfg = await rust.getConfig();
-      _emit({'event': 'config', 'data': _configFromRust(cfg)});
-    } catch (e) {
-      _emitError(e);
-    }
+  /// The current config snapshot. Returns directly (owned by `AppStore` —
+  /// candidate 2, ADR-0004); throws on failure.
+  Future<AppConfig> getConfig() async {
+    final cfg = await rust.getConfig();
+    return _configFromRust(cfg);
   }
 
   /// Change the network interface (empty/'auto' → all interfaces). Throws on
@@ -180,13 +148,11 @@ class BridgeClient {
   /// `client_name_changed` is emitted by the engine event bus.
   Future<void> setClientName(String name) => rust.setClientName(name: name);
 
-  /// Set (or clear) the self-assigned role. Pass null/empty to clear it.
-  /// Refetches config so the change propagates to both screens; throws on
-  /// failure.
-  Future<void> setRole(String? role) async {
+  /// Set (or clear) the self-assigned role. Pass null/empty to clear it. Throws
+  /// on failure; the caller refetches config via the store (`_applyConfigChange`).
+  Future<void> setRole(String? role) {
     final trimmed = role?.trim();
-    await rust.setRole(role: (trimmed == null || trimmed.isEmpty) ? null : trimmed);
-    await getConfig();
+    return rust.setRole(role: (trimmed == null || trimmed.isEmpty) ? null : trimmed);
   }
 
   /// Remove dynamic peers (OscBeacon / Mdns) not heard from within [maxAgeSecs].
@@ -389,16 +355,11 @@ class BridgeClient {
     return (name: s.name, channelCount: s.channelCount);
   }
 
-  Future<void> listShowFiles() async {
-    try {
-      final list = await rust.listShowFiles();
-      _emit({
-        'event': 'show_files',
-        'data': list.map(_showFileMetaFromRust).toList(),
-      });
-    } catch (e) {
-      _emitError(e);
-    }
+  /// Saved show files. Returns directly (single consumer — the show-files
+  /// dialog); throws on failure (#59, ADR-0004).
+  Future<List<ShowFileMeta>> listShowFiles() async {
+    final list = await rust.listShowFiles();
+    return list.map(_showFileMetaFromRust).toList();
   }
 
   Future<void> deleteShowFile(String slug) => rust.deleteShowFile(slug: slug);
@@ -412,37 +373,26 @@ class BridgeClient {
   /// Set the global flash pulse count (3–7).
   Future<void> setFlashCount(int count) => rust.setFlashCount(count: count);
 
-  /// These setters refetch config so the change propagates to both screens;
-  /// each throws on failure (callers wrap in `runGuarded`).
-  Future<void> setHideKeyboard(bool enabled) async {
-    await rust.setHideKeyboard(enabled: enabled);
-    await getConfig();
-  }
+  /// These setters throw on failure; the caller refetches config via the store
+  /// (`_applyConfigChange`) so both screens reflect the change.
+  Future<void> setHideKeyboard(bool enabled) =>
+      rust.setHideKeyboard(enabled: enabled);
 
-  Future<void> setAudibleAlert(bool enabled) async {
-    await rust.setAudibleAlert(enabled: enabled);
-    await getConfig();
-  }
+  Future<void> setAudibleAlert(bool enabled) =>
+      rust.setAudibleAlert(enabled: enabled);
 
-  Future<void> setMacrosColumns(int columns) async {
-    await rust.setMacrosColumns(columns: columns);
-    await getConfig();
-  }
+  Future<void> setMacrosColumns(int columns) =>
+      rust.setMacrosColumns(columns: columns);
 
   /// Set the presence heartbeat interval (seconds). The engine validates 1–60
   /// and applies it live (the discovery loop re-reads the cadence each cycle).
-  Future<void> setHeartbeatInterval(int secs) async {
-    await rust.setHeartbeatInterval(secs: BigInt.from(secs));
-    await getConfig();
-  }
+  Future<void> setHeartbeatInterval(int secs) =>
+      rust.setHeartbeatInterval(secs: BigInt.from(secs));
 
   /// Set the OSC UDP port (1024–65535). The engine rebinds the socket live; a
   /// bind failure (e.g. port already in use) throws and leaves the persisted
   /// port unchanged.
-  Future<void> setOscPort(int port) async {
-    await rust.setOscPort(port: port);
-    await getConfig();
-  }
+  Future<void> setOscPort(int port) => rust.setOscPort(port: port);
 
   /// Set per-channel flash overrides. Pass 0 as [flashCount] to clear the
   /// per-channel override (revert to global). Throws on failure.
@@ -473,7 +423,6 @@ class BridgeClient {
   Future<void> dispose() async {
     await shutdown();
     await _engineSub?.cancel();
-    await _eventController.close();
     await _pushController.close();
   }
 }
