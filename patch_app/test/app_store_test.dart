@@ -21,9 +21,11 @@ class _FakeBridge extends BridgeClient {
   List<PeerInfo> peersToReturn = const [];
   AppConfig configToReturn = _cfg();
   List<PatchChannel> channelsToReturn = const [];
+  Map<String, List<PatchMessage>> messagesToReturn = {};
   int getPeersCalls = 0;
   int getConfigCalls = 0;
   int getChannelsCalls = 0;
+  int getMessagesCalls = 0;
 
   @override
   Stream<PatchEvent> get pushes => _pushController.stream;
@@ -45,10 +47,26 @@ class _FakeBridge extends BridgeClient {
     getChannelsCalls++;
     return channelsToReturn;
   }
+
+  @override
+  Future<List<PatchMessage>> getMessages(String channelId, {int limit = 500}) async {
+    getMessagesCalls++;
+    return messagesToReturn[channelId] ?? const [];
+  }
 }
 
 PatchChannel _chan(String id) =>
     PatchChannel(id: id, displayName: id.toUpperCase(), color: const Color(0xFF1E88E5));
+
+PatchMessage _msg(String channelId, String id) => PatchMessage(
+      messageId: id,
+      senderId: 's',
+      senderName: 'S',
+      channelId: channelId,
+      timestamp: DateTime.utc(2026, 6, 22),
+      priority: 1,
+      payload: 'hi',
+    );
 
 AppConfig _cfg({String clientName = 'Me', bool nameIsDefault = false}) =>
     AppConfig(
@@ -170,6 +188,55 @@ void main() {
 
     expect(bridge.getPeersCalls, 1, reason: 'one refetch for the whole burst');
     expect(store.peers.single.peerId, 'a');
+    expect(notified, 1);
+  });
+
+  test('MessageReceived push appends to the channel buffer and notifies',
+      () async {
+    var notified = 0;
+    store.addListener(() => notified++);
+
+    pushes.add(MessageReceived(_msg('rf', 'm1')));
+    await pumpEventQueue();
+
+    expect(store.messages['rf']?.map((m) => m.messageId), ['m1']);
+    expect(notified, 1);
+  });
+
+  test('ensureMessages fetches a channel once', () async {
+    bridge.messagesToReturn['rf'] = [_msg('rf', 'a'), _msg('rf', 'b')];
+
+    await store.ensureMessages('rf');
+    expect(store.messages['rf']?.length, 2);
+    expect(bridge.getMessagesCalls, 1);
+
+    await store.ensureMessages('rf'); // already loaded — no refetch
+    expect(bridge.getMessagesCalls, 1);
+  });
+
+  test('dropMessages clears a channel buffer and notifies', () async {
+    bridge.messagesToReturn['rf'] = [_msg('rf', 'a')];
+    await store.ensureMessages('rf');
+    var notified = 0;
+    store.addListener(() => notified++);
+
+    store.dropMessages('rf');
+
+    expect(store.messages.containsKey('rf'), isFalse);
+    expect(notified, 1);
+  });
+
+  test('DeliveryUpdated push tracks status and notifies', () async {
+    var notified = 0;
+    store.addListener(() => notified++);
+
+    pushes.add(const DeliveryUpdated(
+      'm1',
+      MessageDeliveryStatus(delivered: 1, total: 2, failed: false),
+    ));
+    await pumpEventQueue();
+
+    expect(store.delivery['m1']?.delivered, 1);
     expect(notified, 1);
   });
 

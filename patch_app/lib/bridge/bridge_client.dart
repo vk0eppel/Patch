@@ -126,20 +126,13 @@ class BridgeClient {
     return peers.map(_peerFromRust).toList();
   }
 
-  Future<void> getMessages(String channelId, {int limit = 500}) async {
-    try {
-      final messages = await rust.getMessages(
-        channelId: channelId,
-        limit: limit,
-      );
-      _emit({
-        'event': 'messages',
-        'channel_id': channelId,
-        'data': messages.map(_messageFromRust).toList(),
-      });
-    } catch (e) {
-      _emitError(e);
-    }
+  /// Fetch [channelId]'s recent message history. Returns directly (owned by
+  /// `AppStore` — candidate 2, ADR-0004); throws on failure.
+  Future<List<PatchMessage>> getMessages(String channelId,
+      {int limit = 500}) async {
+    final messages =
+        await rust.getMessages(channelId: channelId, limit: limit);
+    return messages.map(_messageFromRust).toList();
   }
 
   Future<void> getInterfaces() async {

@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
 import '../models/config.dart';
+import '../models/delivery_tracker.dart';
 import '../models/events.dart';
 import '../models/message.dart';
 
@@ -42,6 +43,47 @@ class AppStore extends ChangeNotifier {
 
   List<PatchChannel> _channels = const [];
   List<PatchChannel> get channels => _channels;
+
+  /// Mirror of the Rust ring-buffer cap (`MAX_BUFFER` in `state/mod.rs`) so the
+  /// in-memory list doesn't grow unbounded over a long show.
+  static const int _kMaxMessagesPerChannel = 500;
+
+  /// Per-channel (and per-DM) message buffers, keyed by channel id / `dm:<peer>`.
+  final Map<String, List<PatchMessage>> _messages = {};
+  Map<String, List<PatchMessage>> get messages => _messages;
+
+  /// Delivery status for Critical Messages we sent, keyed by message id.
+  final DeliveryTracker _delivery = DeliveryTracker();
+  Map<String, MessageDeliveryStatus> get delivery => _delivery.all;
+
+  /// Whether the buffer for [channelId] has been fetched.
+  bool hasMessages(String channelId) => _messages.containsKey(channelId);
+
+  /// Fetch [channelId]'s history if not already loaded.
+  Future<void> ensureMessages(String channelId) async {
+    if (_messages.containsKey(channelId)) return;
+    try {
+      _messages[channelId] = await _bridge.getMessages(channelId);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('AppStore.ensureMessages($channelId) failed: $e');
+    }
+  }
+
+  /// Drop the local buffer (and delivery entries) for [channelId], or all
+  /// channels when null — after a `clearMessages` command.
+  void dropMessages(String? channelId) {
+    if (channelId != null) {
+      final removed = _messages.remove(channelId);
+      if (removed != null) {
+        _delivery.clearForMessageIds(removed.map((m) => m.messageId));
+      }
+    } else {
+      _messages.clear();
+      _delivery.clearAll();
+    }
+    notifyListeners();
+  }
 
   /// Load initial domain state. Call once after the engine has connected.
   Future<void> start() async {
@@ -105,9 +147,19 @@ class AppStore extends ChangeNotifier {
         refreshConfig();
       case ChannelsChanged():
         refreshChannels();
-      // Not yet owned by the store — handled by the screens.
-      case MessageReceived():
-      case DeliveryUpdated():
+      // Store the message + track delivery. The flash/unread *reaction* is a
+      // screen-local concern (home's _handlePush), not the store's (#58).
+      case MessageReceived(:final message):
+        final list = _messages.putIfAbsent(message.channelId, () => [])
+          ..add(message);
+        if (list.length > _kMaxMessagesPerChannel) {
+          list.removeRange(0, list.length - _kMaxMessagesPerChannel);
+        }
+        notifyListeners();
+      case DeliveryUpdated(:final messageId, :final status):
+        _delivery.track(messageId, status);
+        notifyListeners();
+      // Screen-local UI — not the store's concern.
       case Flashed():
       case ChannelsOffered():
       case PermissionDenied():

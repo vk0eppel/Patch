@@ -8,7 +8,6 @@ import 'package:flutter/services.dart';
 import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
 import '../models/config.dart';
-import '../models/delivery_tracker.dart';
 import '../models/events.dart';
 import '../models/flash.dart';
 import '../models/message.dart';
@@ -50,7 +49,10 @@ class _HomeScreenState extends State<HomeScreen> {
   /// or a DM thread. See models/selection.dart.
   Selection _selection = const ChannelSelection({});
 
-  final Map<String, List<PatchMessage>> _messages = {};
+  /// Message buffers + delivery status are owned by the AppStore (#58); reading
+  /// via `of(context)` rebuilds when a message lands or a buffer changes.
+  Map<String, List<PatchMessage>> get _messages =>
+      AppStoreScope.of(context).messages;
 
   /// Incremented each time a flash arrives per channel — drives tab animation.
   final Map<String, int> _flashCounts = {};
@@ -87,10 +89,6 @@ class _HomeScreenState extends State<HomeScreen> {
   static const double _kMacroColumnWidth = 160.0;
   static const double _kPeersPanelWidth = 160.0;
 
-  /// Mirror of the Rust ring buffer cap (`MAX_BUFFER` in `state/mod.rs`) so the
-  /// in-memory list doesn't grow unbounded over a long show.
-  static const int _kMaxMessagesPerChannel = 500;
-
   /// Peers are owned by the shared [AppStore]; reading via `of(context)`
   /// rebuilds the screen when the list changes (candidate 2, ADR-0004).
   List<PeerInfo> get _peers => AppStoreScope.of(context).peers;
@@ -109,8 +107,6 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Macros shown on every channel (configured once); fired on the currently-
   /// selected channel(s). Owned by the AppStore config (#56).
   List<MacroMessage> get _globalMacros => _config?.globalMacros ?? const [];
-  /// Delivery status for criticals we've sent, keyed by message id.
-  final DeliveryTracker _delivery = DeliveryTracker();
 
   String get _clientName => _config?.clientName ?? '';
   String get _clientRole => _config?.role ?? '';
@@ -378,7 +374,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ? {'dm:${_selection.dmPeerId}'}
           : _selection.tabIds;
       for (final id in idsNeeded) {
-        if (!_messages.containsKey(id)) widget.bridge.getMessages(id);
+        AppStoreScope.read(context).ensureMessages(id);
       }
     });
     _syncSelection();
@@ -467,13 +463,6 @@ class _HomeScreenState extends State<HomeScreen> {
   void _dispatch(Map<String, dynamic> event) {
     final type = event['event'] as String?;
     switch (type) {
-      case 'messages':
-        final chId = event['channel_id'] as String;
-        final data = event['data'] as List<PatchMessage>;
-        setState(() {
-          _messages[chId] = data;
-        });
-
       case 'error':
         final msg = event['message'] as String? ?? 'Something went wrong';
         debugPrint('Bridge error: $msg');
@@ -523,14 +512,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Flash/unread reaction to an inbound message. Storage is the store's job
+  /// (#58); this only decides what (if anything) pulses. The store's append +
+  /// notify rebuilds the message list separately.
   void _onMessageReceived(PatchMessage msg) {
-    setState(() {
-      final list = _messages.putIfAbsent(msg.channelId, () => [])..add(msg);
-      // Keep the in-memory list bounded, mirroring the engine ring buffer.
-      if (list.length > _kMaxMessagesPerChannel) {
-        list.removeRange(0, list.length - _kMaxMessagesPerChannel);
-      }
-    });
     final flash = decideMessageFlash(
       msg: msg,
       channels: _channels,
@@ -554,9 +539,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// The store tracks delivery status (#58); this only raises the failure
+  /// SnackBar for a critical that couldn't be delivered.
   void _onDeliveryUpdated(String id, MessageDeliveryStatus status) {
-    setState(() => _delivery.track(id, status));
-    // A failed critical can't go unnoticed — also raise a red SnackBar.
     if (status.failed && mounted) {
       final who = status.total == 0
           ? 'no peers were online'
@@ -590,20 +575,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Drop the local copy of cleared messages after a `clearMessages` command
-  /// (was the `messages_cleared` event — ADR-0004). `channelId` null = all.
+  /// Drop the store's buffer for cleared messages after a `clearMessages`
+  /// command (#58). `channelId` null = all.
   void _onMessagesCleared(String? channelId) {
-    setState(() {
-      if (channelId != null) {
-        final removed = _messages.remove(channelId);
-        if (removed != null) {
-          _delivery.clearForMessageIds(removed.map((m) => m.messageId));
-        }
-      } else {
-        _messages.clear();
-        _delivery.clearAll();
-      }
-    });
+    AppStoreScope.read(context).dropMessages(channelId);
   }
 
   void _onPermissionDenied(String message) {
@@ -688,24 +663,22 @@ class _HomeScreenState extends State<HomeScreen> {
       if (id == kAllChannelId) {
         // Stash the current Channel selection for snap-back after send.
         _selection = AllSelection(sel is ChannelSelection ? sel.ids : {});
-        if (!_messages.containsKey(kAllChannelId)) {
-          widget.bridge.getMessages(kAllChannelId);
-        }
+        AppStoreScope.read(context).ensureMessages(kAllChannelId);
       } else if (id.startsWith('dm:')) {
         _selection = DmSelection(id.substring(3));
         _unreadDms.remove(id);
-        if (!_messages.containsKey(id)) widget.bridge.getMessages(id);
+        AppStoreScope.read(context).ensureMessages(id);
       } else if (sel is AllSelection || sel is DmSelection) {
         // Tapping a channel cancels ALL compose / DM mode.
         _selection = ChannelSelection({id});
-        if (!_messages.containsKey(id)) widget.bridge.getMessages(id);
+        AppStoreScope.read(context).ensureMessages(id);
       } else if (sel is ChannelSelection && sel.ids.contains(id)) {
         if (sel.ids.length > 1) {
           _selection = ChannelSelection({...sel.ids}..remove(id));
         }
       } else if (sel is ChannelSelection) {
         _selection = ChannelSelection({...sel.ids, id});
-        if (!_messages.containsKey(id)) widget.bridge.getMessages(id);
+        AppStoreScope.read(context).ensureMessages(id);
       }
     });
     _syncSelection();
@@ -734,7 +707,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _selection = DmSelection(peerId);
       _unreadDms.remove(key);
     });
-    if (!_messages.containsKey(key)) widget.bridge.getMessages(key);
+    AppStoreScope.read(context).ensureMessages(key);
     _syncSelection();
     if (_hideKeyboard) FocusScope.of(context).unfocus();
   }
@@ -815,7 +788,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       onMessagesCleared: _onMessagesCleared,
                       messages: _combinedMessages,
                       channelColors: _channelColors,
-                      delivery: _delivery.all,
+                      delivery: AppStoreScope.of(context).delivery,
                       aggregatedMacros: _aggregatedMacros,
                       bridge: widget.bridge,
                       showPeers: _showPeers,
