@@ -176,37 +176,23 @@ class BridgeClient {
   Future<void> setInterface(String name) =>
       rust.setInterface(name: name.isEmpty ? null : name);
 
-  Future<void> setClientName(String name) async {
-    try {
-      await rust.setClientName(name: name);
-      // `client_name_changed` is also emitted by the engine event bus.
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  /// Set the local Operator's display name. Throws on failure;
+  /// `client_name_changed` is emitted by the engine event bus.
+  Future<void> setClientName(String name) => rust.setClientName(name: name);
 
   /// Set (or clear) the self-assigned role. Pass null/empty to clear it.
+  /// Refetches config so the change propagates to both screens; throws on
+  /// failure.
   Future<void> setRole(String? role) async {
-    try {
-      final trimmed = role?.trim();
-      await rust.setRole(
-        role: (trimmed == null || trimmed.isEmpty) ? null : trimmed,
-      );
-      await getConfig();
-    } catch (e) {
-      _emitError(e);
-    }
+    final trimmed = role?.trim();
+    await rust.setRole(role: (trimmed == null || trimmed.isEmpty) ? null : trimmed);
+    await getConfig();
   }
 
   /// Remove dynamic peers (OscBeacon / Mdns) not heard from within [maxAgeSecs].
-  /// ManualIp / static peers are never removed.
-  Future<void> clearStalePeers({int maxAgeSecs = 60}) async {
-    try {
-      await rust.clearStalePeers(maxAgeSecs: BigInt.from(maxAgeSecs));
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  /// ManualIp / static peers are never removed. Throws on failure.
+  Future<void> clearStalePeers({int maxAgeSecs = 60}) =>
+      rust.clearStalePeers(maxAgeSecs: BigInt.from(maxAgeSecs));
 
   /// Add a Static Peer. Throws on failure; the caller refetches config
   /// (`_applyConfigChange`) — slice 1.3 (ADR-0004).
@@ -217,21 +203,8 @@ class BridgeClient {
   Future<void> removeStaticPeer(String address, int port) =>
       rust.removeStaticPeer(address: address, port: port);
 
-  Future<void> upsertChannel(
-    String id,
-    String displayName,
-    String color,
-  ) async {
-    try {
-      await rust.upsertChannel(
-        id: id,
-        displayName: displayName,
-        color: color,
-      );
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  Future<void> upsertChannel(String id, String displayName, String color) =>
+      rust.upsertChannel(id: id, displayName: displayName, color: color);
 
   Future<void> upsertMacro({
     required String channelId,
@@ -246,9 +219,8 @@ class BridgeClient {
     String? oscPath,
     String? oscArg,
     MacroOscArgType oscArgType = MacroOscArgType.string,
-  }) async {
-    try {
-      await rust.upsertMacro(
+  }) =>
+      rust.upsertMacro(
         channelId: channelId,
         label: label,
         payload: payload,
@@ -258,39 +230,32 @@ class BridgeClient {
         midiCc: midiCc,
         osc: _buildOsc(oscAddress, oscPort, oscPath, oscArg, oscArgType),
       );
-    } catch (e) {
-      _emitError(e);
-    }
-  }
 
   /// Fire an arbitrary OSC message to external gear (the dual-action half of an
   /// OSC macro — the Patch message is sent separately via [sendMessage]).
+  /// Throws on failure.
   Future<void> sendOscMacro(
     String address,
     int port,
     String path,
     String? arg, [
     MacroOscArgType argType = MacroOscArgType.string,
-  ]) async {
-    try {
-      await rust.sendOscMacro(
+  ]) =>
+      rust.sendOscMacro(
         address: address,
         port: port,
         path: path,
         arg: arg,
         argType: _toRustArgType(argType),
       );
-    } catch (e) {
-      _emitError(e);
-    }
-  }
 
   /// Names of available MIDI input ports (for a future port-selector UI).
+  /// Returns an empty list on failure — a non-critical read with a sensible
+  /// fallback, so it neither throws nor surfaces an error.
   Future<List<String>> getMidiPorts() async {
     try {
       return await rust.getMidiPorts();
-    } catch (e) {
-      _emitError(e);
+    } catch (_) {
       return const [];
     }
   }
@@ -298,22 +263,12 @@ class BridgeClient {
   Future<void> deleteMacro({
     required String channelId,
     required String label,
-  }) async {
-    try {
-      await rust.deleteMacro(channelId: channelId, label: label);
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  }) =>
+      rust.deleteMacro(channelId: channelId, label: label);
 
   /// Reorder a channel's macros to match [labels] (drag-to-reorder).
-  Future<void> reorderMacros(String channelId, List<String> labels) async {
-    try {
-      await rust.reorderMacros(channelId: channelId, orderedLabels: labels);
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  Future<void> reorderMacros(String channelId, List<String> labels) =>
+      rust.reorderMacros(channelId: channelId, orderedLabels: labels);
 
   // ── Global macros (shown on every channel; fired on the current channel) ────
 
@@ -363,24 +318,12 @@ class BridgeClient {
 
   /// Push the UI's current channel selection to the engine so a MIDI-triggered
   /// global macro fires on the same channel(s) as a tap/F-key. Fire-and-forget.
-  Future<void> setSelectedChannels(List<String> ids) async {
-    try {
-      await rust.setSelectedChannels(ids: ids);
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  Future<void> setSelectedChannels(List<String> ids) =>
+      rust.setSelectedChannels(ids: ids);
 
   /// Tell the engine which peer's DM thread is open (null when none), so a
   /// MIDI-triggered macro routes to that peer the same way a tap/F-key would.
-  /// Fire-and-forget.
-  Future<void> setDmTarget(String? peerId) async {
-    try {
-      await rust.setDmTarget(peerId: peerId);
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  Future<void> setDmTarget(String? peerId) => rust.setDmTarget(peerId: peerId);
 
   Future<void> deleteGlobalMacro(String label) =>
       rust.deleteGlobalMacro(label: label);
@@ -392,23 +335,12 @@ class BridgeClient {
   Future<void> reorderGlobalMacros(List<String> labels) =>
       rust.reorderGlobalMacros(orderedLabels: labels);
 
-  Future<void> deleteChannel(String id) async {
-    try {
-      await rust.deleteChannel(id: id);
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  Future<void> deleteChannel(String id) => rust.deleteChannel(id: id);
 
   /// Export messages to a CSV file at [path].
   /// Pass [channelId] to export a single channel, or null for all channels.
-  Future<void> exportMessages({String? channelId, required String path}) async {
-    try {
-      await rust.exportMessages(channelId: channelId, path: path);
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  Future<void> exportMessages({String? channelId, required String path}) =>
+      rust.exportMessages(channelId: channelId, path: path);
 
   /// Clear messages for [channelId], or all channels when null. Throws on
   /// failure; the caller updates its local message buffer.
@@ -417,28 +349,18 @@ class BridgeClient {
 
   /// Ask a peer (by id) for its channel layout. The reply arrives asynchronously
   /// as a `channels_offered` event (not auto-applied — the UI previews + merges).
-  Future<void> requestChannels(String peerId) async {
-    try {
-      await rust.requestChannels(peerId: peerId);
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  Future<void> requestChannels(String peerId) =>
+      rust.requestChannels(peerId: peerId);
 
   /// Adopt offered channels — merge (adds only ids not already present).
   /// Returns the number of channels actually added; throws on failure.
   Future<int> adoptChannels(List<PatchChannel> channels) =>
       rust.adoptChannels(channels: channels.map(_channelToRust).toList());
 
-  /// Reset all channels to factory defaults (AUDIO · RF · LIGHTING · VIDEO · STAGE).
-  Future<void> resetChannels() async {
-    try {
-      await rust.resetChannels();
-      // ChannelListUpdated is emitted by the engine; home_screen will refresh.
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  /// Reset all channels to factory defaults (AUDIO · RF · LIGHTING · VIDEO ·
+  /// STAGE). Throws on failure. ChannelListUpdated is emitted by the engine, so
+  /// the screens refresh via the ChannelsChanged push.
+  Future<void> resetChannels() => rust.resetChannels();
 
   /// Save the current layout as a show file. Returns its slug + name; throws on
   /// failure. The caller reports the result.
@@ -448,35 +370,23 @@ class BridgeClient {
   }
 
   /// Export the current layout to an arbitrary file path (from a file picker).
-  Future<void> exportLayout(String path, {String name = ''}) async {
-    try {
-      await rust.exportLayout(path: path, name: name);
-    } catch (e) {
-      _emitError(e);
-    }
+  /// Throws on failure.
+  Future<void> exportLayout(String path, {String name = ''}) =>
+      rust.exportLayout(path: path, name: name);
+
+  /// Import a show file from an arbitrary file path (from a file picker) and
+  /// apply it. Returns the loaded name + channel count; throws on failure. The
+  /// caller refreshes (channels also refresh via the ChannelsChanged push).
+  Future<({String name, int channelCount})> importLayout(String path) async {
+    final s = await rust.importLayout(path: path);
+    return (name: s.name, channelCount: s.channelCount);
   }
 
-  /// Import a show file from an arbitrary file path (from a file picker) and apply it.
-  Future<void> importLayout(String path) async {
-    try {
-      final s = await rust.importLayout(path: path);
-      _emit({'event': 'show_file_loaded', 'name': s.name, 'channel_count': s.channelCount});
-    } catch (e) {
-      _emitError(e);
-    }
-  }
-
-  Future<void> loadShowFile(String slug) async {
-    try {
-      final s = await rust.loadShowFile(slug: slug);
-      _emit({
-        'event': 'show_file_loaded',
-        'name': s.name,
-        'channel_count': s.channelCount,
-      });
-    } catch (e) {
-      _emitError(e);
-    }
+  /// Load a saved show file by slug and apply it. Returns the loaded name +
+  /// channel count; throws on failure.
+  Future<({String name, int channelCount})> loadShowFile(String slug) async {
+    final s = await rust.loadShowFile(slug: slug);
+    return (name: s.name, channelCount: s.channelCount);
   }
 
   Future<void> listShowFiles() async {
@@ -491,13 +401,7 @@ class BridgeClient {
     }
   }
 
-  Future<void> deleteShowFile(String slug) async {
-    try {
-      await rust.deleteShowFile(slug: slug);
-    } catch (e) {
-      _emitError(e);
-    }
-  }
+  Future<void> deleteShowFile(String slug) => rust.deleteShowFile(slug: slug);
 
   Future<void> setFlashOnCritical(bool enabled) =>
       rust.setFlashOnCritical(enabled: enabled);
@@ -508,74 +412,52 @@ class BridgeClient {
   /// Set the global flash pulse count (3–7).
   Future<void> setFlashCount(int count) => rust.setFlashCount(count: count);
 
+  /// These setters refetch config so the change propagates to both screens;
+  /// each throws on failure (callers wrap in `runGuarded`).
   Future<void> setHideKeyboard(bool enabled) async {
-    try {
-      await rust.setHideKeyboard(enabled: enabled);
-      await getConfig();
-    } catch (e) {
-      _emitError(e);
-    }
+    await rust.setHideKeyboard(enabled: enabled);
+    await getConfig();
   }
 
   Future<void> setAudibleAlert(bool enabled) async {
-    try {
-      await rust.setAudibleAlert(enabled: enabled);
-      await getConfig();
-    } catch (e) {
-      _emitError(e);
-    }
+    await rust.setAudibleAlert(enabled: enabled);
+    await getConfig();
   }
 
   Future<void> setMacrosColumns(int columns) async {
-    try {
-      await rust.setMacrosColumns(columns: columns);
-      await getConfig();
-    } catch (e) {
-      _emitError(e);
-    }
+    await rust.setMacrosColumns(columns: columns);
+    await getConfig();
   }
 
   /// Set the presence heartbeat interval (seconds). The engine validates 1–60
   /// and applies it live (the discovery loop re-reads the cadence each cycle).
   Future<void> setHeartbeatInterval(int secs) async {
-    try {
-      await rust.setHeartbeatInterval(secs: BigInt.from(secs));
-      await getConfig();
-    } catch (e) {
-      _emitError(e);
-    }
+    await rust.setHeartbeatInterval(secs: BigInt.from(secs));
+    await getConfig();
   }
 
   /// Set the OSC UDP port (1024–65535). The engine rebinds the socket live; a
-  /// bind failure (e.g. port already in use) surfaces as an error and leaves the
-  /// persisted port unchanged.
+  /// bind failure (e.g. port already in use) throws and leaves the persisted
+  /// port unchanged.
   Future<void> setOscPort(int port) async {
-    try {
-      await rust.setOscPort(port: port);
-      await getConfig();
-    } catch (e) {
-      _emitError(e);
-    }
+    await rust.setOscPort(port: port);
+    await getConfig();
   }
 
+  /// Set per-channel flash overrides. Pass 0 as [flashCount] to clear the
+  /// per-channel override (revert to global). Throws on failure.
   Future<void> setChannelFlash(
     String channelId, {
     bool? flashOnCritical,
     bool? flashOnMessage,
-    /// Pass 0 to clear the per-channel override (revert to global).
     int? flashCount,
-  }) async {
-    try {
-      await rust.setChannelFlash(
+  }) =>
+      rust.setChannelFlash(
         channelId: channelId,
         flashOnCritical: flashOnCritical,
         flashOnMessage: flashOnMessage,
         flashCount: flashCount,
       );
-    } catch (e) {
-      _emitError(e);
-    }
-  }
 
   /// Announce departure so peers drop us promptly (best-effort). Safe to call
   /// more than once and before/without a full [dispose].

@@ -183,13 +183,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _saveName() {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) return;
-    widget.bridge.setClientName(name);
+    runGuarded(context, () => widget.bridge.setClientName(name));
   }
 
   /// Save the role (empty string clears it). No engine event echoes back, so
   /// show the "saved" tick optimistically for a moment.
   void _saveRole() {
-    widget.bridge.setRole(_roleCtrl.text);
+    runGuarded(context, () => widget.bridge.setRole(_roleCtrl.text));
     setState(() => _roleSaved = true);
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) setState(() => _roleSaved = false);
@@ -254,7 +254,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _requestFromPeer(String peerId, String name) {
     setState(() => _awaitingOffer = true);
-    widget.bridge.requestChannels(peerId);
+    runGuarded(context, () => widget.bridge.requestChannels(peerId));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Requesting channels from $name…'),
@@ -375,7 +375,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: PatchTheme.critical),
             onPressed: () {
-              widget.bridge.deleteChannel(channel.id);
+              runGuarded(context, () => widget.bridge.deleteChannel(channel.id));
               Navigator.pop(context);
             },
             child: const Text('Delete', style: TextStyle(color: Colors.white)),
@@ -447,9 +447,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Platform.environment['USERNAME'] ??
                   'crew';
               _nameCtrl.text = name;
-              widget.bridge.setClientName(name);
+              runGuarded(context, () => widget.bridge.setClientName(name));
               _roleCtrl.clear();
-              widget.bridge.setRole(null);
+              runGuarded(context, () => widget.bridge.setRole(null));
             }),
           ]),
           const SizedBox(height: 4),
@@ -536,7 +536,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 min: 1,
                 max: 60,
                 suffix: 's',
-                onSubmit: (secs) => widget.bridge.setHeartbeatInterval(secs),
+                onSubmit: (secs) =>
+                    runGuarded(context, () => widget.bridge.setHeartbeatInterval(secs)),
               ),
             ],
           ),
@@ -568,7 +569,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 value: _oscPort,
                 min: 1024,
                 max: 65535,
-                onSubmit: (port) => widget.bridge.setOscPort(port),
+                onSubmit: (port) =>
+                    runGuarded(context, () => widget.bridge.setOscPort(port)),
               ),
             ],
           ),
@@ -659,9 +661,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _applyConfigChange(() => widget.bridge.setFlashOnCritical(true));
               _applyConfigChange(() => widget.bridge.setFlashOnMessage(false));
               _applyConfigChange(() => widget.bridge.setFlashCount(4));
-              widget.bridge.setHideKeyboard(true);
-              widget.bridge.setAudibleAlert(false);
-              widget.bridge.setMacrosColumns(1);
+              runGuarded(context, () => widget.bridge.setHideKeyboard(true));
+              runGuarded(context, () => widget.bridge.setAudibleAlert(false));
+              runGuarded(context, () => widget.bridge.setMacrosColumns(1));
             }),
           ]),
           const SizedBox(height: 4),
@@ -713,7 +715,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             contentPadding: EdgeInsets.zero,
             onChanged: (val) {
               setState(() => _audibleAlert = val);
-              widget.bridge.setAudibleAlert(val);
+              runGuarded(context, () => widget.bridge.setAudibleAlert(val));
             },
           ),
           const SizedBox(height: 8),
@@ -781,7 +783,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onSelectionChanged: (s) {
                   final val = s.first;
                   setState(() => _macrosColumns = val);
-                  widget.bridge.setMacrosColumns(val);
+                  runGuarded(context, () => widget.bridge.setMacrosColumns(val));
                 },
                 style: SegmentedButton.styleFrom(
                   foregroundColor: PatchTheme.textSecondary,
@@ -809,7 +811,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               contentPadding: EdgeInsets.zero,
               onChanged: (val) {
                 setState(() => _hideKeyboard = val);
-                widget.bridge.setHideKeyboard(val);
+                runGuarded(context, () => widget.bridge.setHideKeyboard(val));
               },
             ),
           ],
@@ -860,7 +862,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               _resetButton('Channels & Macros', () {
-                widget.bridge.resetChannels();
+                runGuarded(context, () => widget.bridge.resetChannels());
               }),
             ],
           ),
@@ -1006,22 +1008,28 @@ class _ChannelMacroEditor extends StatelessWidget {
       macros: channel.macros,
       keyFor: (m) => '${channel.id}:${m.label}',
       emptyText: 'No macros yet',
-      onUpsert: (l, p, k, pr, mn, mc, osc) => bridge.upsertMacro(
-        channelId: channel.id,
-        label: l,
-        payload: p,
-        keyBinding: k,
-        priority: pr,
-        midiNote: mn,
-        midiCc: mc,
-        oscAddress: osc?.address,
-        oscPort: osc?.port,
-        oscPath: osc?.path,
-        oscArg: osc?.arg,
-        oscArgType: osc?.argType ?? MacroOscArgType.string,
-      ),
-      onDelete: (m) => bridge.deleteMacro(channelId: channel.id, label: m.label),
-      onReorder: (labels) => bridge.reorderMacros(channel.id, labels),
+      // Channel-macro CRUD refreshes the screens via the ChannelsChanged push
+      // (no config refetch needed); runGuarded surfaces failures (ADR-0004).
+      onUpsert: (l, p, k, pr, mn, mc, osc) => runGuarded(
+          context,
+          () => bridge.upsertMacro(
+                channelId: channel.id,
+                label: l,
+                payload: p,
+                keyBinding: k,
+                priority: pr,
+                midiNote: mn,
+                midiCc: mc,
+                oscAddress: osc?.address,
+                oscPort: osc?.port,
+                oscPath: osc?.path,
+                oscArg: osc?.arg,
+                oscArgType: osc?.argType ?? MacroOscArgType.string,
+              )),
+      onDelete: (m) => runGuarded(
+          context, () => bridge.deleteMacro(channelId: channel.id, label: m.label)),
+      onReorder: (labels) =>
+          runGuarded(context, () => bridge.reorderMacros(channel.id, labels)),
       trailingActions: [
         IconButton(
           icon: const Icon(Icons.edit_outlined, size: 16, color: PatchTheme.textMuted),
@@ -1068,8 +1076,8 @@ class _ChannelMacroEditor extends StatelessWidget {
               ),
               value: channel.flashOnMessage,
               activeThumbColor: PatchTheme.accent,
-              onChanged: (val) =>
-                  bridge.setChannelFlash(channel.id, flashOnMessage: val),
+              onChanged: (val) => runGuarded(
+                  context, () => bridge.setChannelFlash(channel.id, flashOnMessage: val)),
             ),
             SwitchListTile(
               dense: true,
@@ -1083,8 +1091,8 @@ class _ChannelMacroEditor extends StatelessWidget {
               ),
               value: channel.flashOnCritical,
               activeThumbColor: PatchTheme.accent,
-              onChanged: (val) =>
-                  bridge.setChannelFlash(channel.id, flashOnCritical: val),
+              onChanged: (val) => runGuarded(
+                  context, () => bridge.setChannelFlash(channel.id, flashOnCritical: val)),
             ),
             const SizedBox(height: 4),
             Row(
@@ -1101,11 +1109,13 @@ class _ChannelMacroEditor extends StatelessWidget {
                 // null = use global; picker shows "–" for global
                 _FlashCountPicker(
                   value: channel.flashCount,
-                  onChanged: (val) => bridge.setChannelFlash(
-                    channel.id,
-                    // 0 signals "clear override" to the Rust side
-                    flashCount: val ?? 0,
-                  ),
+                  onChanged: (val) => runGuarded(
+                      context,
+                      () => bridge.setChannelFlash(
+                            channel.id,
+                            // 0 signals "clear override" to the Rust side
+                            flashCount: val ?? 0,
+                          )),
                 ),
               ],
             ),
@@ -1892,7 +1902,7 @@ void _showChannelDialog(
                   setDialogState(() => error = 'A channel with ID "$id" already exists.');
                   return;
                 }
-                bridge.upsertChannel(id, name, _colorToHex(color));
+                runGuarded(context, () => bridge.upsertChannel(id, name, _colorToHex(color)));
                 Navigator.pop(ctx);
               },
               child: const Text('Save'),

@@ -282,7 +282,10 @@ class _HomeScreenState extends State<HomeScreen> {
     // Dual action: also fire the macro's OSC packet to external gear (once).
     final osc = cm.macro.osc;
     if (osc != null) {
-      widget.bridge.sendOscMacro(osc.address, osc.port, osc.path, osc.arg, osc.argType);
+      runGuarded(
+          context,
+          () => widget.bridge
+              .sendOscMacro(osc.address, osc.port, osc.path, osc.arg, osc.argType));
     }
   }
 
@@ -374,9 +377,10 @@ class _HomeScreenState extends State<HomeScreen> {
       showNamePrompt(
         context,
         currentName: currentName,
-        onSaveName: (name) => widget.bridge.setClientName(name),
-        onSaveRole: (role) =>
-            widget.bridge.setRole(role.isEmpty ? null : role),
+        onSaveName: (name) =>
+            runGuarded(context, () => widget.bridge.setClientName(name)),
+        onSaveRole: (role) => runGuarded(
+            context, () => widget.bridge.setRole(role.isEmpty ? null : role)),
       );
     });
   }
@@ -435,12 +439,6 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _peers = data;
         });
-
-      case 'show_file_loaded':
-        widget.bridge.getChannels();
-        // A show file also restores static peers — refresh the peers panel.
-        widget.bridge.getPeers();
-        setState(() => _selection = const ChannelSelection({}));
 
       case 'config':
         final cfg = event['data'] as AppConfig;
@@ -734,8 +732,9 @@ class _HomeScreenState extends State<HomeScreen> {
   /// MIDI macro fired while a DM thread is open goes to that peer instead of
   /// silently matching no selected channel (see `_fireMacro`'s DM-mode rule).
   void _syncSelection() {
-    widget.bridge.setSelectedChannels(_selection.tabIds.toList());
-    widget.bridge.setDmTarget(_selection.dmPeerId);
+    runGuarded(context,
+        () => widget.bridge.setSelectedChannels(_selection.tabIds.toList()));
+    runGuarded(context, () => widget.bridge.setDmTarget(_selection.dmPeerId));
   }
 
   // ── Build ───────────────────────────────────────────────────────────────────
@@ -770,7 +769,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 child: PeersPanel(
                   peers: _peers,
-                  onClearStale: () => widget.bridge.clearStalePeers(),
+                  onClearStale: () =>
+                      runGuarded(context, () => widget.bridge.clearStalePeers()),
                   onClose: () => setState(() => _showPeers = false),
                   onDm: _openDm,
                   unreadPeerIds: {
@@ -897,7 +897,13 @@ class _ChannelStrip extends StatelessWidget {
                     tooltip: 'Show Files',
                     onPressed: () => showDialog(
                       context: context,
-                      builder: (_) => ShowFilesDialog(bridge: bridge),
+                      // After a load, channels refresh via the ChannelsChanged
+                      // push (the 'channels' arm also fixes a stale selection);
+                      // peers aren't push-backed, so refresh them here (ADR-0004).
+                      builder: (_) => ShowFilesDialog(
+                        bridge: bridge,
+                        onShowFileLoaded: () => bridge.getPeers(),
+                      ),
                     ),
                   ),
                 ),
@@ -1140,14 +1146,15 @@ class _ChannelViewState extends State<_ChannelView> {
       allowedExtensions: ['csv'],
       type: FileType.custom,
     );
-    if (path == null) return;
+    if (path == null || !mounted) return;
     // DM → that thread; ALL / multi-channel → everything (null); single → that one.
     final channelId = widget.isDmMode
         ? 'dm:${widget.dmPeerId}'
         : (!widget.isAllMode && widget.selectedChannels.length == 1)
             ? widget.selectedChannels.first.id
             : null;
-    widget.bridge.exportMessages(channelId: channelId, path: path);
+    runGuarded(
+        context, () => widget.bridge.exportMessages(channelId: channelId, path: path));
   }
 
   void _confirmClear(BuildContext context) {
