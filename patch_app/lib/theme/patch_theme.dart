@@ -96,6 +96,14 @@ class PatchTheme {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
         ),
       ),
+      // Floating + lifted clear of footerHeight so an operational alert (delivery
+      // failure, permission denied, DM-offline warning, generic runGuarded error)
+      // never covers the compose bar / identity chip / clear-inactive row pinned
+      // at the bottom of the operating screen (#70).
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        insetPadding: const EdgeInsets.fromLTRB(12, 0, 12, footerHeight + 12),
+      ),
     );
   }
 }
