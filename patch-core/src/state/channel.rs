@@ -146,7 +146,7 @@ pub(crate) fn validate_osc_target(t: &OscTarget) -> anyhow::Result<()> {
         anyhow::bail!("OSC port 0 is not valid");
     }
     if !t.path.starts_with('/') {
-        anyhow::bail!("OSC path must start with '/'");
+        anyhow::bail!("OSC path must start with '/': {:?}", t.path);
     }
     if let Some(arg) = &t.arg {
         crate::osc::codec::build_osc_arg(t.arg_type, arg)?;
@@ -406,7 +406,8 @@ mod tests {
     #[test]
     fn validate_osc_target_rejects_path_without_leading_slash() {
         let t = target("127.0.0.1", 53000, "cue/1/start", None, OscArgKind::String);
-        assert!(validate_osc_target(&t).is_err());
+        let err = validate_osc_target(&t).unwrap_err();
+        assert!(err.to_string().contains("cue/1/start"));
     }
 
     #[test]

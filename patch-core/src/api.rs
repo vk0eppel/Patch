@@ -216,17 +216,14 @@ pub(crate) async fn dispatch_message(
 
 /// Send an arbitrary outbound OSC message to external gear (the "OSC macro"
 /// action). Shared by the FFI `send_osc_macro` and the engine-side MIDI fire path.
-/// Validates the address + port + path; the packet goes out on the OSC socket via
-/// the normal send queue.
+/// Validates via `channel::validate_osc_target` — the single source of truth for
+/// "is this OSC target legal" (ADR-0002) — applying the same "reject immediately"
+/// policy as a live UI edit, since this fire path is always Operator/MIDI-triggered
+/// in the moment. The packet goes out on the OSC socket via the normal send queue.
 #[frb(ignore)]
 pub(crate) async fn dispatch_osc(transport: &Arc<Transport>, target: &OscTarget) -> Result<()> {
-    let ip: IpAddr = target
-        .address
-        .parse()
-        .map_err(|_| anyhow::anyhow!("invalid OSC address '{}'", target.address))?;
-    if target.port == 0 {
-        anyhow::bail!("OSC port 0 is not valid");
-    }
+    channel::validate_osc_target(target)?;
+    let ip: IpAddr = target.address.parse().expect("validated above");
     let bytes = encode_osc(&target.path, target.arg_type, target.arg.as_deref())?;
     transport
         .send_to(bytes, SocketAddr::new(ip, target.port))
@@ -236,6 +233,10 @@ pub(crate) async fn dispatch_osc(transport: &Arc<Transport>, target: &OscTarget)
 
 /// Fire an OSC message to an external target (e.g. QLab). Used by the UI's
 /// dual-action macro (the macro sends its Patch message *and* this OSC packet).
+/// Validates before touching `engine()` — same pattern as `upsert_macro` — so a
+/// bad target returns Err without a running engine; `dispatch_osc` validates
+/// again for its other caller (the MIDI fire path), which doesn't go through
+/// `engine()` at all.
 pub async fn send_osc_macro(
     address: String,
     port: u16,
@@ -250,6 +251,7 @@ pub async fn send_osc_macro(
         arg,
         arg_type,
     };
+    channel::validate_osc_target(&target)?;
     dispatch_osc(&engine().transport, &target).await
 }
 
@@ -1120,6 +1122,69 @@ mod tests {
             None,
             None,
             Some(bad),
+        )
+        .await
+        .is_err());
+    }
+
+    /// `send_osc_macro` validates via `dispatch_osc` → `validate_osc_target`
+    /// before touching `engine()` (#65), so these all return Err without a
+    /// running engine — same pattern as `upsert_channel_rejects_reserved_all_id`.
+    #[tokio::test]
+    async fn send_osc_macro_rejects_invalid_address() {
+        use crate::osc::types::OscArgKind;
+
+        assert!(super::send_osc_macro(
+            "not-an-ip".into(),
+            53000,
+            "/cue/1/start".into(),
+            None,
+            OscArgKind::String,
+        )
+        .await
+        .is_err());
+    }
+
+    #[tokio::test]
+    async fn send_osc_macro_rejects_port_zero() {
+        use crate::osc::types::OscArgKind;
+
+        assert!(super::send_osc_macro(
+            "127.0.0.1".into(),
+            0,
+            "/cue/1/start".into(),
+            None,
+            OscArgKind::String,
+        )
+        .await
+        .is_err());
+    }
+
+    #[tokio::test]
+    async fn send_osc_macro_rejects_path_without_leading_slash() {
+        use crate::osc::types::OscArgKind;
+
+        assert!(super::send_osc_macro(
+            "127.0.0.1".into(),
+            53000,
+            "cue/1/start".into(),
+            None,
+            OscArgKind::String,
+        )
+        .await
+        .is_err());
+    }
+
+    #[tokio::test]
+    async fn send_osc_macro_rejects_mismatched_arg_type() {
+        use crate::osc::types::OscArgKind;
+
+        assert!(super::send_osc_macro(
+            "127.0.0.1".into(),
+            53000,
+            "/cue/1/start".into(),
+            Some("loud".into()),
+            OscArgKind::Float,
         )
         .await
         .is_err());
