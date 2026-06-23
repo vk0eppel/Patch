@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 use uuid::Uuid;
 
-use super::channel::{Channel, MacroMessage};
+use super::channel::{sanitize_loaded_channels, sanitize_loaded_macros, Channel, MacroMessage};
 
 // ── Data directory resolution ────────────────────────────────────────────────
 //
@@ -152,6 +152,23 @@ impl StaticPeer {
     }
 }
 
+/// Drops any peer in `peers` that fails [`validate_static_peer`], logging a
+/// warning for each — same load-time, drop-and-warn policy as
+/// `channel::sanitize_loaded_channels` (ADR-0006).
+fn sanitize_loaded_static_peers(peers: &mut Vec<StaticPeer>) {
+    peers.retain(|p| match validate_static_peer(&p.address, p.port) {
+        Ok(()) => true,
+        Err(e) => {
+            tracing::warn!(
+                "patch.toml: dropping static peer {:?} at load — {}",
+                p.label.as_deref().unwrap_or(p.address.as_str()),
+                e
+            );
+            false
+        }
+    });
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -197,6 +214,7 @@ impl Config {
         if target.exists() {
             let raw = std::fs::read_to_string(&target)?;
             let mut config: Config = toml::from_str(&raw)?;
+            config.sanitize();
             // Bring the schema up to date; persist if anything changed so the
             // next load is a no-op.
             if migrate(&mut config) {
@@ -209,6 +227,7 @@ impl Config {
         if legacy.exists() {
             let raw = std::fs::read_to_string(legacy)?;
             let mut config: Config = toml::from_str(&raw)?;
+            config.sanitize();
             migrate(&mut config);
             // Persist into the new location so subsequent saves don't fight CWD.
             config.save()?;
@@ -219,6 +238,16 @@ impl Config {
         let config = Config::default();
         config.save()?;
         Ok(config)
+    }
+
+    /// Drops any macro (per-channel or global) or static peer that fails
+    /// validation, logging a warning for each — load-time policy for a
+    /// hand-edited `patch.toml` (ADR-0006: the 4th OSC-target/static-peer
+    /// trust level, drop-and-warn, never refuse to start).
+    fn sanitize(&mut self) {
+        sanitize_loaded_channels(&mut self.default_channels);
+        sanitize_loaded_macros(&mut self.global_macros, "global macros");
+        sanitize_loaded_static_peers(&mut self.static_peers);
     }
 
     pub fn save(&self) -> Result<()> {
@@ -510,6 +539,86 @@ flash_on_message = false
         // The TOML omits `global_macros`, so serde fills it empty — an existing
         // config is never retro-seeded with the new defaults.
         assert!(cfg.global_macros.is_empty());
+    }
+
+    /// A hand-edited `patch.toml` (ADR-0006) with one bad macro per
+    /// channel-macro-list, one bad global macro, and one bad static peer,
+    /// each mixed in alongside a valid sibling — `sanitize` must drop only
+    /// the bad entries and leave everything else untouched.
+    #[test]
+    fn sanitize_drops_only_the_invalid_entries() {
+        let raw = r##"
+config_version = 1
+client_id = "00000000-0000-0000-0000-000000000000"
+client_name = "FOH Engineer"
+osc_port = 9000
+network_interface = "en0"
+heartbeat_interval_secs = 7
+flash_on_critical = true
+flash_on_message = false
+flash_count = 4
+macros_columns = 1
+hide_keyboard = true
+
+[[static_peers]]
+address = "192.168.1.50"
+port = 9000
+label = "Monitor World"
+
+[[static_peers]]
+address = "not-an-ip"
+port = 9000
+label = "Bad Peer"
+
+[[default_channels]]
+id = "rf"
+display_name = "RF"
+color = "#1E88E5"
+flash_on_critical = true
+flash_on_message = false
+
+[[default_channels.macros]]
+label = "GOOD"
+payload = "Go"
+priority = 1
+
+[[default_channels.macros]]
+label = "BAD"
+payload = "Go bad"
+priority = 1
+
+[default_channels.macros.osc]
+address = "192.168.1.50"
+port = 53000
+path = "cue/1/start"
+
+[[global_macros]]
+label = "GOOD GLOBAL"
+payload = "ok"
+priority = 1
+
+[[global_macros]]
+label = "BAD GLOBAL"
+payload = "bad"
+priority = 1
+
+[global_macros.osc]
+address = "192.168.1.50"
+port = 0
+path = "/cue/2/start"
+"##;
+        let mut cfg: Config = toml::from_str(raw).expect("fixture must deserialize");
+        cfg.sanitize();
+
+        assert_eq!(cfg.static_peers.len(), 1);
+        assert_eq!(cfg.static_peers[0].label.as_deref(), Some("Monitor World"));
+
+        let rf = cfg.default_channels.iter().find(|c| c.id == "rf").unwrap();
+        let macro_labels: Vec<_> = rf.macros.iter().map(|m| m.label.as_str()).collect();
+        assert_eq!(macro_labels, vec!["GOOD"]);
+
+        let global_labels: Vec<_> = cfg.global_macros.iter().map(|m| m.label.as_str()).collect();
+        assert_eq!(global_labels, vec!["GOOD GLOBAL"]);
     }
 
     /// A pre-versioning `patch.toml` (no `config_version`) loads as version 0,
