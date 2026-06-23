@@ -179,6 +179,42 @@ pub(crate) fn validate_show_file_channels(channels: &[Channel]) -> anyhow::Resul
     Ok(())
 }
 
+/// Drops any macro in `macros` whose OSC target fails [`validate_osc_target`],
+/// logging a warning for each. `context` identifies where these macros came
+/// from (a channel id, or "global macros") for the log line.
+///
+/// Load-time sanitization for a hand-edited `patch.toml` — the 4th OSC-target
+/// trust level beyond ADR-0002's three (see ADR-0006): unlike a show file
+/// (`validate_show_file_channels`, atomic reject) or a peer announce
+/// (`ChannelRegistry::merge`, also drop-and-warn), this runs at process
+/// startup with no operator present to retry, so it must never block launch —
+/// drop-and-warn, same policy as the peer-announce path.
+pub(crate) fn sanitize_loaded_macros(macros: &mut Vec<MacroMessage>, context: &str) {
+    macros.retain(|m| {
+        let Some(osc) = &m.osc else { return true };
+        match validate_osc_target(osc) {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::warn!(
+                    "patch.toml: dropping macro {:?} ({}) at load — invalid OSC target: {}",
+                    m.label,
+                    context,
+                    e
+                );
+                false
+            }
+        }
+    });
+}
+
+/// Applies [`sanitize_loaded_macros`] to every channel's macro list —
+/// load-time sanitization for `Config::default_channels` (ADR-0006).
+pub(crate) fn sanitize_loaded_channels(channels: &mut [Channel]) {
+    for ch in channels.iter_mut() {
+        sanitize_loaded_macros(&mut ch.macros, &format!("channel {:?}", ch.id));
+    }
+}
+
 /// Pure channel/macro-domain logic — no `AppEvent`/broadcast-channel
 /// dependency, and no knowledge of `Config`. Per ADR-0003, cross-domain
 /// orchestration (persisting a channel snapshot into `Config`, reading
@@ -464,6 +500,34 @@ mod tests {
         let mut ch = Channel::new("rf", "RF", "#fff").unwrap();
         ch.macros = vec![macro_with_osc("GO", bad_osc())];
         assert!(validate_show_file_channels(&[ch]).is_err());
+    }
+
+    // ── sanitize_loaded_macros / sanitize_loaded_channels (ADR-0006) ────────
+
+    #[test]
+    fn sanitize_loaded_macros_drops_only_the_invalid_one() {
+        let mut macros = vec![plain_macro("GOOD"), macro_with_osc("BAD", bad_osc())];
+        sanitize_loaded_macros(&mut macros, "global macros");
+        let labels: Vec<_> = macros.iter().map(|m| m.label.clone()).collect();
+        assert_eq!(labels, vec!["GOOD"]);
+    }
+
+    #[test]
+    fn sanitize_loaded_macros_keeps_macros_without_osc() {
+        let mut macros = vec![plain_macro("A"), plain_macro("B")];
+        sanitize_loaded_macros(&mut macros, "global macros");
+        assert_eq!(macros.len(), 2);
+    }
+
+    #[test]
+    fn sanitize_loaded_channels_drops_only_the_invalid_macro_keeps_the_channel() {
+        let mut ch = Channel::new("rf", "RF", "#fff").unwrap();
+        ch.macros = vec![plain_macro("GOOD"), macro_with_osc("BAD", bad_osc())];
+        let mut channels = vec![ch];
+        sanitize_loaded_channels(&mut channels);
+        assert_eq!(channels.len(), 1); // the channel itself is never dropped
+        let labels: Vec<_> = channels[0].macros.iter().map(|m| m.label.clone()).collect();
+        assert_eq!(labels, vec!["GOOD"]);
     }
 
     // ── ChannelRegistry — direct, no AppState/event bus needed ──────────────
