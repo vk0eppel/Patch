@@ -12,6 +12,7 @@ import '../models/events.dart';
 import '../models/flash.dart';
 import '../models/message.dart';
 import '../models/selection.dart';
+import '../models/selection_controller.dart';
 import '../store/app_store.dart';
 import '../theme/patch_theme.dart';
 import '../util/message_filter.dart';
@@ -46,8 +47,12 @@ class _HomeScreenState extends State<HomeScreen> {
   List<PatchChannel> get _channels => AppStoreScope.of(context).channels;
 
   /// What the message area currently shows/targets — Channel(s), ALL compose,
-  /// or a DM thread. See models/selection.dart.
-  Selection _selection = const ChannelSelection({});
+  /// or a DM thread. See models/selection.dart. Transition rules live in
+  /// [SelectionController] (#63); this screen applies what it returns —
+  /// ensureMessages/setSelectedChannels/setDmTarget all need BuildContext,
+  /// which the controller never touches.
+  final SelectionController _selectionController = SelectionController();
+  Selection get _selection => _selectionController.selection;
 
   /// Message buffers + delivery status are owned by the AppStore (#58); reading
   /// via `of(context)` rebuilds when a message lands or a buffer changes.
@@ -354,27 +359,17 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Drop stale ids from a Channel selection (or seed the first channel when
   /// empty) after the channel list changes, then load messages for whatever's
   /// now selected. ALL/DM selections don't depend on the channel list. Was the
-  /// `'channels'` arm's body (#57).
+  /// `'channels'` arm's body (#57); transition rule moved to
+  /// [SelectionController.reconcileWithChannels] (#63).
   void _reconcileSelectionWithChannels() {
     final channels = _store?.channels ?? const [];
+    late Set<String> toFetch;
     setState(() {
-      final sel = _selection;
-      if (sel is ChannelSelection) {
-        final validIds = channels.map((c) => c.id).toSet();
-        final kept = sel.ids.where(validIds.contains).toSet();
-        _selection = kept.isNotEmpty
-            ? ChannelSelection(kept)
-            : (channels.isNotEmpty
-                ? ChannelSelection({channels.first.id})
-                : const ChannelSelection({}));
-      }
-      final idsNeeded = _selection.dmPeerId != null
-          ? {'dm:${_selection.dmPeerId}'}
-          : _selection.tabIds;
-      for (final id in idsNeeded) {
-        AppStoreScope.read(context).ensureMessages(id);
-      }
+      toFetch = _selectionController.reconcileWithChannels(channels);
     });
+    for (final id in toFetch) {
+      AppStoreScope.read(context).ensureMessages(id);
+    }
     _syncSelection();
   }
 
@@ -627,58 +622,50 @@ class _HomeScreenState extends State<HomeScreen> {
   // ── Channel selection ───────────────────────────────────────────────────────
 
   /// Tap — toggle channel in/out of selection. At least one channel stays selected.
-  /// ALL and DM threads are exclusive selections.
+  /// ALL and DM threads are exclusive selections. Transition rule moved to
+  /// [SelectionController.selectTab] (#63); this screen keeps the screen-local
+  /// unread-clear (ADR-0005: unread-DM sets stay screen-local).
   void _toggleChannel(String id) {
+    late Set<String> toFetch;
     setState(() {
-      final sel = _selection;
-      if (id == kAllChannelId) {
-        // Stash the current Channel selection for snap-back after send.
-        _selection = AllSelection(sel is ChannelSelection ? sel.ids : {});
-        AppStoreScope.read(context).ensureMessages(kAllChannelId);
-      } else if (id.startsWith('dm:')) {
-        _selection = DmSelection(id.substring(3));
-        _unreadDms.remove(id);
-        AppStoreScope.read(context).ensureMessages(id);
-      } else if (sel is AllSelection || sel is DmSelection) {
-        // Tapping a channel cancels ALL compose / DM mode.
-        _selection = ChannelSelection({id});
-        AppStoreScope.read(context).ensureMessages(id);
-      } else if (sel is ChannelSelection && sel.ids.contains(id)) {
-        if (sel.ids.length > 1) {
-          _selection = ChannelSelection({...sel.ids}..remove(id));
-        }
-      } else if (sel is ChannelSelection) {
-        _selection = ChannelSelection({...sel.ids, id});
-        AppStoreScope.read(context).ensureMessages(id);
-      }
+      toFetch = _selectionController.selectTab(id);
+      if (id.startsWith('dm:')) _unreadDms.remove(id);
     });
+    for (final fetchId in toFetch) {
+      AppStoreScope.read(context).ensureMessages(fetchId);
+    }
     _syncSelection();
     if (_hideKeyboard) FocusScope.of(context).unfocus();
   }
 
   /// After a send in ALL mode, snap back to the channel(s) selected before
   /// ALL — `AllSelection.previous` holds that data; this just restores it.
+  /// Transition rule moved to [SelectionController.snapBackFromAll] (#63).
   void _snapBackFromAll() {
+    late Set<String> toFetch;
     setState(() {
-      final sel = _selection;
-      if (sel is AllSelection && sel.previous.isNotEmpty) {
-        _selection = ChannelSelection(sel.previous);
-      } else if (_channels.isNotEmpty) {
-        _selection = ChannelSelection({_channels.first.id});
-      }
+      toFetch = _selectionController.snapBackFromAll(_channels);
     });
+    for (final id in toFetch) {
+      AppStoreScope.read(context).ensureMessages(id);
+    }
     _syncSelection();
   }
 
   /// Open (and select) the DM thread with a peer — from the peers panel button.
+  /// Transition rule moved to [SelectionController.openDm] (#63); this screen
+  /// keeps the screen-local open-thread/unread bookkeeping (ADR-0005).
   void _openDm(String peerId) {
     final key = 'dm:$peerId';
+    late Set<String> toFetch;
     setState(() {
+      toFetch = _selectionController.openDm(peerId);
       _openDms.add(peerId);
-      _selection = DmSelection(peerId);
       _unreadDms.remove(key);
     });
-    AppStoreScope.read(context).ensureMessages(key);
+    for (final id in toFetch) {
+      AppStoreScope.read(context).ensureMessages(id);
+    }
     _syncSelection();
     if (_hideKeyboard) FocusScope.of(context).unfocus();
   }
