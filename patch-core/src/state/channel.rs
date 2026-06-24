@@ -340,17 +340,28 @@ impl ChannelRegistry {
         Ok(())
     }
 
-    /// Add or replace a macro on a channel (matched by label).
+    /// Add or replace a macro on a channel. Matched by `original_label` when
+    /// given (an edit of an existing macro, possibly renaming it) so the entry
+    /// is updated in place instead of appending a second one under the new
+    /// label; matched by `macro_msg.label` otherwise (create, or no-op rename).
     pub(crate) async fn upsert_macro(
         &self,
         channel_id: &str,
+        original_label: Option<&str>,
         macro_msg: MacroMessage,
     ) -> anyhow::Result<()> {
         let mut channels = self.channels.write().await;
         let ch = channels
             .get_mut(channel_id)
             .ok_or_else(|| anyhow::anyhow!("Channel '{}' not found", channel_id))?;
-        if let Some(pos) = ch.macros.iter().position(|s| s.label == macro_msg.label) {
+        let match_label = original_label.unwrap_or(macro_msg.label.as_str());
+        if match_label != macro_msg.label && ch.macros.iter().any(|s| s.label == macro_msg.label) {
+            anyhow::bail!(
+                "A macro named '{}' already exists on this channel",
+                macro_msg.label
+            );
+        }
+        if let Some(pos) = ch.macros.iter().position(|s| s.label == match_label) {
             ch.macros[pos] = macro_msg;
         } else {
             ch.macros.push(macro_msg);
@@ -646,20 +657,60 @@ mod tests {
     async fn upsert_macro_replaces_same_label_appends_otherwise() {
         let reg = ChannelRegistry::default();
         reg.upsert(Channel::new("rf", "RF", "#fff").unwrap()).await;
-        reg.upsert_macro("rf", plain_macro("GO")).await.unwrap();
+        reg.upsert_macro("rf", None, plain_macro("GO"))
+            .await
+            .unwrap();
         let mut replaced = plain_macro("GO");
         replaced.payload = "different".into();
-        reg.upsert_macro("rf", replaced).await.unwrap();
+        reg.upsert_macro("rf", None, replaced).await.unwrap();
         let macros = &reg.list().await[0].macros;
         assert_eq!(macros.len(), 1);
         assert_eq!(macros[0].payload, "different");
     }
 
     #[tokio::test]
+    async fn upsert_macro_with_original_label_renames_in_place() {
+        let reg = ChannelRegistry::default();
+        reg.upsert(Channel::new("rf", "RF", "#fff").unwrap()).await;
+        reg.upsert_macro("rf", None, plain_macro("GO"))
+            .await
+            .unwrap();
+        reg.upsert_macro("rf", None, plain_macro("STANDBY"))
+            .await
+            .unwrap();
+        let mut renamed = plain_macro("HOLD");
+        renamed.payload = "renamed".into();
+        reg.upsert_macro("rf", Some("GO"), renamed).await.unwrap();
+        let macros = &reg.list().await[0].macros;
+        assert_eq!(macros.len(), 2);
+        assert_eq!(macros[0].label, "HOLD"); // renamed in place, not appended
+        assert_eq!(macros[0].payload, "renamed");
+        assert_eq!(macros[1].label, "STANDBY");
+    }
+
+    #[tokio::test]
+    async fn upsert_macro_rename_to_existing_label_errors() {
+        let reg = ChannelRegistry::default();
+        reg.upsert(Channel::new("rf", "RF", "#fff").unwrap()).await;
+        reg.upsert_macro("rf", None, plain_macro("GO"))
+            .await
+            .unwrap();
+        reg.upsert_macro("rf", None, plain_macro("STANDBY"))
+            .await
+            .unwrap();
+        let collision = plain_macro("STANDBY");
+        assert!(reg.upsert_macro("rf", Some("GO"), collision).await.is_err());
+        let macros = &reg.list().await[0].macros;
+        assert_eq!(macros.len(), 2); // unchanged
+    }
+
+    #[tokio::test]
     async fn delete_macro_removes_by_label() {
         let reg = ChannelRegistry::default();
         reg.upsert(Channel::new("rf", "RF", "#fff").unwrap()).await;
-        reg.upsert_macro("rf", plain_macro("GO")).await.unwrap();
+        reg.upsert_macro("rf", None, plain_macro("GO"))
+            .await
+            .unwrap();
         reg.delete_macro("rf", "GO").await.unwrap();
         assert!(reg.list().await[0].macros.is_empty());
     }

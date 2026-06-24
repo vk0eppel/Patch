@@ -1866,6 +1866,7 @@ fn wire__crate__api__upsert_global_macro_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_original_label = <Option<String>>::sse_decode(&mut deserializer);
             let api_label = <String>::sse_decode(&mut deserializer);
             let api_payload = <String>::sse_decode(&mut deserializer);
             let api_priority = <i32>::sse_decode(&mut deserializer);
@@ -1878,6 +1879,7 @@ fn wire__crate__api__upsert_global_macro_impl(
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                     (move || async move {
                         let output_ok = crate::api::upsert_global_macro(
+                            api_original_label,
                             api_label,
                             api_payload,
                             api_priority,
@@ -1918,6 +1920,7 @@ fn wire__crate__api__upsert_macro_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_channel_id = <String>::sse_decode(&mut deserializer);
+            let api_original_label = <Option<String>>::sse_decode(&mut deserializer);
             let api_label = <String>::sse_decode(&mut deserializer);
             let api_payload = <String>::sse_decode(&mut deserializer);
             let api_priority = <i32>::sse_decode(&mut deserializer);
@@ -1931,6 +1934,7 @@ fn wire__crate__api__upsert_macro_impl(
                     (move || async move {
                         let output_ok = crate::api::upsert_macro(
                             api_channel_id,
+                            api_original_label,
                             api_label,
                             api_payload,
                             api_priority,

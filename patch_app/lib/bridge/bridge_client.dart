@@ -172,8 +172,13 @@ class BridgeClient {
   Future<void> upsertChannel(String id, String displayName, String color) =>
       rust.upsertChannel(id: id, displayName: displayName, color: color);
 
+  /// [originalLabel] is the macro's label before this edit — pass it when
+  /// editing an existing macro (even if the label didn't change) so a rename
+  /// updates that macro in place instead of creating a new one. Omit (null)
+  /// only when creating a brand-new macro.
   Future<void> upsertMacro({
     required String channelId,
+    String? originalLabel,
     required String label,
     required String payload,
     String? keyBinding,
@@ -188,6 +193,7 @@ class BridgeClient {
   }) =>
       rust.upsertMacro(
         channelId: channelId,
+        originalLabel: originalLabel,
         label: label,
         payload: payload,
         priority: priority,
@@ -238,7 +244,10 @@ class BridgeClient {
 
   // ── Global macros (shown on every channel; fired on the current channel) ────
 
+  /// [originalLabel] is the macro's label before this edit — see
+  /// [upsertMacro]'s doc for the rename contract.
   Future<void> upsertGlobalMacro({
+    String? originalLabel,
     required String label,
     required String payload,
     String? keyBinding,
@@ -252,6 +261,7 @@ class BridgeClient {
     MacroOscArgType oscArgType = MacroOscArgType.string,
   }) =>
       rust.upsertGlobalMacro(
+        originalLabel: originalLabel,
         label: label,
         payload: payload,
         priority: priority,

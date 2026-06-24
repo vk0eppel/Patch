@@ -15,7 +15,7 @@ import 'state/show_file.dart';
 import 'transport.dart';
 part 'api.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `csv_escape`, `dispatch_message`, `dispatch_osc`, `init_tracing`, `validate_osc`
+// These functions are ignored because they are not marked as `pub`: `csv_escape`, `dispatch_message`, `dispatch_osc`, `init_tracing`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `EngineHandle`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `engine`
@@ -29,6 +29,10 @@ Future<void> init({String? configDir}) =>
 
 /// Fire an OSC message to an external target (e.g. QLab). Used by the UI's
 /// dual-action macro (the macro sends its Patch message *and* this OSC packet).
+/// Validates before touching `engine()` — same pattern as `upsert_macro` — so a
+/// bad target returns Err without a running engine; `dispatch_osc` validates
+/// again for its other caller (the MIDI fire path), which doesn't go through
+/// `engine()` at all.
 Future<void> sendOscMacro({
   required String address,
   required int port,
@@ -218,8 +222,13 @@ Future<void> requestChannels({required String peerId}) =>
 Future<int> adoptChannels({required List<Channel> channels}) =>
     RustLib.instance.api.crateApiAdoptChannels(channels: channels);
 
+/// `original_label` is the macro's label before this edit — pass it when
+/// editing an existing macro (even if the label didn't change) so a rename
+/// updates that macro in place instead of appending a new one under the new
+/// label. Omit (`None`) only when creating a brand-new macro.
 Future<void> upsertMacro({
   required String channelId,
+  String? originalLabel,
   required String label,
   required String payload,
   required int priority,
@@ -229,6 +238,7 @@ Future<void> upsertMacro({
   OscTarget? osc,
 }) => RustLib.instance.api.crateApiUpsertMacro(
   channelId: channelId,
+  originalLabel: originalLabel,
   label: label,
   payload: payload,
   priority: priority,
@@ -253,7 +263,10 @@ Future<void> reorderMacros({
   orderedLabels: orderedLabels,
 );
 
+/// `original_label` is the macro's label before this edit — see
+/// [`upsert_macro`]'s doc for the rename contract.
 Future<void> upsertGlobalMacro({
+  String? originalLabel,
   required String label,
   required String payload,
   required int priority,
@@ -262,6 +275,7 @@ Future<void> upsertGlobalMacro({
   int? midiCc,
   OscTarget? osc,
 }) => RustLib.instance.api.crateApiUpsertGlobalMacro(
+  originalLabel: originalLabel,
   label: label,
   payload: payload,
   priority: priority,

@@ -229,6 +229,7 @@ abstract class RustLibApi extends BaseApi {
   });
 
   Future<void> crateApiUpsertGlobalMacro({
+    String? originalLabel,
     required String label,
     required String payload,
     required int priority,
@@ -240,6 +241,7 @@ abstract class RustLibApi extends BaseApi {
 
   Future<void> crateApiUpsertMacro({
     required String channelId,
+    String? originalLabel,
     required String label,
     required String payload,
     required int priority,
@@ -1742,6 +1744,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   Future<void> crateApiUpsertGlobalMacro({
+    String? originalLabel,
     required String label,
     required String payload,
     required int priority,
@@ -1754,6 +1757,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_opt_String(originalLabel, serializer);
           sse_encode_String(label, serializer);
           sse_encode_String(payload, serializer);
           sse_encode_i_32(priority, serializer);
@@ -1774,6 +1778,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         ),
         constMeta: kCrateApiUpsertGlobalMacroConstMeta,
         argValues: [
+          originalLabel,
           label,
           payload,
           priority,
@@ -1790,6 +1795,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiUpsertGlobalMacroConstMeta => const TaskConstMeta(
     debugName: "upsert_global_macro",
     argNames: [
+      "originalLabel",
       "label",
       "payload",
       "priority",
@@ -1803,6 +1809,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @override
   Future<void> crateApiUpsertMacro({
     required String channelId,
+    String? originalLabel,
     required String label,
     required String payload,
     required int priority,
@@ -1816,6 +1823,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(channelId, serializer);
+          sse_encode_opt_String(originalLabel, serializer);
           sse_encode_String(label, serializer);
           sse_encode_String(payload, serializer);
           sse_encode_i_32(priority, serializer);
@@ -1837,6 +1845,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         constMeta: kCrateApiUpsertMacroConstMeta,
         argValues: [
           channelId,
+          originalLabel,
           label,
           payload,
           priority,
@@ -1854,6 +1863,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     debugName: "upsert_macro",
     argNames: [
       "channelId",
+      "originalLabel",
       "label",
       "payload",
       "priority",

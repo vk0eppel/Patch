@@ -741,9 +741,14 @@ pub async fn adopt_channels(channels: Vec<Channel>) -> Result<u32> {
     Ok(engine().state.merge_channels(channels).await? as u32)
 }
 
+/// `original_label` is the macro's label before this edit — pass it when
+/// editing an existing macro (even if the label didn't change) so a rename
+/// updates that macro in place instead of appending a new one under the new
+/// label. Omit (`None`) only when creating a brand-new macro.
 #[allow(clippy::too_many_arguments)]
 pub async fn upsert_macro(
     channel_id: String,
+    original_label: Option<String>,
     label: String,
     payload: String,
     priority: i32,
@@ -763,6 +768,7 @@ pub async fn upsert_macro(
         .state
         .upsert_macro(
             &channel_id,
+            original_label.as_deref(),
             MacroMessage {
                 label,
                 payload,
@@ -793,8 +799,11 @@ pub async fn reorder_macros(channel_id: String, ordered_labels: Vec<String>) -> 
 // Shown on every channel's macro panel; fired on the currently-selected
 // channel(s) by the UI. Stored on the config, surfaced via `ConfigSnapshot`.
 
+/// `original_label` is the macro's label before this edit — see
+/// [`upsert_macro`]'s doc for the rename contract.
 #[allow(clippy::too_many_arguments)]
 pub async fn upsert_global_macro(
+    original_label: Option<String>,
     label: String,
     payload: String,
     priority: i32,
@@ -812,18 +821,21 @@ pub async fn upsert_global_macro(
     }
     engine()
         .state
-        .upsert_global_macro(MacroMessage {
-            label,
-            payload,
-            key_binding,
-            priority,
-            // A MIDI-triggered global macro fires on the UI's currently-selected
-            // channel(s) — the engine learns that selection via
-            // `set_selected_channels` (pushed from Flutter).
-            midi_note,
-            midi_cc,
-            osc,
-        })
+        .upsert_global_macro(
+            original_label.as_deref(),
+            MacroMessage {
+                label,
+                payload,
+                key_binding,
+                priority,
+                // A MIDI-triggered global macro fires on the UI's currently-selected
+                // channel(s) — the engine learns that selection via
+                // `set_selected_channels` (pushed from Flutter).
+                midi_note,
+                midi_cc,
+                osc,
+            },
+        )
         .await
 }
 
@@ -1090,6 +1102,7 @@ mod tests {
         };
         assert!(super::upsert_macro(
             "rf".into(),
+            None,
             "GO".into(),
             "payload".into(),
             1,
@@ -1115,6 +1128,7 @@ mod tests {
             arg_type: OscArgKind::Int,
         };
         assert!(super::upsert_global_macro(
+            None,
             "GO".into(),
             "payload".into(),
             1,

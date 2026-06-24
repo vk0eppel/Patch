@@ -572,13 +572,19 @@ impl AppState {
         Ok(())
     }
 
-    /// Add or replace a macro on a channel (matched by label).
+    /// Add or replace a macro on a channel. See
+    /// [`channel::ChannelRegistry::upsert_macro`] for the `original_label`
+    /// rename contract.
     pub async fn upsert_macro(
         &self,
         channel_id: &str,
+        original_label: Option<&str>,
         macro_msg: channel::MacroMessage,
     ) -> anyhow::Result<()> {
-        self.0.channels.upsert_macro(channel_id, macro_msg).await?;
+        self.0
+            .channels
+            .upsert_macro(channel_id, original_label, macro_msg)
+            .await?;
         self.persist_channels().await?;
         self.publish(AppEvent::ChannelListUpdated).await;
         Ok(())
@@ -609,18 +615,30 @@ impl AppState {
     // channel. Persisted like any other config mutation; the UI refreshes via the
     // bridge's `config_updated` after the call (mirrors static-peer edits).
 
-    /// Add or replace a global macro (matched by label).
+    /// Add or replace a global macro. Matched by `original_label` when given
+    /// (an edit, possibly renaming it) so the entry is updated in place
+    /// instead of appending a second one under the new label; matched by
+    /// `macro_msg.label` otherwise (create, or no-op rename).
     pub async fn upsert_global_macro(
         &self,
+        original_label: Option<&str>,
         macro_msg: channel::MacroMessage,
     ) -> anyhow::Result<()> {
+        let mut collision = false;
         self.0
             .config
             .mutate(|cfg| {
+                let match_label = original_label.unwrap_or(macro_msg.label.as_str());
+                if match_label != macro_msg.label
+                    && cfg.global_macros.iter().any(|m| m.label == macro_msg.label)
+                {
+                    collision = true;
+                    return;
+                }
                 if let Some(pos) = cfg
                     .global_macros
                     .iter()
-                    .position(|m| m.label == macro_msg.label)
+                    .position(|m| m.label == match_label)
                 {
                     cfg.global_macros[pos] = macro_msg;
                 } else {
@@ -628,6 +646,12 @@ impl AppState {
                 }
             })
             .await;
+        if collision {
+            anyhow::bail!(
+                "A global macro named '{}' already exists",
+                original_label.unwrap_or_default()
+            );
+        }
         self.save_config().await
     }
 
@@ -1117,19 +1141,22 @@ mod tests {
                 .collect::<Vec<_>>()
         };
 
-        st.upsert_global_macro(mk("A")).await.unwrap();
-        st.upsert_global_macro(mk("B")).await.unwrap();
-        st.upsert_global_macro(mk("C")).await.unwrap();
+        st.upsert_global_macro(None, mk("A")).await.unwrap();
+        st.upsert_global_macro(None, mk("B")).await.unwrap();
+        st.upsert_global_macro(None, mk("C")).await.unwrap();
         // Re-upsert with an existing label replaces in place (no duplicate).
-        st.upsert_global_macro(MacroMessage {
-            label: "B".into(),
-            payload: "B2".into(),
-            key_binding: None,
-            priority: 2,
-            midi_note: None,
-            midi_cc: None,
-            osc: None,
-        })
+        st.upsert_global_macro(
+            None,
+            MacroMessage {
+                label: "B".into(),
+                payload: "B2".into(),
+                key_binding: None,
+                priority: 2,
+                midi_note: None,
+                midi_cc: None,
+                osc: None,
+            },
+        )
         .await
         .unwrap();
         let cfg = st.config().await;
@@ -1167,6 +1194,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn upsert_global_macro_with_original_label_renames_in_place() {
+        use channel::MacroMessage;
+        let _guard = config::test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        config::set_data_dir(dir.clone());
+
+        let st = test_state();
+        let mk = |l: &str| MacroMessage {
+            label: l.into(),
+            payload: l.into(),
+            key_binding: None,
+            priority: 1,
+            midi_note: None,
+            midi_cc: None,
+            osc: None,
+        };
+        let labels = |c: &Config| {
+            c.global_macros
+                .iter()
+                .map(|m| m.label.clone())
+                .collect::<Vec<_>>()
+        };
+
+        st.upsert_global_macro(None, mk("A")).await.unwrap();
+        st.upsert_global_macro(None, mk("B")).await.unwrap();
+        st.upsert_global_macro(None, mk("C")).await.unwrap();
+
+        // Rename "C" to "Z" via original_label — updates in place, no duplicate.
+        st.upsert_global_macro(Some("C"), mk("Z")).await.unwrap();
+        assert_eq!(labels(&st.config().await), vec!["A", "B", "Z"]);
+
+        // Renaming to a label already in use errors and leaves state untouched.
+        assert!(st.upsert_global_macro(Some("Z"), mk("B")).await.is_err());
+        assert_eq!(labels(&st.config().await), vec!["A", "B", "Z"]);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
     async fn reset_global_macros_restores_defaults() {
         let _guard = config::test_data_dir_guard().await;
         let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
@@ -1174,15 +1241,18 @@ mod tests {
         config::set_data_dir(dir.clone());
 
         let st = test_state(); // starts with no global macros
-        st.upsert_global_macro(channel::MacroMessage {
-            label: "CUSTOM".into(),
-            payload: "x".into(),
-            key_binding: None,
-            priority: 1,
-            midi_note: None,
-            midi_cc: None,
-            osc: None,
-        })
+        st.upsert_global_macro(
+            None,
+            channel::MacroMessage {
+                label: "CUSTOM".into(),
+                payload: "x".into(),
+                key_binding: None,
+                priority: 1,
+                midi_note: None,
+                midi_cc: None,
+                osc: None,
+            },
+        )
         .await
         .unwrap();
         assert_eq!(st.config().await.global_macros.len(), 1);

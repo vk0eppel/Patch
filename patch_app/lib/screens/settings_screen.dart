@@ -1180,10 +1180,11 @@ class _ChannelMacroEditor extends StatelessWidget {
       emptyText: 'No macros yet',
       // Channel-macro CRUD refreshes the screens via the ChannelsChanged push
       // (no config refetch needed); runGuarded surfaces failures (ADR-0004).
-      onUpsert: (l, p, k, pr, mn, mc, osc) => runGuarded(
+      onUpsert: (ol, l, p, k, pr, mn, mc, osc) => runGuarded(
           context,
           () => bridge.upsertMacro(
                 channelId: channel.id,
+                originalLabel: ol,
                 label: l,
                 payload: p,
                 keyBinding: k,
@@ -1307,8 +1308,9 @@ class _MacroListCard extends StatelessWidget {
   final List<MacroMessage> macros;
   final String Function(MacroMessage) keyFor;
   final String emptyText;
-  final void Function(String label, String payload, String? keyBinding,
-      int priority, int? midiNote, int? midiCc, MacroOsc? osc) onUpsert;
+  final void Function(String? originalLabel, String label, String payload,
+      String? keyBinding, int priority, int? midiNote, int? midiCc,
+      MacroOsc? osc) onUpsert;
   final void Function(MacroMessage macro) onDelete;
   final void Function(List<String> labels) onReorder;
   final List<Widget> trailingActions;
@@ -1422,16 +1424,19 @@ class _MacroListCard extends StatelessWidget {
     );
   }
 
-  /// Shared macro create/edit dialog. `onSave(label, payload, keyBinding,
-  /// priority, midiNote, midiCc)` receives the trimmed/validated values; the
+  /// Shared macro create/edit dialog. `onSave(originalLabel, label, payload,
+  /// keyBinding, priority, midiNote, midiCc)` receives the trimmed/validated
+  /// values, with `originalLabel` set to [existing]'s pre-edit label (null for
+  /// a new macro) so the caller can rename in place rather than duplicate; the
   /// channel and global editors pass their own persistence call. MIDI fields
   /// are hidden when [allowMidi] is false.
   static void _showMacroEditDialog(
     BuildContext context, {
     MacroMessage? existing,
     bool allowMidi = true,
-    required void Function(String label, String payload, String? keyBinding,
-            int priority, int? midiNote, int? midiCc, MacroOsc? osc)
+    required void Function(String? originalLabel, String label,
+            String payload, String? keyBinding, int priority, int? midiNote,
+            int? midiCc, MacroOsc? osc)
         onSave,
   }) {
     final labelCtrl = TextEditingController(text: existing?.label ?? '');
@@ -1685,6 +1690,7 @@ class _MacroListCard extends StatelessWidget {
                 }
 
                 onSave(
+                  existing?.label,
                   label,
                   payload,
                   keyCtrl.text.trim().isEmpty ? null : keyCtrl.text.trim(),
@@ -1723,9 +1729,10 @@ class _GlobalMacrosEditor extends StatelessWidget {
       emptyText: 'No global macros yet',
       // Global macros live on the config — refetch it through the store after
       // each mutation so both screens reflect the change (#56).
-      onUpsert: (l, p, k, pr, mn, mc, osc) => runGuarded(context, () async {
+      onUpsert: (ol, l, p, k, pr, mn, mc, osc) => runGuarded(context, () async {
         final store = AppStoreScope.read(context);
         await bridge.upsertGlobalMacro(
+          originalLabel: ol,
           label: l,
           payload: p,
           keyBinding: k,
