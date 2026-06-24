@@ -69,9 +69,75 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// ignored rather than popping a dialog.
   bool _awaitingOffer = false;
 
+  // ── Section nav (#73) ──────────────────────────────────────────────────
+  // A left rail (or, below _kNarrowBreakpoint, an app-bar jump menu) lets a
+  // crew member skip straight to a section instead of scrolling the whole
+  // page. Below the width threshold there's no room for a permanent rail.
+  static const _kNarrowBreakpoint = 600.0;
+  static const _sectionTitles = [
+    'Identity',
+    'Network',
+    'Static Peers',
+    'Behavior',
+    'Global Macros',
+    'Channels & Macros',
+  ];
+  final List<GlobalKey> _sectionKeys =
+      List.generate(_sectionTitles.length, (_) => GlobalKey());
+  final _viewportKey = GlobalKey();
+  final _scrollController = ScrollController();
+  int _activeSection = 0;
+  // True while a tap-triggered scroll animation is in flight — alignment: 0
+  // doesn't always land the header at *exactly* the viewport top (sub-pixel
+  // rounding), so the scrollspy below can disagree with the section the user
+  // just tapped for a frame or two. Suppress it until the animation settles.
+  bool _programmaticScroll = false;
+
+  // Scrollspy: the active section is whichever header has most recently
+  // scrolled past the top of the viewport — sections are in document order,
+  // so the first one that *hasn't* passed yet ends the search.
+  void _onScroll() {
+    if (_programmaticScroll) return;
+    final viewportBox =
+        _viewportKey.currentContext?.findRenderObject() as RenderBox?;
+    if (viewportBox == null) return;
+    final viewportTop = viewportBox.localToGlobal(Offset.zero).dy;
+
+    var active = 0;
+    for (var i = 0; i < _sectionKeys.length; i++) {
+      final box =
+          _sectionKeys[i].currentContext?.findRenderObject() as RenderBox?;
+      if (box == null) continue;
+      if (box.localToGlobal(Offset.zero).dy <= viewportTop + 1) {
+        active = i;
+      } else {
+        break;
+      }
+    }
+    if (active != _activeSection) setState(() => _activeSection = active);
+  }
+
+  Future<void> _scrollToSection(int index) async {
+    final ctx = _sectionKeys[index].currentContext;
+    if (ctx == null) return;
+    // Set the active section immediately rather than waiting on the scroll
+    // listener — the listener is suppressed for the duration of the
+    // animation below, so this is the only thing driving the highlight.
+    setState(() => _activeSection = index);
+    _programmaticScroll = true;
+    await Scrollable.ensureVisible(
+      ctx,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+      alignment: 0,
+    );
+    _programmaticScroll = false;
+  }
+
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _pushSub = widget.bridge.pushes.listen(_handlePush);
     // Config/peers/channels are owned by the AppStore; the interface list is a
     // local, single-consumer fetch (#59).
@@ -94,6 +160,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void dispose() {
     _store?.removeListener(_seedControllersFromConfig);
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     _nameCtrl.dispose();
     _roleCtrl.dispose();
     _pushSub?.cancel();
@@ -425,8 +493,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _jumpMenuButton() {
+    return PopupMenuButton<int>(
+      icon: const Icon(Icons.list_alt_outlined),
+      tooltip: 'Jump to section',
+      onSelected: _scrollToSection,
+      itemBuilder: (context) => [
+        for (var i = 0; i < _sectionTitles.length; i++)
+          PopupMenuItem(value: i, child: Text(_sectionTitles[i])),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final narrow = MediaQuery.sizeOf(context).width < _kNarrowBreakpoint;
     return Scaffold(
       appBar: AppBar(
         title: const Text('SETTINGS'),
@@ -435,25 +516,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.of(context).pop(),
         ),
+        actions: narrow ? [_jumpMenuButton()] : null,
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
+      body: narrow
+          ? _buildContent()
+          : Row(
+              children: [
+                _SettingsRail(
+                  titles: _sectionTitles,
+                  activeIndex: _activeSection,
+                  onTap: _scrollToSection,
+                ),
+                const VerticalDivider(width: 1, color: PatchTheme.border),
+                Expanded(child: _buildContent()),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildContent() {
+    return ListView(
+      key: _viewportKey,
+      controller: _scrollController,
+      padding: const EdgeInsets.all(20),
+      children: [
           // ── Identity ────────────────────────────────────────────────────
-          Row(children: [
-            Expanded(child: _SectionHeader('Identity')),
-            _resetButton('Identity', () {
-              final name = Platform.environment['USER'] ??
-                  Platform.environment['USERNAME'] ??
-                  'crew';
-              _nameCtrl.text = name;
-              // setClientName is push-driven (ClientNameChanged → store);
-              // setRole has no push, so refetch config via _applyConfigChange.
-              runGuarded(context, () => widget.bridge.setClientName(name));
-              _roleCtrl.clear();
-              _applyConfigChange(() => widget.bridge.setRole(null));
-            }),
-          ]),
+          KeyedSubtree(
+            key: _sectionKeys[0],
+            child: Row(children: [
+              Expanded(child: _SectionHeader('Identity')),
+              _resetButton('Identity', () {
+                final name = Platform.environment['USER'] ??
+                    Platform.environment['USERNAME'] ??
+                    'crew';
+                _nameCtrl.text = name;
+                // setClientName is push-driven (ClientNameChanged → store);
+                // setRole has no push, so refetch config via _applyConfigChange.
+                runGuarded(context, () => widget.bridge.setClientName(name));
+                _roleCtrl.clear();
+                _applyConfigChange(() => widget.bridge.setRole(null));
+              }),
+            ]),
+          ),
           const SizedBox(height: 4),
           const Text(
             'Your display name as seen by other Patch users on the network.',
@@ -483,7 +587,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 32),
 
           // ── Network ──────────────────────────────────────────────────────
-          _SectionHeader('Network'),
+          KeyedSubtree(key: _sectionKeys[1], child: _SectionHeader('Network')),
           const SizedBox(height: 4),
           const Text(
             'Which network Patch announces discovery on. Patch always listens on every interface; '
@@ -581,26 +685,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 32),
 
           // ── Static Peers ─────────────────────────────────────────────────
-          Row(
-            children: [
-              Expanded(child: _SectionHeader('Static Peers')),
-              TextButton.icon(
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('Add peer'),
-                style: TextButton.styleFrom(foregroundColor: PatchTheme.accent),
-                onPressed: () => _showAddPeerDialog(context, widget.bridge),
-              ),
-              _resetButton('Static Peers', () {
-                final store = AppStoreScope.read(context);
-                runGuarded(context, () async {
-                  for (final peer in List.of(_staticPeers)) {
-                    await widget.bridge.removeStaticPeer(peer.address, peer.port);
-                  }
-                  await store.refreshConfig();
-                  await store.refreshPeers();
-                });
-              }),
-            ],
+          KeyedSubtree(
+            key: _sectionKeys[2],
+            child: Row(
+              children: [
+                Expanded(child: _SectionHeader('Static Peers')),
+                TextButton.icon(
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('Add peer'),
+                  style: TextButton.styleFrom(foregroundColor: PatchTheme.accent),
+                  onPressed: () => _showAddPeerDialog(context, widget.bridge),
+                ),
+                _resetButton('Static Peers', () {
+                  final store = AppStoreScope.read(context);
+                  runGuarded(context, () async {
+                    for (final peer in List.of(_staticPeers)) {
+                      await widget.bridge.removeStaticPeer(peer.address, peer.port);
+                    }
+                    await store.refreshConfig();
+                    await store.refreshPeers();
+                  });
+                }),
+              ],
+            ),
           ),
           const SizedBox(height: 4),
           const Text(
@@ -654,18 +761,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 32),
 
           // ── Behavior ─────────────────────────────────────────────────────
-          Row(children: [
-            Expanded(child: _SectionHeader('Behavior')),
-            _resetButton('Behavior', () {
-              // Values reflect after each mutation's config refetch (#56).
-              _applyConfigChange(() => widget.bridge.setFlashOnCritical(true));
-              _applyConfigChange(() => widget.bridge.setFlashOnMessage(false));
-              _applyConfigChange(() => widget.bridge.setFlashCount(4));
-              _applyConfigChange(() => widget.bridge.setHideKeyboard(true));
-              _applyConfigChange(() => widget.bridge.setAudibleAlert(false));
-              _applyConfigChange(() => widget.bridge.setMacrosColumns(1));
-            }),
-          ]),
+          KeyedSubtree(
+            key: _sectionKeys[3],
+            child: Row(children: [
+              Expanded(child: _SectionHeader('Behavior')),
+              _resetButton('Behavior', () {
+                // Values reflect after each mutation's config refetch (#56).
+                _applyConfigChange(() => widget.bridge.setFlashOnCritical(true));
+                _applyConfigChange(() => widget.bridge.setFlashOnMessage(false));
+                _applyConfigChange(() => widget.bridge.setFlashCount(4));
+                _applyConfigChange(() => widget.bridge.setHideKeyboard(true));
+                _applyConfigChange(() => widget.bridge.setAudibleAlert(false));
+                _applyConfigChange(() => widget.bridge.setMacrosColumns(1));
+              }),
+            ]),
+          ),
           const SizedBox(height: 4),
           SwitchListTile(
             title: const Text(
@@ -809,11 +919,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // ── Global macros ─────────────────────────────────────────────
           // Shown before "Channels & Macros": global macros are the everyday
           // default quick-sends; per-channel customisation is the next step.
-          Row(children: [
-            Expanded(child: _SectionHeader('Global Macros')),
-            _resetButton('Global Macros',
-                () => _applyConfigChange(() => widget.bridge.resetGlobalMacros())),
-          ]),
+          KeyedSubtree(
+            key: _sectionKeys[4],
+            child: Row(children: [
+              Expanded(child: _SectionHeader('Global Macros')),
+              _resetButton('Global Macros',
+                  () => _applyConfigChange(() => widget.bridge.resetGlobalMacros())),
+            ]),
+          ),
           const SizedBox(height: 4),
           const Text(
             'Macros shown on every channel\'s panel. Firing one sends on the '
@@ -830,29 +943,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 32),
 
           // ── Channels & macros ─────────────────────────────────────────
-          Row(
-            children: [
-              Expanded(child: _SectionHeader('Channels & Macros')),
-              IconButton(
-                icon: const Icon(Icons.cloud_download_outlined, size: 18),
-                color: PatchTheme.textMuted,
-                tooltip: 'Import channels from a peer',
-                onPressed: _showImportFromPeer,
-              ),
-              TextButton.icon(
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('New channel'),
-                style: TextButton.styleFrom(foregroundColor: PatchTheme.accent),
-                onPressed: () => _showChannelDialog(
-                  context,
-                  widget.bridge,
-                  existingIds: _channels.map((c) => c.id).toSet(),
+          KeyedSubtree(
+            key: _sectionKeys[5],
+            child: Row(
+              children: [
+                Expanded(child: _SectionHeader('Channels & Macros')),
+                IconButton(
+                  icon: const Icon(Icons.cloud_download_outlined, size: 18),
+                  color: PatchTheme.textMuted,
+                  tooltip: 'Import channels from a peer',
+                  onPressed: _showImportFromPeer,
                 ),
-              ),
-              _resetButton('Channels & Macros', () {
-                runGuarded(context, () => widget.bridge.resetChannels());
-              }),
-            ],
+                TextButton.icon(
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('New channel'),
+                  style: TextButton.styleFrom(foregroundColor: PatchTheme.accent),
+                  onPressed: () => _showChannelDialog(
+                    context,
+                    widget.bridge,
+                    existingIds: _channels.map((c) => c.id).toSet(),
+                  ),
+                ),
+                _resetButton('Channels & Macros', () {
+                  runGuarded(context, () => widget.bridge.resetChannels());
+                }),
+              ],
+            ),
           ),
           const SizedBox(height: 4),
           const Text(
@@ -882,6 +998,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ),
+      ],
+    );
+  }
+}
+
+// ── Settings rail ─────────────────────────────────────────────────────────────
+
+class _SettingsRail extends StatelessWidget {
+  final List<String> titles;
+  final int activeIndex;
+  final ValueChanged<int> onTap;
+
+  const _SettingsRail({
+    required this.titles,
+    required this.activeIndex,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 150,
+      color: PatchTheme.surface,
+      child: ListView(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        children: [
+          for (var i = 0; i < titles.length; i++)
+            InkWell(
+              onTap: () => onTap(i),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  border: Border(
+                    left: BorderSide(
+                      color: i == activeIndex
+                          ? PatchTheme.accent
+                          : Colors.transparent,
+                      width: 3,
+                    ),
+                  ),
+                ),
+                child: Text(
+                  titles[i],
+                  style: TextStyle(
+                    color: i == activeIndex
+                        ? PatchTheme.textPrimary
+                        : PatchTheme.textSecondary,
+                    fontSize: PatchTheme.fontSizeSmall,
+                    fontWeight: i == activeIndex ? FontWeight.w700 : FontWeight.w400,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
