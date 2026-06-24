@@ -78,7 +78,7 @@ class _BoundedIntFieldState extends State<BoundedIntField> {
         textAlign: TextAlign.center,
         style: const TextStyle(
           color: PatchTheme.textPrimary,
-          fontSize: PatchTheme.fontSizeSmall,
+          fontSize: PatchTheme.fontSizeMedium,
         ),
         decoration: InputDecoration(
           isDense: true,

@@ -622,7 +622,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     'This device: ${iface['ip']} (${iface['name']})',
                     style: const TextStyle(
                       color: PatchTheme.textMuted,
-                      fontSize: 11,
+                      fontSize: PatchTheme.fontSizeMedium,
                     ),
                   ),
                 ],
@@ -1938,7 +1938,7 @@ class _StaticPeerRow extends StatelessWidget {
                   '$address:$port',
                   style: const TextStyle(
                     color: PatchTheme.textPrimary,
-                    fontSize: PatchTheme.fontSizeSmall,
+                    fontSize: PatchTheme.fontSizeMedium,
                     fontFamily: 'monospace',
                   ),
                 ),
