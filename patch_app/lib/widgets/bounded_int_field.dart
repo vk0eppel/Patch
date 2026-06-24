@@ -33,21 +33,37 @@ class BoundedIntField extends StatefulWidget {
 class _BoundedIntFieldState extends State<BoundedIntField> {
   late final TextEditingController _ctrl =
       TextEditingController(text: widget.value.toString());
+  late final FocusNode _focusNode = FocusNode()..addListener(_onFocusChange);
   String? _error;
+  // TextField's default behavior unfocuses after onSubmitted fires, which
+  // would otherwise double-fire _submit via _onFocusChange for the same
+  // value — track the last committed text to skip that redundant call.
+  late String _lastCommitted = widget.value.toString();
 
   @override
   void dispose() {
+    _focusNode.removeListener(_onFocusChange);
+    _focusNode.dispose();
     _ctrl.dispose();
     super.dispose();
   }
 
+  // Crew members move on to the next field without pressing Enter — commit
+  // on focus-loss too, so an edit isn't silently dropped (#71).
+  void _onFocusChange() {
+    if (!_focusNode.hasFocus) _submit();
+  }
+
   void _submit() {
-    final n = int.tryParse(_ctrl.text.trim());
+    final text = _ctrl.text.trim();
+    if (text == _lastCommitted) return;
+    final n = int.tryParse(text);
     if (n == null || n < widget.min || n > widget.max) {
       setState(() => _error = '${widget.min}–${widget.max}');
       return;
     }
     setState(() => _error = null);
+    _lastCommitted = text;
     widget.onSubmit(n);
   }
 
@@ -57,6 +73,7 @@ class _BoundedIntFieldState extends State<BoundedIntField> {
       width: 112,
       child: TextField(
         controller: _ctrl,
+        focusNode: _focusNode,
         keyboardType: TextInputType.number,
         textAlign: TextAlign.center,
         style: const TextStyle(
