@@ -103,7 +103,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (viewportBox == null) return;
     final viewportTop = viewportBox.localToGlobal(Offset.zero).dy;
 
-    var active = 0;
+    // No default of 0 here — an indeterminate frame (no section's box
+    // resolved yet) must leave the current highlight alone, not jump to
+    // Identity.
+    int? active;
     for (var i = 0; i < _sectionKeys.length; i++) {
       final box =
           _sectionKeys[i].currentContext?.findRenderObject() as RenderBox?;
@@ -114,7 +117,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         break;
       }
     }
-    if (active != _activeSection) setState(() => _activeSection = active);
+    if (active != null && active != _activeSection) {
+      setState(() => _activeSection = active!);
+    }
   }
 
   Future<void> _scrollToSection(int index) async {
@@ -535,11 +540,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildContent() {
-    return ListView(
+    // SingleChildScrollView + Column, not ListView — a lazily-built ListView
+    // disposes section headers once they scroll past its cache extent, which
+    // nulls out their GlobalKey context and breaks the scrollspy in _onScroll
+    // (it would fall back to section 0). Settings is a bounded page, so
+    // there's no virtualization to gain here.
+    return SingleChildScrollView(
       key: _viewportKey,
       controller: _scrollController,
       padding: const EdgeInsets.all(20),
-      children: [
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
           // ── Identity ────────────────────────────────────────────────────
           KeyedSubtree(
             key: _sectionKeys[0],
@@ -998,7 +1010,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
 }
