@@ -54,6 +54,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChannelFlash dco_decode_box_autoadd_channel_flash(dynamic raw);
 
   @protected
+  MacroMessage dco_decode_box_autoadd_macro_message(dynamic raw);
+
+  @protected
   OscTarget dco_decode_box_autoadd_osc_target(dynamic raw);
 
   @protected
@@ -96,6 +99,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<InterfaceInfo> dco_decode_list_interface_info(dynamic raw);
 
   @protected
+  List<MacroImportOutcome> dco_decode_list_macro_import_outcome(dynamic raw);
+
+  @protected
   List<MacroMessage> dco_decode_list_macro_message(dynamic raw);
 
   @protected
@@ -112,6 +118,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<StaticPeer> dco_decode_list_static_peer(dynamic raw);
+
+  @protected
+  MacroImportOutcome dco_decode_macro_import_outcome(dynamic raw);
 
   @protected
   MacroMessage dco_decode_macro_message(dynamic raw);
@@ -211,6 +220,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  MacroMessage sse_decode_box_autoadd_macro_message(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   OscTarget sse_decode_box_autoadd_osc_target(SseDeserializer deserializer);
 
   @protected
@@ -259,6 +273,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<MacroImportOutcome> sse_decode_list_macro_import_outcome(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<MacroMessage> sse_decode_list_macro_message(
     SseDeserializer deserializer,
   );
@@ -283,6 +302,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<StaticPeer> sse_decode_list_static_peer(SseDeserializer deserializer);
+
+  @protected
+  MacroImportOutcome sse_decode_macro_import_outcome(
+    SseDeserializer deserializer,
+  );
 
   @protected
   MacroMessage sse_decode_macro_message(SseDeserializer deserializer);
@@ -389,6 +413,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_macro_message(
+    MacroMessage self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_osc_target(
     OscTarget self,
     SseSerializer serializer,
@@ -446,6 +476,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_macro_import_outcome(
+    List<MacroImportOutcome> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_macro_message(
     List<MacroMessage> self,
     SseSerializer serializer,
@@ -478,6 +514,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_static_peer(
     List<StaticPeer> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_macro_import_outcome(
+    MacroImportOutcome self,
     SseSerializer serializer,
   );
 

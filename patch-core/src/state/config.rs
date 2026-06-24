@@ -4,7 +4,10 @@ use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 use uuid::Uuid;
 
-use super::channel::{sanitize_loaded_channels, sanitize_loaded_macros, Channel, MacroMessage};
+use super::channel::{
+    sanitize_binding_collisions, sanitize_loaded_channels, sanitize_loaded_macros, Channel,
+    MacroMessage,
+};
 
 // ── Data directory resolution ────────────────────────────────────────────────
 //
@@ -243,11 +246,14 @@ impl Config {
     /// Drops any macro (per-channel or global) or static peer that fails
     /// validation, logging a warning for each — load-time policy for a
     /// hand-edited `patch.toml` (ADR-0006: the 4th OSC-target/static-peer
-    /// trust level, drop-and-warn, never refuse to start).
+    /// trust level, drop-and-warn, never refuse to start). Also strips (but
+    /// doesn't drop the macro for) any key/MIDI binding collision, run after
+    /// the OSC-target pass so it only sees surviving macros.
     fn sanitize(&mut self) {
         sanitize_loaded_channels(&mut self.default_channels);
         sanitize_loaded_macros(&mut self.global_macros, "global macros");
         sanitize_loaded_static_peers(&mut self.static_peers);
+        sanitize_binding_collisions(&mut self.global_macros, &mut self.default_channels);
     }
 
     pub fn save(&self) -> Result<()> {
@@ -619,6 +625,69 @@ path = "/cue/2/start"
 
         let global_labels: Vec<_> = cfg.global_macros.iter().map(|m| m.label.as_str()).collect();
         assert_eq!(global_labels, vec!["GOOD GLOBAL"]);
+    }
+
+    /// A hand-edited `patch.toml` with a key-binding collision between two
+    /// global macros and a MIDI-note collision between a channel macro and a
+    /// global macro — `sanitize` must strip just the colliding bindings
+    /// (first-listed wins) and keep every macro (ADR-0006).
+    #[test]
+    fn sanitize_strips_binding_collisions_keeps_every_macro() {
+        let raw = r##"
+config_version = 1
+client_id = "00000000-0000-0000-0000-000000000000"
+client_name = "FOH Engineer"
+osc_port = 9000
+network_interface = "en0"
+heartbeat_interval_secs = 7
+flash_on_critical = true
+flash_on_message = false
+flash_count = 4
+macros_columns = 1
+hide_keyboard = true
+static_peers = []
+
+[[default_channels]]
+id = "rf"
+display_name = "RF"
+color = "#1E88E5"
+flash_on_critical = true
+flash_on_message = false
+
+[[default_channels.macros]]
+label = "STANDBY"
+payload = "Standby"
+priority = 1
+midi_note = 60
+
+[[global_macros]]
+label = "GO"
+payload = "Go"
+priority = 1
+key_binding = "F3"
+midi_note = 60
+
+[[global_macros]]
+label = "YES"
+payload = "Yes"
+priority = 1
+key_binding = "F3"
+"##;
+        let mut cfg: Config = toml::from_str(raw).expect("fixture must deserialize");
+        cfg.sanitize();
+
+        // Global-vs-global: first-listed ("GO") keeps "F3"; "YES" loses it.
+        let go = cfg.global_macros.iter().find(|m| m.label == "GO").unwrap();
+        let yes = cfg.global_macros.iter().find(|m| m.label == "YES").unwrap();
+        assert_eq!(go.key_binding.as_deref(), Some("F3"));
+        assert_eq!(yes.key_binding, None);
+
+        // Channel-vs-global: globals are finalized first, so "GO" keeps its
+        // MIDI note; the channel macro loses it but stays on the channel.
+        let rf = cfg.default_channels.iter().find(|c| c.id == "rf").unwrap();
+        assert_eq!(rf.macros.len(), 1);
+        assert_eq!(rf.macros[0].label, "STANDBY");
+        assert_eq!(rf.macros[0].midi_note, None);
     }
 
     /// A pre-versioning `patch.toml` (no `config_version`) loads as version 0,

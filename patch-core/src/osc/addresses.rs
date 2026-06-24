@@ -17,6 +17,10 @@ pub const DM_FLASH: &str = "/patch/dm/flash";
 pub const CHANNELS_REQUEST: &str = "/patch/channels/request";
 /// Reply to a channels request (unicast). Args: peer_id, peer_name, channels JSON.
 pub const CHANNELS_ANNOUNCE: &str = "/patch/channels/announce";
+/// Request a peer's global macros (unicast). Arg: requester peer_id.
+pub const MACROS_REQUEST: &str = "/patch/macros/request";
+/// Reply to a macros request (unicast). Args: peer_id, peer_name, global macros JSON.
+pub const MACROS_ANNOUNCE: &str = "/patch/macros/announce";
 
 // Flash / page (per-channel suffix appended at runtime)
 pub const CHANNEL_FLASH_PREFIX: &str = "/patch/channel";

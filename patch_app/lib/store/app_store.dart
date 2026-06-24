@@ -162,6 +162,7 @@ class AppStore extends ChangeNotifier {
       // Screen-local UI — not the store's concern.
       case Flashed():
       case ChannelsOffered():
+      case GlobalMacrosOffered():
       case PermissionDenied():
         break;
     }

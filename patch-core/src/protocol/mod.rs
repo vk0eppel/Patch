@@ -15,16 +15,20 @@ use tokio::sync::Mutex;
 use tracing::{debug, warn};
 use uuid::Uuid;
 
-use crate::osc::codec::{encode_ack, encode_channels_announce, encode_message, PatchEvent};
+use crate::osc::codec::{
+    encode_ack, encode_channels_announce, encode_macros_announce, encode_message, PatchEvent,
+};
 use crate::osc::types::PatchMessage;
 use crate::reliability::ReliabilityManager;
-use crate::state::channel::Channel;
+use crate::state::channel::{Channel, MacroMessage};
 use crate::state::{is_self, AppEvent, AppState, PeerSighting};
 use crate::transport::Outgoing;
 use std::net::SocketAddr;
 
 /// Defensive cap on how many channels a peer may offer in one announce.
 const MAX_OFFERED_CHANNELS: usize = 64;
+/// Defensive cap on how many global macros a peer may offer in one announce.
+const MAX_OFFERED_GLOBAL_MACROS: usize = 256;
 
 /// Records that `peer_id`/`peer_name` was just heard from at `from` — the
 /// sighting every inbound Message/DirectMessage/DirectFlash/Flash arm needs to
@@ -264,6 +268,56 @@ pub(crate) async fn handle(
                 ),
             }
         }
+        PatchEvent::MacrosRequest { peer_id } => {
+            if is_self(peer_id, client_id) {
+                return out; // don't answer our own request
+            }
+            // Reply with our current global macros, unicast back to the requester.
+            let config = state.config().await;
+            match serde_json::to_string(&config.global_macros) {
+                Ok(json) => {
+                    match encode_macros_announce(config.client_id, &config.client_name, &json) {
+                        Ok(bytes) => {
+                            debug!("Replying to macros request from {} ({})", peer_id, from);
+                            out.push(Outgoing::To(bytes, from));
+                        }
+                        Err(e) => warn!("Failed to encode macros announce: {}", e),
+                    }
+                }
+                Err(e) => warn!("Failed to serialise global macros for announce: {}", e),
+            }
+        }
+        PatchEvent::MacrosAnnounce {
+            peer_id,
+            peer_name,
+            macros_json,
+        } => {
+            if is_self(peer_id, client_id) {
+                return out;
+            }
+            match serde_json::from_str::<Vec<MacroMessage>>(&macros_json) {
+                Ok(global_macros) => {
+                    if global_macros.len() > MAX_OFFERED_GLOBAL_MACROS {
+                        warn!(
+                            "Macros announce from {} has {} macros (> {}), dropping",
+                            peer_name,
+                            global_macros.len(),
+                            MAX_OFFERED_GLOBAL_MACROS
+                        );
+                        return out;
+                    }
+                    // Surface for a UI preview/merge prompt — never auto-applied.
+                    state
+                        .publish(AppEvent::GlobalMacrosOffered {
+                            from_peer_id: peer_id,
+                            from_name: peer_name,
+                            global_macros,
+                        })
+                        .await;
+                }
+                Err(e) => warn!("Failed to parse macros announce from {}: {}", peer_name, e),
+            }
+        }
         PatchEvent::Unknown(msg) => {
             debug!("Unknown OSC: {}", msg.addr);
         }
@@ -483,6 +537,88 @@ mod tests {
         assert!(out.is_empty());
         // No ChannelsOffered published — confirm by publishing a sentinel and
         // checking it's the *first* thing observed.
+        state.publish(AppEvent::ChannelListUpdated).await;
+        assert!(matches!(
+            events.recv().await.unwrap(),
+            AppEvent::ChannelListUpdated
+        ));
+    }
+
+    fn test_macro(label: &str) -> MacroMessage {
+        MacroMessage {
+            label: label.into(),
+            payload: label.into(),
+            key_binding: None,
+            priority: 1,
+            midi_note: None,
+            midi_cc: None,
+            osc: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn macros_request_replies_with_macros_announce() {
+        let client_id = Uuid::new_v4();
+        let state = test_state_with_id(client_id);
+        let requester = Uuid::new_v4();
+        state
+            .upsert_global_macro(None, test_macro("GO"))
+            .await
+            .unwrap();
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+
+        let out = handle(
+            PatchEvent::MacrosRequest { peer_id: requester },
+            addr(6),
+            &state,
+            client_id,
+            &reliability,
+        )
+        .await;
+
+        assert_eq!(out.len(), 1);
+        let Outgoing::To(bytes, to) = &out[0] else {
+            panic!("expected a reply To packet")
+        };
+        assert_eq!(*to, addr(6)); // unicast back to the requester
+        match decode_packet(bytes).unwrap() {
+            PatchEvent::MacrosAnnounce {
+                peer_id,
+                macros_json,
+                ..
+            } => {
+                assert_eq!(peer_id, client_id);
+                assert!(macros_json.contains("\"GO\""));
+            }
+            other => panic!("expected MacrosAnnounce, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn macros_announce_over_the_cap_is_dropped_without_publishing() {
+        let state = test_state();
+        let mut events = state.subscribe();
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+
+        let macros: Vec<_> = (0..MAX_OFFERED_GLOBAL_MACROS + 1)
+            .map(|i| test_macro(&format!("m{i}")))
+            .collect();
+        let macros_json = serde_json::to_string(&macros).unwrap();
+
+        let out = handle(
+            PatchEvent::MacrosAnnounce {
+                peer_id: Uuid::new_v4(),
+                peer_name: "peer".into(),
+                macros_json,
+            },
+            addr(7),
+            &state,
+            Uuid::new_v4(),
+            &reliability,
+        )
+        .await;
+
+        assert!(out.is_empty());
         state.publish(AppEvent::ChannelListUpdated).await;
         assert!(matches!(
             events.recv().await.unwrap(),

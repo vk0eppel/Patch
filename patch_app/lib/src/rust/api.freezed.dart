@@ -55,7 +55,7 @@ extension PatchAppEventPatterns on PatchAppEvent {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( PatchAppEvent_Message value)?  message,TResult Function( PatchAppEvent_MessageAcked value)?  messageAcked,TResult Function( PatchAppEvent_MessageDelivery value)?  messageDelivery,TResult Function( PatchAppEvent_PeerUpdated value)?  peerUpdated,TResult Function( PatchAppEvent_PeerExpired value)?  peerExpired,TResult Function( PatchAppEvent_ChannelFlash value)?  channelFlash,TResult Function( PatchAppEvent_ChannelListUpdated value)?  channelListUpdated,TResult Function( PatchAppEvent_ChannelsOffered value)?  channelsOffered,TResult Function( PatchAppEvent_ClientNameChanged value)?  clientNameChanged,TResult Function( PatchAppEvent_PermissionDenied value)?  permissionDenied,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( PatchAppEvent_Message value)?  message,TResult Function( PatchAppEvent_MessageAcked value)?  messageAcked,TResult Function( PatchAppEvent_MessageDelivery value)?  messageDelivery,TResult Function( PatchAppEvent_PeerUpdated value)?  peerUpdated,TResult Function( PatchAppEvent_PeerExpired value)?  peerExpired,TResult Function( PatchAppEvent_ChannelFlash value)?  channelFlash,TResult Function( PatchAppEvent_ChannelListUpdated value)?  channelListUpdated,TResult Function( PatchAppEvent_ChannelsOffered value)?  channelsOffered,TResult Function( PatchAppEvent_GlobalMacrosOffered value)?  globalMacrosOffered,TResult Function( PatchAppEvent_ClientNameChanged value)?  clientNameChanged,TResult Function( PatchAppEvent_PermissionDenied value)?  permissionDenied,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case PatchAppEvent_Message() when message != null:
@@ -66,7 +66,8 @@ return peerUpdated(_that);case PatchAppEvent_PeerExpired() when peerExpired != n
 return peerExpired(_that);case PatchAppEvent_ChannelFlash() when channelFlash != null:
 return channelFlash(_that);case PatchAppEvent_ChannelListUpdated() when channelListUpdated != null:
 return channelListUpdated(_that);case PatchAppEvent_ChannelsOffered() when channelsOffered != null:
-return channelsOffered(_that);case PatchAppEvent_ClientNameChanged() when clientNameChanged != null:
+return channelsOffered(_that);case PatchAppEvent_GlobalMacrosOffered() when globalMacrosOffered != null:
+return globalMacrosOffered(_that);case PatchAppEvent_ClientNameChanged() when clientNameChanged != null:
 return clientNameChanged(_that);case PatchAppEvent_PermissionDenied() when permissionDenied != null:
 return permissionDenied(_that);case _:
   return orElse();
@@ -86,7 +87,7 @@ return permissionDenied(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( PatchAppEvent_Message value)  message,required TResult Function( PatchAppEvent_MessageAcked value)  messageAcked,required TResult Function( PatchAppEvent_MessageDelivery value)  messageDelivery,required TResult Function( PatchAppEvent_PeerUpdated value)  peerUpdated,required TResult Function( PatchAppEvent_PeerExpired value)  peerExpired,required TResult Function( PatchAppEvent_ChannelFlash value)  channelFlash,required TResult Function( PatchAppEvent_ChannelListUpdated value)  channelListUpdated,required TResult Function( PatchAppEvent_ChannelsOffered value)  channelsOffered,required TResult Function( PatchAppEvent_ClientNameChanged value)  clientNameChanged,required TResult Function( PatchAppEvent_PermissionDenied value)  permissionDenied,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( PatchAppEvent_Message value)  message,required TResult Function( PatchAppEvent_MessageAcked value)  messageAcked,required TResult Function( PatchAppEvent_MessageDelivery value)  messageDelivery,required TResult Function( PatchAppEvent_PeerUpdated value)  peerUpdated,required TResult Function( PatchAppEvent_PeerExpired value)  peerExpired,required TResult Function( PatchAppEvent_ChannelFlash value)  channelFlash,required TResult Function( PatchAppEvent_ChannelListUpdated value)  channelListUpdated,required TResult Function( PatchAppEvent_ChannelsOffered value)  channelsOffered,required TResult Function( PatchAppEvent_GlobalMacrosOffered value)  globalMacrosOffered,required TResult Function( PatchAppEvent_ClientNameChanged value)  clientNameChanged,required TResult Function( PatchAppEvent_PermissionDenied value)  permissionDenied,}){
 final _that = this;
 switch (_that) {
 case PatchAppEvent_Message():
@@ -97,7 +98,8 @@ return peerUpdated(_that);case PatchAppEvent_PeerExpired():
 return peerExpired(_that);case PatchAppEvent_ChannelFlash():
 return channelFlash(_that);case PatchAppEvent_ChannelListUpdated():
 return channelListUpdated(_that);case PatchAppEvent_ChannelsOffered():
-return channelsOffered(_that);case PatchAppEvent_ClientNameChanged():
+return channelsOffered(_that);case PatchAppEvent_GlobalMacrosOffered():
+return globalMacrosOffered(_that);case PatchAppEvent_ClientNameChanged():
 return clientNameChanged(_that);case PatchAppEvent_PermissionDenied():
 return permissionDenied(_that);}
 }
@@ -113,7 +115,7 @@ return permissionDenied(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( PatchAppEvent_Message value)?  message,TResult? Function( PatchAppEvent_MessageAcked value)?  messageAcked,TResult? Function( PatchAppEvent_MessageDelivery value)?  messageDelivery,TResult? Function( PatchAppEvent_PeerUpdated value)?  peerUpdated,TResult? Function( PatchAppEvent_PeerExpired value)?  peerExpired,TResult? Function( PatchAppEvent_ChannelFlash value)?  channelFlash,TResult? Function( PatchAppEvent_ChannelListUpdated value)?  channelListUpdated,TResult? Function( PatchAppEvent_ChannelsOffered value)?  channelsOffered,TResult? Function( PatchAppEvent_ClientNameChanged value)?  clientNameChanged,TResult? Function( PatchAppEvent_PermissionDenied value)?  permissionDenied,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( PatchAppEvent_Message value)?  message,TResult? Function( PatchAppEvent_MessageAcked value)?  messageAcked,TResult? Function( PatchAppEvent_MessageDelivery value)?  messageDelivery,TResult? Function( PatchAppEvent_PeerUpdated value)?  peerUpdated,TResult? Function( PatchAppEvent_PeerExpired value)?  peerExpired,TResult? Function( PatchAppEvent_ChannelFlash value)?  channelFlash,TResult? Function( PatchAppEvent_ChannelListUpdated value)?  channelListUpdated,TResult? Function( PatchAppEvent_ChannelsOffered value)?  channelsOffered,TResult? Function( PatchAppEvent_GlobalMacrosOffered value)?  globalMacrosOffered,TResult? Function( PatchAppEvent_ClientNameChanged value)?  clientNameChanged,TResult? Function( PatchAppEvent_PermissionDenied value)?  permissionDenied,}){
 final _that = this;
 switch (_that) {
 case PatchAppEvent_Message() when message != null:
@@ -124,7 +126,8 @@ return peerUpdated(_that);case PatchAppEvent_PeerExpired() when peerExpired != n
 return peerExpired(_that);case PatchAppEvent_ChannelFlash() when channelFlash != null:
 return channelFlash(_that);case PatchAppEvent_ChannelListUpdated() when channelListUpdated != null:
 return channelListUpdated(_that);case PatchAppEvent_ChannelsOffered() when channelsOffered != null:
-return channelsOffered(_that);case PatchAppEvent_ClientNameChanged() when clientNameChanged != null:
+return channelsOffered(_that);case PatchAppEvent_GlobalMacrosOffered() when globalMacrosOffered != null:
+return globalMacrosOffered(_that);case PatchAppEvent_ClientNameChanged() when clientNameChanged != null:
 return clientNameChanged(_that);case PatchAppEvent_PermissionDenied() when permissionDenied != null:
 return permissionDenied(_that);case _:
   return null;
@@ -143,7 +146,7 @@ return permissionDenied(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( PatchMessage field0)?  message,TResult Function( String messageId,  String peerId)?  messageAcked,TResult Function( String messageId,  int delivered,  int total,  bool failed,  List<String> failedPeers)?  messageDelivery,TResult Function( PeerPresence field0)?  peerUpdated,TResult Function( String peerId)?  peerExpired,TResult Function( ChannelFlash field0)?  channelFlash,TResult Function()?  channelListUpdated,TResult Function( String fromPeerId,  String fromName,  List<Channel> channels)?  channelsOffered,TResult Function( String name)?  clientNameChanged,TResult Function( String context)?  permissionDenied,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( PatchMessage field0)?  message,TResult Function( String messageId,  String peerId)?  messageAcked,TResult Function( String messageId,  int delivered,  int total,  bool failed,  List<String> failedPeers)?  messageDelivery,TResult Function( PeerPresence field0)?  peerUpdated,TResult Function( String peerId)?  peerExpired,TResult Function( ChannelFlash field0)?  channelFlash,TResult Function()?  channelListUpdated,TResult Function( String fromPeerId,  String fromName,  List<Channel> channels)?  channelsOffered,TResult Function( String fromPeerId,  String fromName,  List<MacroMessage> globalMacros)?  globalMacrosOffered,TResult Function( String name)?  clientNameChanged,TResult Function( String context)?  permissionDenied,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case PatchAppEvent_Message() when message != null:
 return message(_that.field0);case PatchAppEvent_MessageAcked() when messageAcked != null:
@@ -153,7 +156,8 @@ return peerUpdated(_that.field0);case PatchAppEvent_PeerExpired() when peerExpir
 return peerExpired(_that.peerId);case PatchAppEvent_ChannelFlash() when channelFlash != null:
 return channelFlash(_that.field0);case PatchAppEvent_ChannelListUpdated() when channelListUpdated != null:
 return channelListUpdated();case PatchAppEvent_ChannelsOffered() when channelsOffered != null:
-return channelsOffered(_that.fromPeerId,_that.fromName,_that.channels);case PatchAppEvent_ClientNameChanged() when clientNameChanged != null:
+return channelsOffered(_that.fromPeerId,_that.fromName,_that.channels);case PatchAppEvent_GlobalMacrosOffered() when globalMacrosOffered != null:
+return globalMacrosOffered(_that.fromPeerId,_that.fromName,_that.globalMacros);case PatchAppEvent_ClientNameChanged() when clientNameChanged != null:
 return clientNameChanged(_that.name);case PatchAppEvent_PermissionDenied() when permissionDenied != null:
 return permissionDenied(_that.context);case _:
   return orElse();
@@ -173,7 +177,7 @@ return permissionDenied(_that.context);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( PatchMessage field0)  message,required TResult Function( String messageId,  String peerId)  messageAcked,required TResult Function( String messageId,  int delivered,  int total,  bool failed,  List<String> failedPeers)  messageDelivery,required TResult Function( PeerPresence field0)  peerUpdated,required TResult Function( String peerId)  peerExpired,required TResult Function( ChannelFlash field0)  channelFlash,required TResult Function()  channelListUpdated,required TResult Function( String fromPeerId,  String fromName,  List<Channel> channels)  channelsOffered,required TResult Function( String name)  clientNameChanged,required TResult Function( String context)  permissionDenied,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( PatchMessage field0)  message,required TResult Function( String messageId,  String peerId)  messageAcked,required TResult Function( String messageId,  int delivered,  int total,  bool failed,  List<String> failedPeers)  messageDelivery,required TResult Function( PeerPresence field0)  peerUpdated,required TResult Function( String peerId)  peerExpired,required TResult Function( ChannelFlash field0)  channelFlash,required TResult Function()  channelListUpdated,required TResult Function( String fromPeerId,  String fromName,  List<Channel> channels)  channelsOffered,required TResult Function( String fromPeerId,  String fromName,  List<MacroMessage> globalMacros)  globalMacrosOffered,required TResult Function( String name)  clientNameChanged,required TResult Function( String context)  permissionDenied,}) {final _that = this;
 switch (_that) {
 case PatchAppEvent_Message():
 return message(_that.field0);case PatchAppEvent_MessageAcked():
@@ -183,7 +187,8 @@ return peerUpdated(_that.field0);case PatchAppEvent_PeerExpired():
 return peerExpired(_that.peerId);case PatchAppEvent_ChannelFlash():
 return channelFlash(_that.field0);case PatchAppEvent_ChannelListUpdated():
 return channelListUpdated();case PatchAppEvent_ChannelsOffered():
-return channelsOffered(_that.fromPeerId,_that.fromName,_that.channels);case PatchAppEvent_ClientNameChanged():
+return channelsOffered(_that.fromPeerId,_that.fromName,_that.channels);case PatchAppEvent_GlobalMacrosOffered():
+return globalMacrosOffered(_that.fromPeerId,_that.fromName,_that.globalMacros);case PatchAppEvent_ClientNameChanged():
 return clientNameChanged(_that.name);case PatchAppEvent_PermissionDenied():
 return permissionDenied(_that.context);}
 }
@@ -199,7 +204,7 @@ return permissionDenied(_that.context);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( PatchMessage field0)?  message,TResult? Function( String messageId,  String peerId)?  messageAcked,TResult? Function( String messageId,  int delivered,  int total,  bool failed,  List<String> failedPeers)?  messageDelivery,TResult? Function( PeerPresence field0)?  peerUpdated,TResult? Function( String peerId)?  peerExpired,TResult? Function( ChannelFlash field0)?  channelFlash,TResult? Function()?  channelListUpdated,TResult? Function( String fromPeerId,  String fromName,  List<Channel> channels)?  channelsOffered,TResult? Function( String name)?  clientNameChanged,TResult? Function( String context)?  permissionDenied,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( PatchMessage field0)?  message,TResult? Function( String messageId,  String peerId)?  messageAcked,TResult? Function( String messageId,  int delivered,  int total,  bool failed,  List<String> failedPeers)?  messageDelivery,TResult? Function( PeerPresence field0)?  peerUpdated,TResult? Function( String peerId)?  peerExpired,TResult? Function( ChannelFlash field0)?  channelFlash,TResult? Function()?  channelListUpdated,TResult? Function( String fromPeerId,  String fromName,  List<Channel> channels)?  channelsOffered,TResult? Function( String fromPeerId,  String fromName,  List<MacroMessage> globalMacros)?  globalMacrosOffered,TResult? Function( String name)?  clientNameChanged,TResult? Function( String context)?  permissionDenied,}) {final _that = this;
 switch (_that) {
 case PatchAppEvent_Message() when message != null:
 return message(_that.field0);case PatchAppEvent_MessageAcked() when messageAcked != null:
@@ -209,7 +214,8 @@ return peerUpdated(_that.field0);case PatchAppEvent_PeerExpired() when peerExpir
 return peerExpired(_that.peerId);case PatchAppEvent_ChannelFlash() when channelFlash != null:
 return channelFlash(_that.field0);case PatchAppEvent_ChannelListUpdated() when channelListUpdated != null:
 return channelListUpdated();case PatchAppEvent_ChannelsOffered() when channelsOffered != null:
-return channelsOffered(_that.fromPeerId,_that.fromName,_that.channels);case PatchAppEvent_ClientNameChanged() when clientNameChanged != null:
+return channelsOffered(_that.fromPeerId,_that.fromName,_that.channels);case PatchAppEvent_GlobalMacrosOffered() when globalMacrosOffered != null:
+return globalMacrosOffered(_that.fromPeerId,_that.fromName,_that.globalMacros);case PatchAppEvent_ClientNameChanged() when clientNameChanged != null:
 return clientNameChanged(_that.name);case PatchAppEvent_PermissionDenied() when permissionDenied != null:
 return permissionDenied(_that.context);case _:
   return null;
@@ -733,6 +739,82 @@ fromPeerId: null == fromPeerId ? _self.fromPeerId : fromPeerId // ignore: cast_n
 as String,fromName: null == fromName ? _self.fromName : fromName // ignore: cast_nullable_to_non_nullable
 as String,channels: null == channels ? _self._channels : channels // ignore: cast_nullable_to_non_nullable
 as List<Channel>,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class PatchAppEvent_GlobalMacrosOffered extends PatchAppEvent {
+  const PatchAppEvent_GlobalMacrosOffered({required this.fromPeerId, required this.fromName, required final  List<MacroMessage> globalMacros}): _globalMacros = globalMacros,super._();
+  
+
+ final  String fromPeerId;
+ final  String fromName;
+ final  List<MacroMessage> _globalMacros;
+ List<MacroMessage> get globalMacros {
+  if (_globalMacros is EqualUnmodifiableListView) return _globalMacros;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_globalMacros);
+}
+
+
+/// Create a copy of PatchAppEvent
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$PatchAppEvent_GlobalMacrosOfferedCopyWith<PatchAppEvent_GlobalMacrosOffered> get copyWith => _$PatchAppEvent_GlobalMacrosOfferedCopyWithImpl<PatchAppEvent_GlobalMacrosOffered>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PatchAppEvent_GlobalMacrosOffered&&(identical(other.fromPeerId, fromPeerId) || other.fromPeerId == fromPeerId)&&(identical(other.fromName, fromName) || other.fromName == fromName)&&const DeepCollectionEquality().equals(other._globalMacros, _globalMacros));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,fromPeerId,fromName,const DeepCollectionEquality().hash(_globalMacros));
+
+@override
+String toString() {
+  return 'PatchAppEvent.globalMacrosOffered(fromPeerId: $fromPeerId, fromName: $fromName, globalMacros: $globalMacros)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $PatchAppEvent_GlobalMacrosOfferedCopyWith<$Res> implements $PatchAppEventCopyWith<$Res> {
+  factory $PatchAppEvent_GlobalMacrosOfferedCopyWith(PatchAppEvent_GlobalMacrosOffered value, $Res Function(PatchAppEvent_GlobalMacrosOffered) _then) = _$PatchAppEvent_GlobalMacrosOfferedCopyWithImpl;
+@useResult
+$Res call({
+ String fromPeerId, String fromName, List<MacroMessage> globalMacros
+});
+
+
+
+
+}
+/// @nodoc
+class _$PatchAppEvent_GlobalMacrosOfferedCopyWithImpl<$Res>
+    implements $PatchAppEvent_GlobalMacrosOfferedCopyWith<$Res> {
+  _$PatchAppEvent_GlobalMacrosOfferedCopyWithImpl(this._self, this._then);
+
+  final PatchAppEvent_GlobalMacrosOffered _self;
+  final $Res Function(PatchAppEvent_GlobalMacrosOffered) _then;
+
+/// Create a copy of PatchAppEvent
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? fromPeerId = null,Object? fromName = null,Object? globalMacros = null,}) {
+  return _then(PatchAppEvent_GlobalMacrosOffered(
+fromPeerId: null == fromPeerId ? _self.fromPeerId : fromPeerId // ignore: cast_nullable_to_non_nullable
+as String,fromName: null == fromName ? _self.fromName : fromName // ignore: cast_nullable_to_non_nullable
+as String,globalMacros: null == globalMacros ? _self._globalMacros : globalMacros // ignore: cast_nullable_to_non_nullable
+as List<MacroMessage>,
   ));
 }
 

@@ -120,3 +120,39 @@ class PatchChannel {
     );
   }
 }
+
+/// Outcome of considering one offered Macro for import from a Peer's global
+/// Macro set (see `previewGlobalMacros`/`adoptGlobalMacros`) — mirrors Rust's
+/// `state::channel::MacroImportOutcome`. The classification (already-have,
+/// invalid-OSC-skipped, binding-collision-stripped) is computed Rust-side so
+/// the preview dialog and the actual merge can never disagree.
+sealed class MacroImportOutcome {
+  const MacroImportOutcome();
+}
+
+/// Every field matches a Macro we already have — not added.
+class MacroAlreadyHave extends MacroImportOutcome {
+  final String label;
+  const MacroAlreadyHave(this.label);
+}
+
+/// Added with no conflict.
+class MacroAdded extends MacroImportOutcome {
+  final MacroMessage macro;
+  const MacroAdded(this.macro);
+}
+
+/// Added, but a colliding key/MIDI binding was stripped first — the Macro
+/// itself still comes through.
+class MacroAddedBindingDropped extends MacroImportOutcome {
+  final MacroMessage macro;
+  final String reason;
+  const MacroAddedBindingDropped(this.macro, this.reason);
+}
+
+/// Dropped entirely — invalid OSC target.
+class MacroSkipped extends MacroImportOutcome {
+  final String label;
+  final String reason;
+  const MacroSkipped(this.label, this.reason);
+}

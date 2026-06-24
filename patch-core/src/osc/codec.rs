@@ -137,6 +137,37 @@ pub fn encode_channels_announce(
         .context("Failed to encode /patch/channels/announce")
 }
 
+/// Encode a global-macros request (sent unicast to a chosen peer).
+pub fn encode_macros_request(peer_id: Uuid) -> Result<Vec<u8>> {
+    let osc = OscMessage {
+        addr: addresses::MACROS_REQUEST.to_string(),
+        args: vec![OscType::String(peer_id.to_string())],
+    };
+    rosc::encoder::encode(&OscPacket::Message(osc))
+        .context("Failed to encode /patch/macros/request")
+}
+
+/// Encode a global-macros announce (the reply to a request). `macros_json` is
+/// the responder's global macro list already serialised to JSON — kept as a
+/// string here so the codec layer doesn't depend on `state::channel::MacroMessage`
+/// (the transport/state layer serialises and parses it).
+pub fn encode_macros_announce(
+    peer_id: Uuid,
+    peer_name: &str,
+    macros_json: &str,
+) -> Result<Vec<u8>> {
+    let osc = OscMessage {
+        addr: addresses::MACROS_ANNOUNCE.to_string(),
+        args: vec![
+            OscType::String(peer_id.to_string()),
+            OscType::String(peer_name.to_string()),
+            OscType::String(macros_json.to_string()),
+        ],
+    };
+    rosc::encoder::encode(&OscPacket::Message(osc))
+        .context("Failed to encode /patch/macros/announce")
+}
+
 /// Parse a macro's stored `arg` string into the `OscType` matching its
 /// declared `arg_type`. The single place that converts the wire-agnostic
 /// [`OscArgKind`] into a concrete `rosc::OscType` — both `encode_osc` and the
@@ -237,6 +268,18 @@ pub enum PatchEvent {
         peer_name: String,
         channels_json: String,
     },
+    /// A peer asked us for our global macros. We reply with a MacrosAnnounce.
+    MacrosRequest {
+        peer_id: Uuid,
+    },
+    /// A peer's global macros, in reply to our request. `macros_json` is the
+    /// raw JSON-serialised `Vec<MacroMessage>`; the transport layer parses +
+    /// validates.
+    MacrosAnnounce {
+        peer_id: Uuid,
+        peer_name: String,
+        macros_json: String,
+    },
     Unknown(OscMessage),
 }
 
@@ -265,6 +308,8 @@ fn decode_message(msg: OscMessage) -> Result<PatchEvent> {
         addresses::DM_FLASH => decode_dm_flash(msg),
         addresses::CHANNELS_REQUEST => decode_channels_request(msg),
         addresses::CHANNELS_ANNOUNCE => decode_channels_announce(msg),
+        addresses::MACROS_REQUEST => decode_macros_request(msg),
+        addresses::MACROS_ANNOUNCE => decode_macros_announce(msg),
         addr if addr.ends_with("/flash") => decode_flash(msg),
         _ => Ok(PatchEvent::Unknown(msg)),
     }
@@ -501,6 +546,44 @@ fn decode_channels_announce(msg: OscMessage) -> Result<PatchEvent> {
         peer_id,
         peer_name,
         channels_json,
+    })
+}
+
+/// Defensive cap on an announced global-macros JSON blob (network input) —
+/// mirrors `MAX_CHANNELS_JSON`.
+const MAX_MACROS_JSON: usize = 64 * 1024;
+
+fn decode_macros_request(msg: OscMessage) -> Result<PatchEvent> {
+    if msg.args.is_empty() {
+        bail!("Expected 1 arg for /patch/macros/request, got 0");
+    }
+    Ok(PatchEvent::MacrosRequest {
+        peer_id: parse_uuid(&msg.args[0])?,
+    })
+}
+
+fn decode_macros_announce(msg: OscMessage) -> Result<PatchEvent> {
+    let args = msg.args;
+    if args.len() < 3 {
+        bail!(
+            "Expected 3 args for /patch/macros/announce, got {}",
+            args.len()
+        );
+    }
+    let peer_id = parse_uuid(&args[0])?;
+    let peer_name = parse_string(&args[1])?;
+    let macros_json = parse_string(&args[2])?;
+    if macros_json.len() > MAX_MACROS_JSON {
+        bail!(
+            "macros announce payload {} bytes exceeds max {}",
+            macros_json.len(),
+            MAX_MACROS_JSON
+        );
+    }
+    Ok(PatchEvent::MacrosAnnounce {
+        peer_id,
+        peer_name,
+        macros_json,
     })
 }
 
@@ -776,6 +859,49 @@ mod tests {
         let big = "x".repeat(MAX_CHANNELS_JSON + 1);
         let msg = OscMessage {
             addr: addresses::CHANNELS_ANNOUNCE.to_string(),
+            args: vec![
+                OscType::String(Uuid::new_v4().to_string()),
+                OscType::String("FOH".into()),
+                OscType::String(big),
+            ],
+        };
+        assert!(decode_message(msg).is_err());
+    }
+
+    #[test]
+    fn macros_request_round_trip() {
+        let pid = Uuid::new_v4();
+        let bytes = encode_macros_request(pid).unwrap();
+        match decode_packet(&bytes).unwrap() {
+            PatchEvent::MacrosRequest { peer_id } => assert_eq!(peer_id, pid),
+            other => panic!("expected MacrosRequest, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn macros_announce_round_trip_carries_json() {
+        let pid = Uuid::new_v4();
+        let json = r##"[{"label":"GO","payload":"Go","priority":1}]"##;
+        let bytes = encode_macros_announce(pid, "FOH", json).unwrap();
+        match decode_packet(&bytes).unwrap() {
+            PatchEvent::MacrosAnnounce {
+                peer_id,
+                peer_name,
+                macros_json,
+            } => {
+                assert_eq!(peer_id, pid);
+                assert_eq!(peer_name, "FOH");
+                assert_eq!(macros_json, json);
+            }
+            other => panic!("expected MacrosAnnounce, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn oversized_macros_announce_is_rejected() {
+        let big = "x".repeat(MAX_MACROS_JSON + 1);
+        let msg = OscMessage {
+            addr: addresses::MACROS_ANNOUNCE.to_string(),
             args: vec![
                 OscType::String(Uuid::new_v4().to_string()),
                 OscType::String("FOH".into()),

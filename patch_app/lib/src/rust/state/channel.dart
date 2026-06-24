@@ -6,6 +6,8 @@
 import '../frb_generated.dart';
 import '../osc/types.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
+part 'channel.freezed.dart';
 
 /// A logical communication channel.
 class Channel {
@@ -62,6 +64,32 @@ class Channel {
           flashOnCritical == other.flashOnCritical &&
           flashOnMessage == other.flashOnMessage &&
           flashCount == other.flashCount;
+}
+
+@freezed
+sealed class MacroImportOutcome with _$MacroImportOutcome {
+  const MacroImportOutcome._();
+
+  /// Every field matches a macro we already have — not added.
+  const factory MacroImportOutcome.alreadyHave({required String label}) =
+      MacroImportOutcome_AlreadyHave;
+
+  /// Added with no conflict.
+  const factory MacroImportOutcome.added({required MacroMessage msg}) =
+      MacroImportOutcome_Added;
+
+  /// Added, but a colliding key/MIDI binding was stripped first — the macro
+  /// itself still comes through (ADR-0002's drop-and-warn, not exclude).
+  const factory MacroImportOutcome.addedBindingDropped({
+    required MacroMessage msg,
+    required String reason,
+  }) = MacroImportOutcome_AddedBindingDropped;
+
+  /// Dropped entirely — invalid OSC target (ADR-0002 peer-trust policy).
+  const factory MacroImportOutcome.skipped({
+    required String label,
+    required String reason,
+  }) = MacroImportOutcome_Skipped;
 }
 
 /// A one-tap/keyboard macro message.

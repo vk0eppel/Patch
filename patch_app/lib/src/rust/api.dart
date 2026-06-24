@@ -222,6 +222,33 @@ Future<void> requestChannels({required String peerId}) =>
 Future<int> adoptChannels({required List<Channel> channels}) =>
     RustLib.instance.api.crateApiAdoptChannels(channels: channels);
 
+/// Ask a peer (by id) for its global macros. The peer replies with a
+/// `/patch/macros/announce`, surfaced to the UI as a `GlobalMacrosOffered`
+/// event — it is **not** auto-applied; the UI previews (`preview_global_macros`)
+/// and calls `adopt_global_macros`.
+Future<void> requestGlobalMacros({required String peerId}) =>
+    RustLib.instance.api.crateApiRequestGlobalMacros(peerId: peerId);
+
+/// Classify offered global macros against what this machine already has —
+/// for the import preview dialog. Read-only; does not add or persist
+/// anything. Each item reports whether it's already had, will be added
+/// as-is, will be added with a colliding binding stripped, or will be
+/// skipped outright (invalid OSC target).
+Future<List<MacroImportOutcome>> previewGlobalMacros({
+  required List<MacroMessage> globalMacros,
+}) => RustLib.instance.api.crateApiPreviewGlobalMacros(
+  globalMacros: globalMacros,
+);
+
+/// Adopt global macros offered by a peer — **merge** (adds new macros,
+/// strips colliding bindings rather than excluding the macro, drops macros
+/// with an invalid OSC target). Returns the same per-item classification as
+/// `preview_global_macros` so the UI can report what happened.
+Future<List<MacroImportOutcome>> adoptGlobalMacros({
+  required List<MacroMessage> globalMacros,
+}) =>
+    RustLib.instance.api.crateApiAdoptGlobalMacros(globalMacros: globalMacros);
+
 /// `original_label` is the macro's label before this edit — pass it when
 /// editing an existing macro (even if the label didn't change) so a rename
 /// updates that macro in place instead of appending a new one under the new
@@ -455,6 +482,14 @@ sealed class PatchAppEvent with _$PatchAppEvent {
     required String fromName,
     required List<Channel> channels,
   }) = PatchAppEvent_ChannelsOffered;
+
+  /// A peer offered its global macros (reply to our `request_global_macros`).
+  /// Surfaced for a UI preview/merge prompt — not auto-applied.
+  const factory PatchAppEvent.globalMacrosOffered({
+    required String fromPeerId,
+    required String fromName,
+    required List<MacroMessage> globalMacros,
+  }) = PatchAppEvent_GlobalMacrosOffered;
   const factory PatchAppEvent.clientNameChanged({required String name}) =
       PatchAppEvent_ClientNameChanged;
 

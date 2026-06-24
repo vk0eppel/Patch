@@ -333,6 +333,37 @@ class BridgeClient {
   Future<int> adoptChannels(List<PatchChannel> channels) =>
       rust.adoptChannels(channels: channels.map(_channelToRust).toList());
 
+  /// Ask a peer (by id) for its global Macros. The reply arrives asynchronously
+  /// as a `GlobalMacrosOffered` event (not auto-applied — the UI previews +
+  /// merges).
+  Future<void> requestGlobalMacros(String peerId) =>
+      rust.requestGlobalMacros(peerId: peerId);
+
+  /// Classify offered global Macros against what this machine already has —
+  /// for the import preview dialog. Read-only; throws nothing it can't recover
+  /// from since it never mutates state.
+  Future<List<MacroImportOutcome>> previewGlobalMacros(
+    List<MacroMessage> globalMacros,
+  ) async {
+    final outcomes = await rust.previewGlobalMacros(
+      globalMacros: globalMacros.map(_macroToRust).toList(),
+    );
+    return outcomes.map(_macroImportOutcomeFromRust).toList();
+  }
+
+  /// Adopt offered global Macros — merge (adds new ones, strips colliding
+  /// bindings rather than excluding the Macro, drops invalid-OSC ones).
+  /// Returns the same per-item classification as [previewGlobalMacros]; throws
+  /// on failure.
+  Future<List<MacroImportOutcome>> adoptGlobalMacros(
+    List<MacroMessage> globalMacros,
+  ) async {
+    final outcomes = await rust.adoptGlobalMacros(
+      globalMacros: globalMacros.map(_macroToRust).toList(),
+    );
+    return outcomes.map(_macroImportOutcomeFromRust).toList();
+  }
+
   /// Reset all channels to factory defaults (AUDIO · RF · LIGHTING · VIDEO ·
   /// STAGE). Throws on failure. ChannelListUpdated is emitted by the engine, so
   /// the screens refresh via the ChannelsChanged push.
@@ -487,6 +518,16 @@ PatchEvent? patchEventFromRust(rust.PatchAppEvent event) => switch (event) {
           fromName: fromName,
           channels: channels.map(_channelFromRust).toList(),
         ),
+      rust.PatchAppEvent_GlobalMacrosOffered(
+        :final fromPeerId,
+        :final fromName,
+        :final globalMacros,
+      ) =>
+        GlobalMacrosOffered(
+          fromPeerId: fromPeerId,
+          fromName: fromName,
+          globalMacros: globalMacros.map(_macroFromRust).toList(),
+        ),
       rust.PatchAppEvent_ClientNameChanged(:final name) =>
         ClientNameChanged(name),
       rust.PatchAppEvent_PermissionDenied(:final context) =>
@@ -530,6 +571,23 @@ MacroOsc _oscFromRust(rust_channel.OscTarget o) => MacroOsc(
         rust_osc.OscArgKind.float => MacroOscArgType.float,
       },
     );
+
+MacroImportOutcome _macroImportOutcomeFromRust(
+  rust_channel.MacroImportOutcome o,
+) =>
+    switch (o) {
+      rust_channel.MacroImportOutcome_AlreadyHave(:final label) =>
+        MacroAlreadyHave(label),
+      rust_channel.MacroImportOutcome_Added(:final msg) =>
+        MacroAdded(_macroFromRust(msg)),
+      rust_channel.MacroImportOutcome_AddedBindingDropped(
+        :final msg,
+        :final reason,
+      ) =>
+        MacroAddedBindingDropped(_macroFromRust(msg), reason),
+      rust_channel.MacroImportOutcome_Skipped(:final label, :final reason) =>
+        MacroSkipped(label, reason),
+    };
 
 Color _parseHexColor(String hex) =>
     Color(int.parse('FF${hex.replaceFirst('#', '')}', radix: 16));

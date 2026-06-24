@@ -20,12 +20,12 @@ use uuid::Uuid;
 
 use crate::discovery::Discovery;
 use crate::osc::codec::{
-    encode_bye, encode_channels_request, encode_dm, encode_dm_flash, encode_flash, encode_message,
-    encode_osc,
+    encode_bye, encode_channels_request, encode_dm, encode_dm_flash, encode_flash,
+    encode_macros_request, encode_message, encode_osc,
 };
 use crate::osc::types::{ChannelFlash, OscArgKind, PatchMessage, Priority};
 use crate::reliability::ReliabilityManager;
-use crate::state::channel::{self, Channel, MacroMessage, OscTarget};
+use crate::state::channel::{self, Channel, MacroImportOutcome, MacroMessage, OscTarget};
 use crate::state::show_file::{self, ShowFileConfig, ShowFileMeta};
 use crate::state::{config::StaticPeer, peer, AppEvent, AppState, Config};
 use crate::transport::{list_interfaces, InterfaceInfo, Transport};
@@ -741,6 +741,50 @@ pub async fn adopt_channels(channels: Vec<Channel>) -> Result<u32> {
     Ok(engine().state.merge_channels(channels).await? as u32)
 }
 
+// ── Global macro sharing over the network ──────────────────────────────────────
+
+/// Ask a peer (by id) for its global macros. The peer replies with a
+/// `/patch/macros/announce`, surfaced to the UI as a `GlobalMacrosOffered`
+/// event — it is **not** auto-applied; the UI previews (`preview_global_macros`)
+/// and calls `adopt_global_macros`.
+pub async fn request_global_macros(peer_id: String) -> Result<()> {
+    let h = engine();
+    let pid = Uuid::parse_str(&peer_id).map_err(|_| anyhow::anyhow!("invalid peer id"))?;
+    let peer = h
+        .state
+        .get_peers()
+        .await
+        .into_iter()
+        .find(|p| p.peer_id == pid)
+        .ok_or_else(|| anyhow::anyhow!("peer not found"))?;
+    let addr = peer.socket_addr().ok_or_else(|| {
+        anyhow::anyhow!("peer has no resolved address yet — try again once it's online")
+    })?;
+    let config = h.state.config().await;
+    let bytes = encode_macros_request(config.client_id)?;
+    h.transport.send_to(bytes, addr).await?;
+    Ok(())
+}
+
+/// Classify offered global macros against what this machine already has —
+/// for the import preview dialog. Read-only; does not add or persist
+/// anything. Each item reports whether it's already had, will be added
+/// as-is, will be added with a colliding binding stripped, or will be
+/// skipped outright (invalid OSC target).
+pub async fn preview_global_macros(global_macros: Vec<MacroMessage>) -> Vec<MacroImportOutcome> {
+    engine().state.preview_global_macros(global_macros).await
+}
+
+/// Adopt global macros offered by a peer — **merge** (adds new macros,
+/// strips colliding bindings rather than excluding the macro, drops macros
+/// with an invalid OSC target). Returns the same per-item classification as
+/// `preview_global_macros` so the UI can report what happened.
+pub async fn adopt_global_macros(
+    global_macros: Vec<MacroMessage>,
+) -> Result<Vec<MacroImportOutcome>> {
+    engine().state.merge_global_macros(global_macros).await
+}
+
 /// `original_label` is the macro's label before this edit — pass it when
 /// editing an existing macro (even if the label didn't change) so a rename
 /// updates that macro in place instead of appending a new one under the new
@@ -1017,6 +1061,13 @@ pub enum PatchAppEvent {
         from_name: String,
         channels: Vec<Channel>,
     },
+    /// A peer offered its global macros (reply to our `request_global_macros`).
+    /// Surfaced for a UI preview/merge prompt — not auto-applied.
+    GlobalMacrosOffered {
+        from_peer_id: String,
+        from_name: String,
+        global_macros: Vec<MacroMessage>,
+    },
     ClientNameChanged {
         name: String,
     },
@@ -1064,6 +1115,15 @@ impl From<AppEvent> for PatchAppEvent {
                 from_peer_id: from_peer_id.to_string(),
                 from_name,
                 channels,
+            },
+            AppEvent::GlobalMacrosOffered {
+                from_peer_id,
+                from_name,
+                global_macros,
+            } => Self::GlobalMacrosOffered {
+                from_peer_id: from_peer_id.to_string(),
+                from_name,
+                global_macros,
             },
             AppEvent::ClientNameChanged(name) => Self::ClientNameChanged { name },
             AppEvent::PermissionDenied { context } => Self::PermissionDenied { context },

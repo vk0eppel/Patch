@@ -104,6 +104,27 @@ void main() {
       expect(o.channels.single.displayName, 'RF'); // hex colour parsed by converter
     });
 
+    test('GlobalMacrosOffered → GlobalMacrosOffered with converted macros',
+        () {
+      final ev = patchEventFromRust(rust.PatchAppEvent.globalMacrosOffered(
+        fromPeerId: 'peer-1',
+        fromName: 'Booth',
+        globalMacros: [
+          const rust_channel.MacroMessage(
+            label: 'GO',
+            payload: 'Go',
+            priority: 1,
+          ),
+        ],
+      ));
+      expect(ev, isA<GlobalMacrosOffered>());
+      final o = ev as GlobalMacrosOffered;
+      expect(o.fromPeerId, 'peer-1');
+      expect(o.fromName, 'Booth');
+      expect(o.globalMacros, hasLength(1));
+      expect(o.globalMacros.single.label, 'GO');
+    });
+
     test('ClientNameChanged → ClientNameChanged', () {
       final ev = patchEventFromRust(
           rust.PatchAppEvent.clientNameChanged(name: 'Stage Manager'));

@@ -65,6 +65,22 @@ class ChannelsOffered extends PatchEvent {
   });
 }
 
+/// A Peer offered its global Macros (reply to our request). Surfaced for an
+/// adopt/merge prompt — never auto-applied. The UI classifies these via
+/// `previewGlobalMacros` before showing the dialog, rather than carrying the
+/// classification here, so the same Rust-only validation (OSC target, binding
+/// collision) backs both the preview and the eventual `adoptGlobalMacros` call.
+class GlobalMacrosOffered extends PatchEvent {
+  final String fromPeerId;
+  final String fromName;
+  final List<MacroMessage> globalMacros;
+  const GlobalMacrosOffered({
+    required this.fromPeerId,
+    required this.fromName,
+    required this.globalMacros,
+  });
+}
+
 /// The local Operator's display name changed.
 class ClientNameChanged extends PatchEvent {
   final String name;

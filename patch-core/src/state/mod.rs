@@ -51,6 +51,13 @@ pub enum AppEvent {
         from_name: String,
         channels: Vec<channel::Channel>,
     },
+    /// A peer offered its global macros in reply to our request. Surfaced to
+    /// the UI for a preview/merge prompt — never auto-applied.
+    GlobalMacrosOffered {
+        from_peer_id: Uuid,
+        from_name: String,
+        global_macros: Vec<channel::MacroMessage>,
+    },
     ClientNameChanged(String),
     /// Emitted when the OS denies network access (iOS/macOS Local Network permission).
     PermissionDenied {
@@ -494,6 +501,12 @@ impl AppState {
         static_peers: Vec<config::StaticPeer>,
     ) -> anyhow::Result<()> {
         channel::validate_show_file_channels(&channels)?;
+        let mut channels = channels;
+        // Show files carry no global macros, so check the incoming channels'
+        // bindings against this machine's existing globals (read-only here —
+        // the local snapshot used for the check is discarded, never persisted).
+        let mut global_macros = self.0.config.read(|c| c.global_macros.clone()).await;
+        channel::sanitize_binding_collisions(&mut global_macros, &mut channels);
         let mut validated_peers: Vec<config::StaticPeer> = Vec::with_capacity(static_peers.len());
         let mut seen: HashSet<(String, u16)> = HashSet::new();
         for sp in static_peers {
@@ -559,6 +572,56 @@ impl AppState {
         Ok(added)
     }
 
+    /// Read-only classification of `offered` global macros against what this
+    /// machine already has — for the import preview dialog. Does **not**
+    /// mutate or persist anything; the same classification
+    /// `merge_global_macros` performs when the user confirms.
+    pub async fn preview_global_macros(
+        &self,
+        offered: Vec<channel::MacroMessage>,
+    ) -> Vec<channel::MacroImportOutcome> {
+        let (existing_globals, channels) = self
+            .0
+            .config
+            .read(|c| (c.global_macros.clone(), c.default_channels.clone()))
+            .await;
+        let existing_channel_macros: Vec<channel::MacroMessage> =
+            channels.into_iter().flat_map(|ch| ch.macros).collect();
+        channel::classify_macro_import(&offered, &existing_globals, &existing_channel_macros)
+    }
+
+    /// Merge a peer's offered global macros into ours — the ADR-0002
+    /// peer-trust tier. Each offered macro is classified independently (see
+    /// `channel::classify_macro_import`): an exact duplicate is skipped, an
+    /// invalid OSC target is dropped, and a binding collision is stripped
+    /// (not excluded) before the macro is added. Persists and emits
+    /// `ChannelListUpdated` only if at least one macro was actually added.
+    /// Returns the classification so the caller (FFI/UI) can report what
+    /// happened.
+    pub async fn merge_global_macros(
+        &self,
+        offered: Vec<channel::MacroMessage>,
+    ) -> anyhow::Result<Vec<channel::MacroImportOutcome>> {
+        let outcomes = self.preview_global_macros(offered).await;
+        let to_add: Vec<channel::MacroMessage> = outcomes
+            .iter()
+            .filter_map(|o| match o {
+                channel::MacroImportOutcome::Added { msg }
+                | channel::MacroImportOutcome::AddedBindingDropped { msg, .. } => Some(msg.clone()),
+                _ => None,
+            })
+            .collect();
+        if !to_add.is_empty() {
+            self.0
+                .config
+                .mutate(|cfg| cfg.global_macros.extend(to_add))
+                .await;
+            self.save_config().await?;
+            self.publish(AppEvent::ChannelListUpdated).await;
+        }
+        Ok(outcomes)
+    }
+
     /// Replace all channels with those from a loaded show file.
     pub async fn apply_show_file(&self, channels: Vec<channel::Channel>) -> anyhow::Result<()> {
         // A show file is untrusted input (shared between machines, possibly
@@ -566,6 +629,11 @@ impl AppState {
         // mutating anything — reject the whole show file atomically so a single
         // bad entry can't half-apply.
         channel::validate_show_file_channels(&channels)?;
+        let mut channels = channels;
+        // Show files carry no global macros — check against this machine's
+        // existing globals (read-only; the snapshot used here is discarded).
+        let mut global_macros = self.0.config.read(|c| c.global_macros.clone()).await;
+        channel::sanitize_binding_collisions(&mut global_macros, &mut channels);
         self.0.channels.replace_all(channels).await;
         self.persist_channels().await?;
         self.publish(AppEvent::ChannelListUpdated).await;
@@ -574,16 +642,18 @@ impl AppState {
 
     /// Add or replace a macro on a channel. See
     /// [`channel::ChannelRegistry::upsert_macro`] for the `original_label`
-    /// rename contract.
+    /// rename contract and the binding-collision check it runs against
+    /// `global_macros` (read here, since that lives on `Config` — ADR-0003).
     pub async fn upsert_macro(
         &self,
         channel_id: &str,
         original_label: Option<&str>,
         macro_msg: channel::MacroMessage,
     ) -> anyhow::Result<()> {
+        let global_macros = self.0.config.read(|c| c.global_macros.clone()).await;
         self.0
             .channels
-            .upsert_macro(channel_id, original_label, macro_msg)
+            .upsert_macro(channel_id, original_label, macro_msg, &global_macros)
             .await?;
         self.persist_channels().await?;
         self.publish(AppEvent::ChannelListUpdated).await;
@@ -619,22 +689,33 @@ impl AppState {
     /// (an edit, possibly renaming it) so the entry is updated in place
     /// instead of appending a second one under the new label; matched by
     /// `macro_msg.label` otherwise (create, or no-op rename).
+    ///
+    /// Checked against every channel's macros as well as the other global
+    /// macros via [`channel::validate_binding_unique`] — channels and config
+    /// are separate locks (ADR-0003), so this read happens before the
+    /// `mutate` below rather than inside it.
     pub async fn upsert_global_macro(
         &self,
         original_label: Option<&str>,
         macro_msg: channel::MacroMessage,
     ) -> anyhow::Result<()> {
-        let mut collision = false;
+        let match_label = original_label
+            .map(str::to_owned)
+            .unwrap_or_else(|| macro_msg.label.clone());
+        let global_macros = self.0.config.read(|c| c.global_macros.clone()).await;
+        if match_label != macro_msg.label
+            && global_macros.iter().any(|m| m.label == macro_msg.label)
+        {
+            anyhow::bail!("A global macro named '{}' already exists", macro_msg.label);
+        }
+        let other_globals = global_macros.iter().filter(|m| m.label != match_label);
+        let all_channels = self.0.channels.list().await;
+        let all_channel_macros = all_channels.iter().flat_map(|c| c.macros.iter());
+        channel::validate_binding_unique(&macro_msg, other_globals.chain(all_channel_macros))?;
+
         self.0
             .config
             .mutate(|cfg| {
-                let match_label = original_label.unwrap_or(macro_msg.label.as_str());
-                if match_label != macro_msg.label
-                    && cfg.global_macros.iter().any(|m| m.label == macro_msg.label)
-                {
-                    collision = true;
-                    return;
-                }
                 if let Some(pos) = cfg
                     .global_macros
                     .iter()
@@ -646,12 +727,6 @@ impl AppState {
                 }
             })
             .await;
-        if collision {
-            anyhow::bail!(
-                "A global macro named '{}' already exists",
-                original_label.unwrap_or_default()
-            );
-        }
         self.save_config().await
     }
 
@@ -1234,6 +1309,111 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn upsert_global_macro_rejects_binding_collision_with_another_global_macro() {
+        use channel::MacroMessage;
+        let _guard = config::test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        config::set_data_dir(dir.clone());
+
+        let st = test_state();
+        let mut hold = MacroMessage {
+            label: "HOLD".into(),
+            payload: "hold".into(),
+            key_binding: Some("F3".into()),
+            priority: 1,
+            midi_note: None,
+            midi_cc: None,
+            osc: None,
+        };
+        st.upsert_global_macro(None, hold.clone()).await.unwrap();
+        hold.label = "STANDBY".into();
+        let err = st.upsert_global_macro(None, hold).await.unwrap_err();
+        assert!(err.to_string().contains("F3"));
+        assert_eq!(st.config().await.global_macros.len(), 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn upsert_global_macro_rejects_binding_collision_with_a_channel_macro() {
+        use channel::{Channel, MacroMessage};
+        let _guard = config::test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        config::set_data_dir(dir.clone());
+
+        let st = test_state();
+        let mut ch = Channel::new("rf", "RF", "#fff").unwrap();
+        ch.macros = vec![MacroMessage {
+            label: "GO".into(),
+            payload: "go".into(),
+            key_binding: None,
+            priority: 1,
+            midi_note: Some(60),
+            midi_cc: None,
+            osc: None,
+        }];
+        st.upsert_channel(ch).await;
+
+        let global_hold = MacroMessage {
+            label: "HOLD".into(),
+            payload: "hold".into(),
+            key_binding: None,
+            priority: 1,
+            midi_note: Some(60),
+            midi_cc: None,
+            osc: None,
+        };
+        let err = st.upsert_global_macro(None, global_hold).await.unwrap_err();
+        assert!(err.to_string().contains("GO"));
+        assert!(st.config().await.global_macros.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn upsert_macro_rejects_binding_collision_with_a_global_macro() {
+        use channel::{Channel, MacroMessage};
+        let _guard = config::test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        config::set_data_dir(dir.clone());
+
+        let st = test_state();
+        st.upsert_channel(Channel::new("rf", "RF", "#fff").unwrap())
+            .await;
+        st.upsert_global_macro(
+            None,
+            MacroMessage {
+                label: "HOLD".into(),
+                payload: "hold".into(),
+                key_binding: Some("F3".into()),
+                priority: 1,
+                midi_note: None,
+                midi_cc: None,
+                osc: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let channel_go = MacroMessage {
+            label: "GO".into(),
+            payload: "go".into(),
+            key_binding: Some("F3".into()),
+            priority: 1,
+            midi_note: None,
+            midi_cc: None,
+            osc: None,
+        };
+        let err = st.upsert_macro("rf", None, channel_go).await.unwrap_err();
+        assert!(err.to_string().contains("HOLD"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
     async fn reset_global_macros_restores_defaults() {
         let _guard = config::test_data_dir_guard().await;
         let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
@@ -1339,6 +1519,61 @@ mod tests {
         assert_eq!(loaded.static_peers.len(), 1);
         assert_eq!(loaded.default_channels.len(), 1);
         assert_eq!(loaded.default_channels[0].id, "rf");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A show file's channel macro whose binding collides with an existing
+    /// global macro must keep the macro but lose just that binding (ADR-0006's
+    /// drop-and-warn, not `validate_show_file_channels`'s atomic reject — that
+    /// rejection is reserved for bad channel ids/OSC targets). Show files carry
+    /// no global macros of their own, so the comparison is against whatever
+    /// this machine already has.
+    #[tokio::test]
+    async fn apply_show_file_full_strips_channel_macro_binding_colliding_with_existing_global() {
+        let _guard = config::test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        config::set_data_dir(dir.clone());
+
+        let existing_global = channel::MacroMessage {
+            label: "GO".into(),
+            payload: "go".into(),
+            key_binding: Some("F3".into()),
+            priority: 1,
+            midi_note: None,
+            midi_cc: None,
+            osc: None,
+        };
+        let st = AppState::new(Config {
+            default_channels: Vec::new(),
+            static_peers: Vec::new(),
+            global_macros: vec![existing_global.clone()],
+            ..Config::default()
+        });
+
+        let mut ch = channel::Channel::new("rf", "RF", "#1E88E5").unwrap();
+        ch.macros = vec![channel::MacroMessage {
+            label: "STANDBY".into(),
+            payload: "standby".into(),
+            key_binding: Some("F3".into()),
+            priority: 1,
+            midi_note: None,
+            midi_cc: None,
+            osc: None,
+        }];
+        st.apply_show_file_full(vec![ch], Vec::new()).await.unwrap();
+
+        let channels = st.get_channels().await;
+        assert_eq!(channels.len(), 1);
+        assert_eq!(channels[0].macros.len(), 1); // macro kept, not dropped
+        assert_eq!(channels[0].macros[0].label, "STANDBY");
+        assert_eq!(channels[0].macros[0].key_binding, None); // binding stripped
+
+        // The pre-existing global macro is untouched.
+        let globals = st.config().await.global_macros;
+        assert_eq!(globals.len(), 1);
+        assert_eq!(globals[0].key_binding.as_deref(), Some("F3"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1460,6 +1695,84 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(again, 0);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn plain_global_macro(label: &str) -> channel::MacroMessage {
+        channel::MacroMessage {
+            label: label.into(),
+            payload: label.into(),
+            key_binding: None,
+            priority: 1,
+            midi_note: None,
+            midi_cc: None,
+            osc: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn preview_global_macros_does_not_mutate_or_persist() {
+        let st = test_state();
+        let outcomes = st
+            .preview_global_macros(vec![plain_global_macro("GO")])
+            .await;
+        assert_eq!(outcomes.len(), 1);
+        assert!(matches!(
+            outcomes[0],
+            channel::MacroImportOutcome::Added { .. }
+        ));
+        // Read-only — nothing actually added.
+        assert!(st.config().await.global_macros.is_empty());
+    }
+
+    #[tokio::test]
+    async fn merge_global_macros_adds_new_keeps_duplicate_strips_collision() {
+        let _guard = config::test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        config::set_data_dir(dir.clone());
+
+        let mut existing = plain_global_macro("STANDBY");
+        existing.key_binding = Some("F3".into());
+        let st = AppState::new(Config {
+            default_channels: Vec::new(),
+            static_peers: Vec::new(),
+            global_macros: vec![existing.clone()],
+            ..Config::default()
+        });
+
+        let duplicate = existing.clone();
+        let new_macro = plain_global_macro("GO");
+        let mut colliding = plain_global_macro("CLEAR");
+        colliding.key_binding = Some("F3".into());
+
+        let outcomes = st
+            .merge_global_macros(vec![duplicate, new_macro, colliding])
+            .await
+            .unwrap();
+
+        assert_eq!(outcomes.len(), 3);
+        assert!(matches!(
+            outcomes[0],
+            channel::MacroImportOutcome::AlreadyHave { .. }
+        ));
+        assert!(matches!(
+            outcomes[1],
+            channel::MacroImportOutcome::Added { .. }
+        ));
+        match &outcomes[2] {
+            channel::MacroImportOutcome::AddedBindingDropped { msg, .. } => {
+                assert_eq!(msg.key_binding, None)
+            }
+            other => panic!("expected AddedBindingDropped, got {other:?}"),
+        }
+
+        let globals = st.config().await.global_macros;
+        assert_eq!(globals.len(), 3); // existing STANDBY + new GO + CLEAR (binding stripped)
+        assert!(globals.iter().any(|m| m.label == "GO"));
+        let clear = globals.iter().find(|m| m.label == "CLEAR").unwrap();
+        assert_eq!(clear.key_binding, None);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -78,7 +78,7 @@ impl Channel {
 }
 
 /// A one-tap/keyboard macro message.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MacroMessage {
     /// Short label shown on the button (e.g. "HOLD", "CLEAR", "BACK IN 5").
     pub label: String,
@@ -106,7 +106,7 @@ pub struct MacroMessage {
 /// An outbound OSC target attached to a macro (dual action — fired alongside the
 /// Patch message). Lets a macro trigger QLab cues, Companion buttons, vMix
 /// overlays, etc. from the same button/key/MIDI that messages the crew.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OscTarget {
     /// Destination IP address (e.g. "192.168.1.50").
     pub address: String,
@@ -150,6 +150,46 @@ pub(crate) fn validate_osc_target(t: &OscTarget) -> anyhow::Result<()> {
     }
     if let Some(arg) = &t.arg {
         crate::osc::codec::build_osc_arg(t.arg_type, arg)?;
+    }
+    Ok(())
+}
+
+/// Single source of truth for "does this macro's key/MIDI binding collide
+/// with another macro's": true if `candidate` shares a non-empty
+/// `key_binding`, `midi_note`, or `midi_cc` with any macro in `existing`.
+///
+/// Checked across three tiers (caller decides which `existing` set to pass):
+/// global-vs-global, a channel's macros against that same channel's other
+/// macros, and — deliberately, as of this check's introduction — a
+/// per-channel macro against every global macro and vice versa. That last
+/// tier used to be left unchecked: a per-channel macro's F-key was documented
+/// to win over a global macro's on the same key at fire time, which masked
+/// the conflict rather than preventing it. This check now rejects the
+/// collision up front instead.
+pub(crate) fn validate_binding_unique<'a>(
+    candidate: &MacroMessage,
+    existing: impl IntoIterator<Item = &'a MacroMessage>,
+) -> anyhow::Result<()> {
+    for other in existing {
+        if let (Some(a), Some(b)) = (&candidate.key_binding, &other.key_binding) {
+            if a == b {
+                anyhow::bail!(
+                    "key binding '{}' is already used by macro '{}'",
+                    a,
+                    other.label
+                );
+            }
+        }
+        if let (Some(a), Some(b)) = (candidate.midi_note, other.midi_note) {
+            if a == b {
+                anyhow::bail!("MIDI note {} is already used by macro '{}'", a, other.label);
+            }
+        }
+        if let (Some(a), Some(b)) = (candidate.midi_cc, other.midi_cc) {
+            if a == b {
+                anyhow::bail!("MIDI CC {} is already used by macro '{}'", a, other.label);
+            }
+        }
     }
     Ok(())
 }
@@ -213,6 +253,166 @@ pub(crate) fn sanitize_loaded_channels(channels: &mut [Channel]) {
     for ch in channels.iter_mut() {
         sanitize_loaded_macros(&mut ch.macros, &format!("channel {:?}", ch.id));
     }
+}
+
+/// Clears whichever of `candidate`'s `key_binding`/`midi_note`/`midi_cc`
+/// collides with a macro in `existing`, logging a warning per dropped
+/// binding and keeping the macro itself — the load-time/peer-trust
+/// counterpart to [`validate_binding_unique`]'s reject-outright policy.
+/// Re-checks `candidate`'s current field values on every iteration, so a
+/// binding already cleared by an earlier collision can't trigger a second,
+/// redundant warning.
+fn strip_colliding_bindings<'a>(
+    candidate: &mut MacroMessage,
+    existing: impl IntoIterator<Item = &'a MacroMessage>,
+    context: &str,
+) {
+    for other in existing {
+        if candidate.key_binding.is_some() && candidate.key_binding == other.key_binding {
+            let dropped = candidate.key_binding.take().unwrap();
+            tracing::warn!(
+                "{}: dropping key binding '{}' from macro {:?} — already used by macro {:?}",
+                context,
+                dropped,
+                candidate.label,
+                other.label
+            );
+        }
+        if candidate.midi_note.is_some() && candidate.midi_note == other.midi_note {
+            let dropped = candidate.midi_note.take().unwrap();
+            tracing::warn!(
+                "{}: dropping MIDI note {} from macro {:?} — already used by macro {:?}",
+                context,
+                dropped,
+                candidate.label,
+                other.label
+            );
+        }
+        if candidate.midi_cc.is_some() && candidate.midi_cc == other.midi_cc {
+            let dropped = candidate.midi_cc.take().unwrap();
+            tracing::warn!(
+                "{}: dropping MIDI CC {} from macro {:?} — already used by macro {:?}",
+                context,
+                dropped,
+                candidate.label,
+                other.label
+            );
+        }
+    }
+}
+
+/// Load-time counterpart to [`validate_binding_unique`]: instead of
+/// rejecting, strips just the colliding binding field and keeps every macro
+/// (ADR-0002/ADR-0006's drop-and-warn posture — there's no Operator present
+/// at process startup, or no single edit to reject, to retry against).
+///
+/// `global_macros` is finalized first — its own internal collisions resolved
+/// in list order, first-listed wins — then each channel's macros are checked
+/// against the finalized globals plus that channel's own earlier macros.
+/// Two different channels' macros are never compared against each other:
+/// only one channel is ever the firing context at a time, so the same
+/// binding on two different channels was never a real conflict.
+pub(crate) fn sanitize_binding_collisions(
+    global_macros: &mut [MacroMessage],
+    channels: &mut [Channel],
+) {
+    let mut accepted_globals: Vec<MacroMessage> = Vec::with_capacity(global_macros.len());
+    for m in global_macros.iter_mut() {
+        strip_colliding_bindings(m, accepted_globals.iter(), "global macros");
+        accepted_globals.push(m.clone());
+    }
+    for ch in channels.iter_mut() {
+        let context = format!("channel {:?}", ch.id);
+        let mut accepted_channel: Vec<MacroMessage> = Vec::with_capacity(ch.macros.len());
+        for m in ch.macros.iter_mut() {
+            strip_colliding_bindings(
+                m,
+                accepted_globals.iter().chain(accepted_channel.iter()),
+                &context,
+            );
+            accepted_channel.push(m.clone());
+        }
+    }
+}
+
+/// Outcome of considering one offered macro for import from a peer's global
+/// macro set (see [`classify_macro_import`]) — the ADR-0002 peer-trust tier.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum MacroImportOutcome {
+    /// Every field matches a macro we already have — not added.
+    AlreadyHave { label: String },
+    /// Added with no conflict.
+    Added { msg: MacroMessage },
+    /// Added, but a colliding key/MIDI binding was stripped first — the macro
+    /// itself still comes through (ADR-0002's drop-and-warn, not exclude).
+    AddedBindingDropped { msg: MacroMessage, reason: String },
+    /// Dropped entirely — invalid OSC target (ADR-0002 peer-trust policy).
+    Skipped { label: String, reason: String },
+}
+
+/// Pure classification for importing a peer's offered global macros — used by
+/// both `AppState::preview_global_macros` (read-only preview) and
+/// `AppState::merge_global_macros` (which applies every `Added`/
+/// `AddedBindingDropped` outcome and persists). Processes `offered` in order,
+/// each one checked against `existing_globals` plus every macro classified so
+/// far in this same call (so two offered macros that collide with *each
+/// other* are caught too, not just against what we already had):
+///
+/// 1. An offered macro that exactly matches (every field) one already in
+///    `existing_globals` is `AlreadyHave` — excluded, never re-added.
+/// 2. An invalid OSC target (`validate_osc_target`) is `Skipped` outright —
+///    same ADR-0002 peer-trust policy as `ChannelRegistry::merge`.
+/// 3. A key/MIDI binding collision against any already-accepted global or
+///    `existing_channel_macros` (`validate_binding_unique`'s three tiers) is
+///    `AddedBindingDropped` — the binding is stripped, the macro still comes
+///    through.
+/// 4. Otherwise `Added` as-is.
+pub(crate) fn classify_macro_import(
+    offered: &[MacroMessage],
+    existing_globals: &[MacroMessage],
+    existing_channel_macros: &[MacroMessage],
+) -> Vec<MacroImportOutcome> {
+    let mut accepted: Vec<MacroMessage> = existing_globals.to_vec();
+    let mut out = Vec::with_capacity(offered.len());
+    for m in offered {
+        if existing_globals.contains(m) {
+            out.push(MacroImportOutcome::AlreadyHave {
+                label: m.label.clone(),
+            });
+            continue;
+        }
+        if let Some(osc) = &m.osc {
+            if let Err(e) = validate_osc_target(osc) {
+                out.push(MacroImportOutcome::Skipped {
+                    label: m.label.clone(),
+                    reason: e.to_string(),
+                });
+                continue;
+            }
+        }
+        let mut candidate = m.clone();
+        let context = format!("peer import of macro {:?}", m.label);
+        strip_colliding_bindings(
+            &mut candidate,
+            accepted.iter().chain(existing_channel_macros.iter()),
+            &context,
+        );
+        if candidate.key_binding != m.key_binding
+            || candidate.midi_note != m.midi_note
+            || candidate.midi_cc != m.midi_cc
+        {
+            out.push(MacroImportOutcome::AddedBindingDropped {
+                msg: candidate.clone(),
+                reason: "key/MIDI binding collided with a macro already on this machine".into(),
+            });
+        } else {
+            out.push(MacroImportOutcome::Added {
+                msg: candidate.clone(),
+            });
+        }
+        accepted.push(candidate);
+    }
+    out
 }
 
 /// Pure channel/macro-domain logic — no `AppEvent`/broadcast-channel
@@ -344,11 +544,17 @@ impl ChannelRegistry {
     /// given (an edit of an existing macro, possibly renaming it) so the entry
     /// is updated in place instead of appending a second one under the new
     /// label; matched by `macro_msg.label` otherwise (create, or no-op rename).
+    ///
+    /// `global_macros` is passed in by `AppState` (ADR-0003 — this registry
+    /// has no knowledge of `Config`) so [`validate_binding_unique`] can also
+    /// reject a binding shared with a global macro, not just another macro on
+    /// this same channel.
     pub(crate) async fn upsert_macro(
         &self,
         channel_id: &str,
         original_label: Option<&str>,
         macro_msg: MacroMessage,
+        global_macros: &[MacroMessage],
     ) -> anyhow::Result<()> {
         let mut channels = self.channels.write().await;
         let ch = channels
@@ -361,6 +567,8 @@ impl ChannelRegistry {
                 macro_msg.label
             );
         }
+        let same_channel_others = ch.macros.iter().filter(|m| m.label != match_label);
+        validate_binding_unique(&macro_msg, same_channel_others.chain(global_macros.iter()))?;
         if let Some(pos) = ch.macros.iter().position(|s| s.label == match_label) {
             ch.macros[pos] = macro_msg;
         } else {
@@ -542,6 +750,166 @@ mod tests {
         assert_eq!(labels, vec!["GOOD"]);
     }
 
+    // ── sanitize_binding_collisions (ADR-0006) ──────────────────────────────
+
+    #[test]
+    fn sanitize_binding_collisions_strips_global_vs_global_keeps_both_macros() {
+        let mut first = plain_macro("GO");
+        first.key_binding = Some("F3".into());
+        let mut second = plain_macro("STANDBY");
+        second.key_binding = Some("F3".into());
+        let mut globals = vec![first, second];
+        let mut channels: Vec<Channel> = vec![];
+
+        sanitize_binding_collisions(&mut globals, &mut channels);
+
+        assert_eq!(globals.len(), 2); // neither macro is dropped
+        assert_eq!(globals[0].key_binding.as_deref(), Some("F3")); // first-listed wins
+        assert_eq!(globals[1].key_binding, None); // loser keeps the macro, loses the binding
+    }
+
+    #[test]
+    fn sanitize_binding_collisions_strips_same_channel_collision() {
+        let mut go = plain_macro("GO");
+        go.midi_note = Some(60);
+        let mut standby = plain_macro("STANDBY");
+        standby.midi_note = Some(60);
+        let mut ch = Channel::new("rf", "RF", "#fff").unwrap();
+        ch.macros = vec![go, standby];
+        let mut globals: Vec<MacroMessage> = vec![];
+        let mut channels = vec![ch];
+
+        sanitize_binding_collisions(&mut globals, &mut channels);
+
+        let macros = &channels[0].macros;
+        assert_eq!(macros.len(), 2);
+        assert_eq!(macros[0].midi_note, Some(60));
+        assert_eq!(macros[1].midi_note, None);
+    }
+
+    #[test]
+    fn sanitize_binding_collisions_strips_channel_macro_colliding_with_a_global() {
+        let mut global_go = plain_macro("GO");
+        global_go.key_binding = Some("F3".into());
+        let mut channel_go = plain_macro("STANDBY");
+        channel_go.key_binding = Some("F3".into());
+        let mut ch = Channel::new("rf", "RF", "#fff").unwrap();
+        ch.macros = vec![channel_go];
+        let mut globals = vec![global_go];
+        let mut channels = vec![ch];
+
+        sanitize_binding_collisions(&mut globals, &mut channels);
+
+        assert_eq!(globals[0].key_binding.as_deref(), Some("F3")); // global keeps its binding
+        assert_eq!(channels[0].macros[0].key_binding, None); // channel macro loses it, stays
+    }
+
+    #[test]
+    fn sanitize_binding_collisions_never_compares_across_different_channels() {
+        let mut rf = plain_macro("GO");
+        rf.midi_cc = Some(10);
+        let mut lx = plain_macro("GO");
+        lx.midi_cc = Some(10);
+        let mut rf_channel = Channel::new("rf", "RF", "#fff").unwrap();
+        rf_channel.macros = vec![rf];
+        let mut lx_channel = Channel::new("lx", "LX", "#fff").unwrap();
+        lx_channel.macros = vec![lx];
+        let mut globals: Vec<MacroMessage> = vec![];
+        let mut channels = vec![rf_channel, lx_channel];
+
+        sanitize_binding_collisions(&mut globals, &mut channels);
+
+        assert_eq!(channels[0].macros[0].midi_cc, Some(10));
+        assert_eq!(channels[1].macros[0].midi_cc, Some(10)); // unaffected — different channels
+    }
+
+    #[test]
+    fn classify_macro_import_adds_a_brand_new_macro() {
+        let offered = vec![plain_macro("GO")];
+        let out = classify_macro_import(&offered, &[], &[]);
+        assert_eq!(out.len(), 1);
+        match &out[0] {
+            MacroImportOutcome::Added { msg } => assert_eq!(msg.label, "GO"),
+            other => panic!("expected Added, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_macro_import_reports_an_exact_duplicate_as_already_have() {
+        let existing = plain_macro("GO");
+        let offered = vec![existing.clone()];
+        let out = classify_macro_import(&offered, &[existing], &[]);
+        assert_eq!(out.len(), 1);
+        match &out[0] {
+            MacroImportOutcome::AlreadyHave { label } => assert_eq!(label, "GO"),
+            other => panic!("expected AlreadyHave, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_macro_import_drops_an_invalid_osc_target() {
+        let mut bad = plain_macro("GO");
+        bad.osc = Some(target(
+            "not-an-ip",
+            53000,
+            "/cue/go",
+            None,
+            OscArgKind::String,
+        ));
+        let out = classify_macro_import(&[bad], &[], &[]);
+        assert_eq!(out.len(), 1);
+        assert!(matches!(out[0], MacroImportOutcome::Skipped { .. }));
+    }
+
+    #[test]
+    fn classify_macro_import_strips_a_binding_colliding_with_an_existing_global() {
+        let mut existing = plain_macro("STANDBY");
+        existing.key_binding = Some("F3".into());
+        let mut offered_macro = plain_macro("GO");
+        offered_macro.key_binding = Some("F3".into());
+        let out = classify_macro_import(&[offered_macro], &[existing], &[]);
+        assert_eq!(out.len(), 1);
+        match &out[0] {
+            MacroImportOutcome::AddedBindingDropped { msg, .. } => {
+                assert_eq!(msg.label, "GO");
+                assert_eq!(msg.key_binding, None);
+            }
+            other => panic!("expected AddedBindingDropped, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_macro_import_strips_a_binding_colliding_with_an_existing_channel_macro() {
+        let mut existing = plain_macro("STANDBY");
+        existing.midi_note = Some(60);
+        let mut offered_macro = plain_macro("GO");
+        offered_macro.midi_note = Some(60);
+        let out = classify_macro_import(&[offered_macro], &[], &[existing]);
+        match &out[0] {
+            MacroImportOutcome::AddedBindingDropped { msg, .. } => {
+                assert_eq!(msg.midi_note, None);
+            }
+            other => panic!("expected AddedBindingDropped, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_macro_import_catches_two_offered_macros_colliding_with_each_other() {
+        let mut first = plain_macro("GO");
+        first.key_binding = Some("F3".into());
+        let mut second = plain_macro("STANDBY");
+        second.key_binding = Some("F3".into());
+        let out = classify_macro_import(&[first, second], &[], &[]);
+        assert_eq!(out.len(), 2);
+        assert!(matches!(out[0], MacroImportOutcome::Added { .. }));
+        match &out[1] {
+            MacroImportOutcome::AddedBindingDropped { msg, .. } => {
+                assert_eq!(msg.key_binding, None);
+            }
+            other => panic!("expected AddedBindingDropped, got {other:?}"),
+        }
+    }
+
     // ── ChannelRegistry — direct, no AppState/event bus needed ──────────────
 
     #[tokio::test]
@@ -657,12 +1025,12 @@ mod tests {
     async fn upsert_macro_replaces_same_label_appends_otherwise() {
         let reg = ChannelRegistry::default();
         reg.upsert(Channel::new("rf", "RF", "#fff").unwrap()).await;
-        reg.upsert_macro("rf", None, plain_macro("GO"))
+        reg.upsert_macro("rf", None, plain_macro("GO"), &[])
             .await
             .unwrap();
         let mut replaced = plain_macro("GO");
         replaced.payload = "different".into();
-        reg.upsert_macro("rf", None, replaced).await.unwrap();
+        reg.upsert_macro("rf", None, replaced, &[]).await.unwrap();
         let macros = &reg.list().await[0].macros;
         assert_eq!(macros.len(), 1);
         assert_eq!(macros[0].payload, "different");
@@ -672,15 +1040,17 @@ mod tests {
     async fn upsert_macro_with_original_label_renames_in_place() {
         let reg = ChannelRegistry::default();
         reg.upsert(Channel::new("rf", "RF", "#fff").unwrap()).await;
-        reg.upsert_macro("rf", None, plain_macro("GO"))
+        reg.upsert_macro("rf", None, plain_macro("GO"), &[])
             .await
             .unwrap();
-        reg.upsert_macro("rf", None, plain_macro("STANDBY"))
+        reg.upsert_macro("rf", None, plain_macro("STANDBY"), &[])
             .await
             .unwrap();
         let mut renamed = plain_macro("HOLD");
         renamed.payload = "renamed".into();
-        reg.upsert_macro("rf", Some("GO"), renamed).await.unwrap();
+        reg.upsert_macro("rf", Some("GO"), renamed, &[])
+            .await
+            .unwrap();
         let macros = &reg.list().await[0].macros;
         assert_eq!(macros.len(), 2);
         assert_eq!(macros[0].label, "HOLD"); // renamed in place, not appended
@@ -692,23 +1062,79 @@ mod tests {
     async fn upsert_macro_rename_to_existing_label_errors() {
         let reg = ChannelRegistry::default();
         reg.upsert(Channel::new("rf", "RF", "#fff").unwrap()).await;
-        reg.upsert_macro("rf", None, plain_macro("GO"))
+        reg.upsert_macro("rf", None, plain_macro("GO"), &[])
             .await
             .unwrap();
-        reg.upsert_macro("rf", None, plain_macro("STANDBY"))
+        reg.upsert_macro("rf", None, plain_macro("STANDBY"), &[])
             .await
             .unwrap();
         let collision = plain_macro("STANDBY");
-        assert!(reg.upsert_macro("rf", Some("GO"), collision).await.is_err());
+        assert!(reg
+            .upsert_macro("rf", Some("GO"), collision, &[])
+            .await
+            .is_err());
         let macros = &reg.list().await[0].macros;
         assert_eq!(macros.len(), 2); // unchanged
+    }
+
+    #[tokio::test]
+    async fn upsert_macro_rejects_binding_collision_on_same_channel() {
+        let reg = ChannelRegistry::default();
+        reg.upsert(Channel::new("rf", "RF", "#fff").unwrap()).await;
+        let mut go = plain_macro("GO");
+        go.key_binding = Some("F3".into());
+        reg.upsert_macro("rf", None, go, &[]).await.unwrap();
+
+        let mut standby = plain_macro("STANDBY");
+        standby.key_binding = Some("F3".into());
+        let err = reg
+            .upsert_macro("rf", None, standby, &[])
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("F3"));
+        assert_eq!(reg.list().await[0].macros.len(), 1); // rejected, not added
+    }
+
+    #[tokio::test]
+    async fn upsert_macro_rejects_binding_collision_with_a_global_macro() {
+        let reg = ChannelRegistry::default();
+        reg.upsert(Channel::new("rf", "RF", "#fff").unwrap()).await;
+        let mut global_hold = plain_macro("HOLD");
+        global_hold.midi_note = Some(60);
+
+        let mut channel_go = plain_macro("GO");
+        channel_go.midi_note = Some(60);
+        let err = reg
+            .upsert_macro("rf", None, channel_go, &[global_hold])
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("HOLD"));
+        assert!(reg.list().await[0].macros.is_empty());
+    }
+
+    #[tokio::test]
+    async fn upsert_macro_allows_rename_keeping_its_own_binding() {
+        let reg = ChannelRegistry::default();
+        reg.upsert(Channel::new("rf", "RF", "#fff").unwrap()).await;
+        let mut go = plain_macro("GO");
+        go.key_binding = Some("F3".into());
+        reg.upsert_macro("rf", None, go, &[]).await.unwrap();
+
+        let mut renamed = plain_macro("STANDBY");
+        renamed.key_binding = Some("F3".into());
+        reg.upsert_macro("rf", Some("GO"), renamed, &[])
+            .await
+            .unwrap();
+        let macros = &reg.list().await[0].macros;
+        assert_eq!(macros.len(), 1);
+        assert_eq!(macros[0].label, "STANDBY");
     }
 
     #[tokio::test]
     async fn delete_macro_removes_by_label() {
         let reg = ChannelRegistry::default();
         reg.upsert(Channel::new("rf", "RF", "#fff").unwrap()).await;
-        reg.upsert_macro("rf", None, plain_macro("GO"))
+        reg.upsert_macro("rf", None, plain_macro("GO"), &[])
             .await
             .unwrap();
         reg.delete_macro("rf", "GO").await.unwrap();

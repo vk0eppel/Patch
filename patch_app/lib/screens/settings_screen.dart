@@ -69,6 +69,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// ignored rather than popping a dialog.
   bool _awaitingOffer = false;
 
+  /// Same purpose as [_awaitingOffer], but for global-macro import — kept
+  /// separate so the two request/offer flows can't cross-trigger each other's
+  /// dialog if both are in flight at once.
+  bool _awaitingMacrosOffer = false;
+
   // ── Section nav (#73) ──────────────────────────────────────────────────
   // A left rail (or, below _kNarrowBreakpoint, an app-bar jump menu) lets a
   // crew member skip straight to a section instead of scrolling the whole
@@ -231,6 +236,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (!_awaitingOffer) break; // ignore unsolicited announces
         _awaitingOffer = false;
         if (mounted) _showOfferDialog(fromName, channels);
+      case GlobalMacrosOffered(:final fromName, :final globalMacros):
+        if (!_awaitingMacrosOffer) break; // ignore unsolicited announces
+        _awaitingMacrosOffer = false;
+        if (mounted) _showMacrosOfferDialog(fromName, globalMacros);
       // Not consumed by settings — handled on the home screen.
       case MessageReceived():
       case DeliveryUpdated():
@@ -427,6 +436,192 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Text(fresh.isEmpty ? 'Nothing to add' : 'Add ${fresh.length}'),
           ),
         ],
+      ),
+    );
+  }
+
+  // ── Import global macros from a peer over the network ─────────────────────
+
+  /// Pick a peer (with a resolved address) to request global macros from.
+  /// Same peer filter as [_showImportFromPeer] — not restricted to
+  /// online-only; an unreachable peer simply times out.
+  void _showImportMacrosFromPeer() {
+    AppStoreScope.read(context).refreshPeers(); // refresh before showing it
+    final candidates =
+        _peers.where((p) => p.address.isNotEmpty && p.oscPort > 0).toList();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Import macros from…'),
+        content: SizedBox(
+          width: double.infinity,
+          child: candidates.isEmpty
+              ? const Text(
+                  'No peers with a known address are online yet. Wait for a peer '
+                  'to appear in the peers panel, then try again.',
+                  style: TextStyle(color: PatchTheme.textSecondary),
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Pick a peer to copy their global macros from. Macros you "
+                      "already have, exactly, are skipped — yours are kept.",
+                      style: TextStyle(
+                        color: PatchTheme.textSecondary,
+                        fontSize: PatchTheme.fontSizeSmall,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ...candidates.map((p) => ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.person_outline, size: 18),
+                          title: Text(p.peerName),
+                          subtitle: Text(p.address),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _requestMacrosFromPeer(p.peerId, p.peerName);
+                          },
+                        )),
+                  ],
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _requestMacrosFromPeer(String peerId, String name) {
+    setState(() => _awaitingMacrosOffer = true);
+    runGuarded(context, () => widget.bridge.requestGlobalMacros(peerId));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Requesting macros from $name…'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+    // Clear the flag if no offer arrives (peer offline / older version that
+    // doesn't speak the macros-import protocol), so a later unsolicited
+    // announce can't pop a stale dialog.
+    Future.delayed(const Duration(seconds: 6), () {
+      if (mounted && _awaitingMacrosOffer) {
+        setState(() => _awaitingMacrosOffer = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'No response from $name — they may be running an older version '
+              "that doesn't support macro import.",
+            ),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    });
+  }
+
+  /// Preview a peer's offered global macros — classified Rust-side
+  /// (`previewGlobalMacros`) so the warning lines reuse the exact same
+  /// OSC-target/binding-collision logic `adoptGlobalMacros` will apply — and
+  /// merge-adopt the ones that aren't exact duplicates.
+  void _showMacrosOfferDialog(String fromName, List<MacroMessage> offered) {
+    showDialog(
+      context: context,
+      builder: (ctx) => FutureBuilder<List<MacroImportOutcome>>(
+        future: widget.bridge.previewGlobalMacros(offered),
+        builder: (ctx, snapshot) {
+          if (!snapshot.hasData) {
+            return const AlertDialog(
+              content: SizedBox(
+                height: 80,
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            );
+          }
+          final outcomes = snapshot.data!;
+          final newCount = outcomes.whereType<MacroAdded>().length +
+              outcomes.whereType<MacroAddedBindingDropped>().length;
+          final warnings = <String>[
+            for (final o in outcomes)
+              if (o is MacroAddedBindingDropped)
+                '${o.macro.label}: ${o.reason}'
+              else if (o is MacroSkipped)
+                '${o.label}: ${o.reason}',
+          ];
+          return AlertDialog(
+            title: Text('Macros from $fromName'),
+            content: SizedBox(
+              width: double.infinity,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    newCount == 0
+                        ? 'You already have all ${outcomes.length} of their macros.'
+                        : '$newCount new of ${outcomes.length} will be added '
+                            '(your existing macros are kept unchanged):',
+                    style: const TextStyle(
+                      color: PatchTheme.textSecondary,
+                      fontSize: PatchTheme.fontSizeSmall,
+                    ),
+                  ),
+                  if (warnings.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    ...warnings.map((w) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Text(
+                            w,
+                            style: const TextStyle(
+                              color: PatchTheme.warning,
+                              fontSize: 11,
+                            ),
+                          ),
+                        )),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: newCount == 0
+                    ? null
+                    : () {
+                        final messenger = ScaffoldMessenger.of(context);
+                        final store = AppStoreScope.read(context);
+                        runGuarded(context, () async {
+                          final result =
+                              await widget.bridge.adoptGlobalMacros(offered);
+                          await store.refreshConfig();
+                          final added = result.whereType<MacroAdded>().length +
+                              result
+                                  .whereType<MacroAddedBindingDropped>()
+                                  .length;
+                          messenger.showSnackBar(SnackBar(
+                            content: Text(added == 0
+                                ? 'No new macros to add — you already have them all'
+                                : 'Added $added macro${added == 1 ? '' : 's'}'),
+                            duration: const Duration(seconds: 3),
+                          ));
+                        });
+                        Navigator.pop(ctx);
+                      },
+                child:
+                    Text(newCount == 0 ? 'Nothing to add' : 'Add $newCount'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -935,6 +1130,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             key: _sectionKeys[4],
             child: Row(children: [
               Expanded(child: _SectionHeader('Global Macros')),
+              IconButton(
+                icon: const Icon(Icons.cloud_download_outlined, size: 18),
+                color: PatchTheme.textMuted,
+                tooltip: 'Import macros from a peer',
+                onPressed: _showImportMacrosFromPeer,
+              ),
               _resetButton('Global Macros',
                   () => _applyConfigChange(() => widget.bridge.resetGlobalMacros())),
             ]),

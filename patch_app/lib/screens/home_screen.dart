@@ -472,6 +472,8 @@ class _HomeScreenState extends State<HomeScreen> {
           _onPermissionDenied(context);
         case ChannelsOffered():
           break; // settings_screen handles the adopt/merge prompt
+        case GlobalMacrosOffered():
+          break; // settings_screen handles the adopt/merge prompt
       }
     } catch (e, stack) {
       debugPrint('Push event error [$event]: $e\n$stack');
