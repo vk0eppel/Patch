@@ -1032,7 +1032,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           // Desktop-only — sandboxing makes drawing over other apps technically
           // impossible on iOS/Android, so the control is absent there entirely.
-          if (Platform.isMacOS) ...[
+          if (Platform.isMacOS || Platform.isWindows) ...[
             SwitchListTile(
               title: const Text(
                 'Flash whole screen',
