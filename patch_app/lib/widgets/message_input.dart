@@ -11,11 +11,17 @@ class MessageInput extends StatefulWidget {
   /// Overrides the placeholder text (e.g. a broadcast hint in ALL mode).
   final String? hint;
 
+  /// Optional externally-owned [FocusNode]; if provided the widget does not
+  /// dispose it. Allows callers to programmatically refocus the input (e.g.
+  /// after a channel switch on desktop) without exposing internal state.
+  final FocusNode? focusNode;
+
   const MessageInput({
     super.key,
     required this.onSend,
     this.hideKeyboard = false,
     this.hint,
+    this.focusNode,
   });
 
   @override
@@ -24,7 +30,10 @@ class MessageInput extends StatefulWidget {
 
 class _MessageInputState extends State<MessageInput> {
   final _ctrl = TextEditingController();
-  final _focus = FocusNode();
+  // Only created (and disposed) when the caller doesn't supply their own node.
+  FocusNode? _ownFocus;
+
+  FocusNode get _focus => widget.focusNode ?? (_ownFocus ??= FocusNode());
 
   void _send() {
     final text = _ctrl.text.trim();
@@ -37,7 +46,7 @@ class _MessageInputState extends State<MessageInput> {
   @override
   void dispose() {
     _ctrl.dispose();
-    _focus.dispose();
+    _ownFocus?.dispose();
     super.dispose();
   }
 
@@ -54,6 +63,7 @@ class _MessageInputState extends State<MessageInput> {
             child: TextField(
               controller: _ctrl,
               focusNode: _focus,
+              autofocus: !widget.hideKeyboard && widget.focusNode == null,
               style: const TextStyle(
                 color: PatchTheme.textPrimary,
                 fontSize: PatchTheme.fontSizeMedium,
@@ -75,7 +85,6 @@ class _MessageInputState extends State<MessageInput> {
               maxLines: 1,
               textInputAction: TextInputAction.send,
               onSubmitted: (_) => _send(),
-              autofocus: !widget.hideKeyboard,
               // Crew callouts are short codes/jargon, not prose — autocorrect
               // fights that anyway. Disabling both also removes iOS's
               // predictive-text (QuickType) bar above the keys, which is the

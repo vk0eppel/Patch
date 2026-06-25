@@ -1033,9 +1033,19 @@ class _ChannelViewState extends State<_ChannelView> {
   bool _searchExpanded = false;
   String _query = '';
   final Set<String> _priorityFilter = {};
+  // Owned here so _toggleChannel / channel-switch can call requestFocus()
+  // without MessageInput exposing its internals. Passed as MessageInput.focusNode
+  // so MessageInput itself can also requestFocus() after a send.
+  final _inputFocusNode = FocusNode();
 
   bool get _isMulti => widget.selectedChannels.length > 1;
   bool get _filterActive => _query.trim().isNotEmpty || _priorityFilter.isNotEmpty;
+
+  @override
+  void dispose() {
+    _inputFocusNode.dispose();
+    super.dispose();
+  }
 
   @override
   void didUpdateWidget(_ChannelView old) {
@@ -1045,6 +1055,12 @@ class _ChannelViewState extends State<_ChannelView> {
     if (widget.selection != old.selection &&
         (_searchExpanded || _filterActive)) {
       _resetSearch();
+    }
+    // On desktop, keep the typing bar focused through channel/DM switches so
+    // the operator never needs to click back in before the next send.
+    if (!widget.hideKeyboard && widget.selection != old.selection) {
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _inputFocusNode.requestFocus());
     }
   }
 
@@ -1338,6 +1354,7 @@ class _ChannelViewState extends State<_ChannelView> {
         MessageInput(
           onSend: _sendMessage,
           hideKeyboard: widget.hideKeyboard,
+          focusNode: _inputFocusNode,
           hint: widget.isDmMode
               ? '💬 Message ${widget.dmPeerName ?? ''}…'
               : widget.isAllMode
