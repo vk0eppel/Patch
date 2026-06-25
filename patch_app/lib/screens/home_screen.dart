@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
@@ -103,7 +104,12 @@ class _HomeScreenState extends State<HomeScreen> {
   /// so an unnamed operator is nudged again next time but never nagged twice.
   bool _namePromptShown = false;
   int get _macrosColumns => _config?.macrosColumns ?? 1;
-  bool get _hideKeyboard => _config?.hideKeyboard ?? true;
+  /// `hideKeyboard` is a mobile-only concept (keeping the software keyboard
+  /// hidden until tapped) — gate its effect to iOS/Android so desktop always
+  /// keeps the typing bar focused through sends and channel switches,
+  /// regardless of the underlying config value (#78).
+  bool get _hideKeyboard =>
+      (Platform.isIOS || Platform.isAndroid) && (_config?.hideKeyboard ?? true);
   /// Play a sound when a channel flashes (critical / page / broadcast). Off by default.
   bool get _audibleAlert => _config?.audibleAlert ?? false;
   /// Plays the bundled alert sound. A single reusable player; the source is
