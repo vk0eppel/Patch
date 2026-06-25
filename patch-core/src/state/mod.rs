@@ -237,6 +237,14 @@ impl AppState {
         self.save_config().await
     }
 
+    pub async fn set_flash_whole_screen(&self, enabled: bool) -> anyhow::Result<()> {
+        self.0
+            .config
+            .mutate(|c| c.flash_whole_screen = enabled)
+            .await;
+        self.save_config().await
+    }
+
     /// Persist the presence heartbeat interval (seconds). Validated 1–60: below
     /// floods the LAN, above makes peer detection uselessly slow. Applies live —
     /// the discovery heartbeat loop re-reads it at the end of each cycle, so the
@@ -2016,6 +2024,7 @@ mod tests {
         st.set_flash_count(6).await.unwrap();
         st.set_hide_keyboard(false).await.unwrap();
         st.set_audible_alert(true).await.unwrap();
+        st.set_flash_whole_screen(true).await.unwrap();
         st.set_macros_columns(2).await.unwrap();
         st.add_static_peer("10.0.0.5".into(), 9000, Some("Booth".into()))
             .await
@@ -2025,6 +2034,7 @@ mod tests {
         assert_eq!(loaded.flash_count, 6);
         assert!(!loaded.hide_keyboard);
         assert!(loaded.audible_alert);
+        assert!(loaded.flash_whole_screen);
         assert_eq!(loaded.macros_columns, 2);
         assert_eq!(loaded.static_peers.len(), 1);
         assert_eq!(loaded.static_peers[0].address, "10.0.0.5");

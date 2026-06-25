@@ -465,6 +465,7 @@ pub struct ConfigSnapshot {
     pub macros_columns: u8,
     pub hide_keyboard: bool,
     pub audible_alert: bool,
+    pub flash_whole_screen: bool,
     pub global_macros: Vec<MacroMessage>,
     /// Presence heartbeat interval (seconds). Editable in Settings; the
     /// online/amber/grey dot thresholds derived from it live engine-side in
@@ -491,6 +492,7 @@ pub async fn get_config() -> ConfigSnapshot {
         macros_columns: cfg.macros_columns,
         hide_keyboard: cfg.hide_keyboard,
         audible_alert: cfg.audible_alert,
+        flash_whole_screen: cfg.flash_whole_screen,
         global_macros: cfg.global_macros,
         heartbeat_interval_secs: cfg.heartbeat_interval_secs as u32,
         name_is_default,
@@ -571,6 +573,10 @@ pub async fn set_osc_port(port: u16) -> Result<()> {
 
 pub async fn set_audible_alert(enabled: bool) -> Result<()> {
     engine().state.set_audible_alert(enabled).await
+}
+
+pub async fn set_flash_whole_screen(enabled: bool) -> Result<()> {
+    engine().state.set_flash_whole_screen(enabled).await
 }
 
 pub async fn set_channel_flash(
@@ -1318,6 +1324,7 @@ mod tests {
             macros_columns: 0,
             hide_keyboard: false,
             audible_alert: false,
+            flash_whole_screen: false,
             global_macros: Vec::new(),
             heartbeat_interval_secs: 0,
             name_is_default: false,
@@ -1344,6 +1351,7 @@ mod tests {
             "macros_columns",
             "hide_keyboard",
             "audible_alert",
+            "flash_whole_screen",
             "global_macros",
             "heartbeat_interval_secs",
             "name_is_default",
