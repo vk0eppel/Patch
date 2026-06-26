@@ -99,6 +99,8 @@ Check the flash settings for the channel:
 - **Settings → Behavior**: global "Flash on critical messages" and "Flash on every message" flags
 - **Settings → Channels** → tap the channel: per-channel overrides
 
+If the in-app pulse is triggering but you can't see it because Patch is in the background, enable **Flash whole screen** in **Settings → Behavior** (macOS/Windows only) — this pulses a full-screen overlay that's visible regardless of which app is focused.
+
 Either the global flag or the per-channel flag being on is sufficient. If both are off for a channel, flash will not trigger for incoming messages on that channel (but can still be triggered by the FLASH button manually).
 
 ---

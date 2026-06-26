@@ -68,6 +68,8 @@ Use flash for "Hey, pay attention" moments — a battery swap warning, a cue hol
 
 Flash is also triggered automatically on incoming Critical messages by default (global setting in **Settings → Behavior**). You can disable this globally, or add per-channel flash triggers in **Settings → Channels** — note that per-channel flags only add triggers; they cannot suppress a global setting that is on.
 
+On **macOS and Windows**, enabling **Flash whole screen** in **Settings → Behavior** also pulses a full-screen overlay on every Flash — visible even when Patch is in the background or behind a fullscreen show-control window. The overlay is click-through and invisible at all other times.
+
 ---
 
 ## 6. Macros
