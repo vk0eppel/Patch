@@ -153,6 +153,9 @@ Future<void> setOscPort({required int port}) =>
 Future<void> setAudibleAlert({required bool enabled}) =>
     RustLib.instance.api.crateApiSetAudibleAlert(enabled: enabled);
 
+Future<void> setFlashWholeScreen({required bool enabled}) =>
+    RustLib.instance.api.crateApiSetFlashWholeScreen(enabled: enabled);
+
 Future<void> setChannelFlash({
   required String channelId,
   bool? flashOnCritical,
@@ -381,6 +384,7 @@ class ConfigSnapshot {
   final int macrosColumns;
   final bool hideKeyboard;
   final bool audibleAlert;
+  final bool flashWholeScreen;
   final List<MacroMessage> globalMacros;
 
   /// Presence heartbeat interval (seconds). Editable in Settings; the
@@ -404,6 +408,7 @@ class ConfigSnapshot {
     required this.macrosColumns,
     required this.hideKeyboard,
     required this.audibleAlert,
+    required this.flashWholeScreen,
     required this.globalMacros,
     required this.heartbeatIntervalSecs,
     required this.nameIsDefault,
@@ -422,6 +427,7 @@ class ConfigSnapshot {
       macrosColumns.hashCode ^
       hideKeyboard.hashCode ^
       audibleAlert.hashCode ^
+      flashWholeScreen.hashCode ^
       globalMacros.hashCode ^
       heartbeatIntervalSecs.hashCode ^
       nameIsDefault.hashCode;
@@ -442,6 +448,7 @@ class ConfigSnapshot {
           macrosColumns == other.macrosColumns &&
           hideKeyboard == other.hideKeyboard &&
           audibleAlert == other.audibleAlert &&
+          flashWholeScreen == other.flashWholeScreen &&
           globalMacros == other.globalMacros &&
           heartbeatIntervalSecs == other.heartbeatIntervalSecs &&
           nameIsDefault == other.nameIsDefault;

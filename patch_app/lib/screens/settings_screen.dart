@@ -49,6 +49,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int get _flashCount => _config?.flashCount ?? 4;
   bool get _hideKeyboard => _config?.hideKeyboard ?? true;
   bool get _audibleAlert => _config?.audibleAlert ?? false;
+  bool get _flashWholeScreen => _config?.flashWholeScreen ?? false;
   int get _macrosColumns => _config?.macrosColumns ?? 1;
   List<MacroMessage> get _globalMacros => _config?.globalMacros ?? const [];
   String? get _selectedInterface => _config?.networkInterface; // null = auto
@@ -1029,6 +1030,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onChanged: (val) =>
                 _applyConfigChange(() => widget.bridge.setAudibleAlert(val)),
           ),
+          // Desktop-only — sandboxing makes drawing over other apps technically
+          // impossible on iOS/Android, so the control is absent there entirely.
+          if (Platform.isMacOS) ...[
+            SwitchListTile(
+              title: const Text(
+                'Flash whole screen',
+                style: TextStyle(color: PatchTheme.textPrimary, fontSize: PatchTheme.fontSizeSmall),
+              ),
+              subtitle: const Text(
+                'Also pulse a full-screen overlay so a Flash is visible even when '
+                'Patch isn\'t the focused app',
+                style: TextStyle(color: PatchTheme.textSecondary, fontSize: 11),
+              ),
+              value: _flashWholeScreen,
+              activeThumbColor: PatchTheme.accent,
+              contentPadding: EdgeInsets.zero,
+              onChanged: (val) =>
+                  _applyConfigChange(() => widget.bridge.setFlashWholeScreen(val)),
+            ),
+          ],
           const SizedBox(height: 8),
           Row(
             children: [

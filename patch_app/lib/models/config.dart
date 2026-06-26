@@ -38,6 +38,7 @@ class AppConfig {
   final int macrosColumns;
   final bool hideKeyboard;
   final bool audibleAlert;
+  final bool flashWholeScreen;
   final List<MacroMessage> globalMacros;
   final int heartbeatIntervalSecs;
   final bool nameIsDefault;
@@ -54,6 +55,7 @@ class AppConfig {
     required this.macrosColumns,
     required this.hideKeyboard,
     required this.audibleAlert,
+    this.flashWholeScreen = false,
     this.globalMacros = const [],
     required this.heartbeatIntervalSecs,
     required this.nameIsDefault,

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
@@ -15,6 +16,7 @@ import '../models/selection.dart';
 import '../models/selection_controller.dart';
 import '../store/app_store.dart';
 import '../theme/patch_theme.dart';
+import '../util/flash_overlay_gateway.dart';
 import '../util/message_filter.dart';
 import '../util/run_guarded.dart';
 import '../widgets/channel_tab.dart';
@@ -103,9 +105,19 @@ class _HomeScreenState extends State<HomeScreen> {
   /// so an unnamed operator is nudged again next time but never nagged twice.
   bool _namePromptShown = false;
   int get _macrosColumns => _config?.macrosColumns ?? 1;
-  bool get _hideKeyboard => _config?.hideKeyboard ?? true;
+  /// `hideKeyboard` is a mobile-only concept (keeping the software keyboard
+  /// hidden until tapped) — gate its effect to iOS/Android so desktop always
+  /// keeps the typing bar focused through sends and channel switches,
+  /// regardless of the underlying config value (#78).
+  bool get _hideKeyboard =>
+      (Platform.isIOS || Platform.isAndroid) && (_config?.hideKeyboard ?? true);
   /// Play a sound when a channel flashes (critical / page / broadcast). Off by default.
   bool get _audibleAlert => _config?.audibleAlert ?? false;
+  /// Desktop-only: also pulse a native whole-screen overlay on every Flash,
+  /// in addition to the in-app pulse. Off by default; absent on iOS/Android.
+  bool get _flashWholeScreen =>
+      (_config?.flashWholeScreen ?? false) &&
+      (Platform.isMacOS || Platform.isWindows);
   /// Plays the bundled alert sound. A single reusable player; the source is
   /// preloaded in initState (ReleaseMode.stop) so even the first alert is instant.
   final AudioPlayer _alertPlayer = AudioPlayer();
@@ -584,10 +596,18 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Hands the resolved color/pulse count to the native whole-screen overlay
+  /// gateway (#80) when enabled — fire-and-forget, same as [_playAlert].
+  void _pulseWholeScreen(Color color, int pulseCount) {
+    if (_flashWholeScreen) unawaited(FlashOverlayGateway.pulse(color, pulseCount));
+  }
+
   /// Applies a [FlashEvent]: plays the alert, bumps the relevant tab's flash
   /// count, and pulses the message area if its target is currently selected —
   /// otherwise marks it unread (DM threads only; channel/ALL tabs show their
-  /// own flash count instead of a separate unread marker).
+  /// own flash count instead of a separate unread marker). The whole-screen
+  /// overlay (#80) is a second consumer of this same in-app-pulse decision —
+  /// it fires alongside it, with the same resolved color/count, never instead.
   void _applyFlash(FlashEvent event) {
     _playAlert();
     setState(() {
@@ -598,6 +618,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _flashNotify++;
             _flashColor = color;
             _flashPulseCount = count;
+            _pulseWholeScreen(color, count);
           }
         case BroadcastFlashEvent(pulseCount: final count):
           // Always pulses — a broadcast is visible in whatever view the
@@ -606,6 +627,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _flashNotify++;
           _flashColor = PatchTheme.broadcast;
           _flashPulseCount = count;
+          _pulseWholeScreen(PatchTheme.broadcast, count);
         case DmFlashEvent(peerId: final peerId):
           final dmKey = 'dm:$peerId';
           _openDms.add(peerId); // ensure the tab exists even on a first-ever ping
@@ -613,6 +635,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _flashNotify++;
             _flashColor = PatchTheme.accent;
             _flashPulseCount = _globalFlashCount;
+            _pulseWholeScreen(PatchTheme.accent, _globalFlashCount);
           } else {
             _unreadDms.add(dmKey);
             if (!_showPeers) _dmPulseNotify++;
@@ -1010,9 +1033,19 @@ class _ChannelViewState extends State<_ChannelView> {
   bool _searchExpanded = false;
   String _query = '';
   final Set<String> _priorityFilter = {};
+  // Owned here so _toggleChannel / channel-switch can call requestFocus()
+  // without MessageInput exposing its internals. Passed as MessageInput.focusNode
+  // so MessageInput itself can also requestFocus() after a send.
+  final _inputFocusNode = FocusNode();
 
   bool get _isMulti => widget.selectedChannels.length > 1;
   bool get _filterActive => _query.trim().isNotEmpty || _priorityFilter.isNotEmpty;
+
+  @override
+  void dispose() {
+    _inputFocusNode.dispose();
+    super.dispose();
+  }
 
   @override
   void didUpdateWidget(_ChannelView old) {
@@ -1022,6 +1055,12 @@ class _ChannelViewState extends State<_ChannelView> {
     if (widget.selection != old.selection &&
         (_searchExpanded || _filterActive)) {
       _resetSearch();
+    }
+    // On desktop, keep the typing bar focused through channel/DM switches so
+    // the operator never needs to click back in before the next send.
+    if (!widget.hideKeyboard && widget.selection != old.selection) {
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _inputFocusNode.requestFocus());
     }
   }
 
@@ -1315,6 +1354,7 @@ class _ChannelViewState extends State<_ChannelView> {
         MessageInput(
           onSend: _sendMessage,
           hideKeyboard: widget.hideKeyboard,
+          focusNode: _inputFocusNode,
           hint: widget.isDmMode
               ? '💬 Message ${widget.dmPeerName ?? ''}…'
               : widget.isAllMode

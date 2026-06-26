@@ -422,6 +422,9 @@ class BridgeClient {
   Future<void> setAudibleAlert(bool enabled) =>
       rust.setAudibleAlert(enabled: enabled);
 
+  Future<void> setFlashWholeScreen(bool enabled) =>
+      rust.setFlashWholeScreen(enabled: enabled);
+
   Future<void> setMacrosColumns(int columns) =>
       rust.setMacrosColumns(columns: columns);
 
@@ -688,6 +691,7 @@ AppConfig _configFromRust(rust.ConfigSnapshot cfg) => AppConfig(
       macrosColumns: cfg.macrosColumns,
       hideKeyboard: cfg.hideKeyboard,
       audibleAlert: cfg.audibleAlert,
+      flashWholeScreen: cfg.flashWholeScreen,
       globalMacros: cfg.globalMacros.map(_macroFromRust).toList(),
       heartbeatIntervalSecs: cfg.heartbeatIntervalSecs,
       nameIsDefault: cfg.nameIsDefault,

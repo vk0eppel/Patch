@@ -106,6 +106,12 @@ pub struct Config {
     /// broadcast). Opt-in via Settings → Behavior. Default off.
     #[serde(default)] // default = false
     pub audible_alert: bool,
+    /// On macOS/Windows, also pulse a borderless always-on-top overlay across
+    /// the display the Patch window occupies on every Flash, in addition to
+    /// the existing in-app pulse — so a Flash is visible even when Patch
+    /// isn't the focused app. Opt-in via Settings → Behavior. Default off.
+    #[serde(default)] // default = false
+    pub flash_whole_screen: bool,
     /// Macros shown on every channel's panel (configured once, not tied to a
     /// channel). Fired on the currently-selected channel(s), like a per-channel
     /// macro — so common callouts (YES / NO / COPY …) live in one place instead
@@ -190,6 +196,7 @@ impl Default for Config {
             macros_columns: 1,
             hide_keyboard: true,
             audible_alert: false,
+            flash_whole_screen: false,
             // Fresh installs get the generic global macro set. NB this is the
             // *first-run* seed; the serde field default stays empty so loading an
             // existing patch.toml never injects these over a user's own setup.

@@ -59,6 +59,12 @@ The shared **`AppStore`** (`store/app_store.dart`) — a `ChangeNotifier` provid
 
 `/patch/presence` is the only discovery+heartbeat address. An external OSC tool announces itself by sending one — the receiver registers it as a peer. Messages and flash are **not** broadcast — silently dropped if no peers are known yet.
 
+## Flash
+
+A flash pulses the message area's border in the target channel/DM/broadcast color, `flash_count` times (`_FlashLayer` in `home_screen.dart`: 200ms lit / 150ms dark per pulse, a `_pulseGen` counter cancels and restarts a pulse sequence in flight so rapid repeated flashes don't overlap). `_applyFlash` resolves the color/count once per `FlashEvent` and is the single decision point all flash side-effects key off: bumping the relevant tab's flash count, the in-app pulse if that target is currently selected, the audible alert (`audible_alert` config), and — on macOS/Windows, when `flash_whole_screen` is enabled — a native whole-screen overlay pulse with the same resolved color/count.
+
+The whole-screen overlay exists because the in-app pulse is invisible if Patch isn't the focused/visible app — exactly when a flash matters most (an Operator working in another app, or a fullscreen show-control window on another display). It's a pure OS/UI concern with no engine state, so it rides a plain Flutter `MethodChannel` (`com.patch.app/flash_overlay`, single `pulse(argb, pulseCount)` method) rather than the Rust FFI bridge — `lib/util/flash_overlay_gateway.dart` is the Dart-side gateway, called from the same three `_applyFlash` branches that drive the in-app pulse, never as an independent dispatch. Each platform implements its own borderless, click-through, always-on-top overlay window that mirrors `_FlashLayer`'s timing and pulse-restart-on-repeat behavior, re-resolving which display to cover on every pulse rather than caching one: macOS in `macos/Runner/MainFlutterWindow.swift` (`FlashOverlayWindow`/`FlashOverlayView`); Windows similarly in `windows/runner/`.
+
 ## Discovery & Broadcast
 
 The socket always binds `0.0.0.0` so it receives on all interfaces including broadcasts. `network_interface` only scopes which NIC the discovery beacon is *announced* on. Changing it is live: the heartbeat picks it up on the next tick, and `set_network_interface` immediately clears all dynamically-discovered peers (OscBeacon/Mdns) so the peer list rebuilds cleanly via the new NIC's discovery. ManualIp/static peers are kept.
