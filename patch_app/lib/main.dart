@@ -1,5 +1,5 @@
 import 'dart:io' show Platform;
-import 'dart:ui' show AppExitResponse, Size, Offset;
+import 'dart:ui' show AppExitResponse, Size, Offset, PlatformDispatcher;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -15,6 +15,39 @@ import 'util/workspace_store.dart';
 
 bool get _isDesktop =>
     !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+
+/// Returns true when placing a window of [windowSize] at [pos] (logical px)
+/// would keep at least part of it visible on a connected screen.
+///
+/// dart:ui [Display] exposes physical size + DPR but not layout positions, so
+/// we can't know the exact virtual coordinate space. We approximate it as a
+/// rectangle spanning (−maxDim … totalLogicalWidth) × (−maxDim … maxLogicalHeight),
+/// where maxDim is the largest logical dimension seen across all displays.
+/// This covers the most common failure case — a window saved on a second
+/// monitor that is now disconnected — while remaining permissive enough for
+/// monitors arranged to the left or above the primary.
+bool _positionOnScreen(Offset pos, Size windowSize) {
+  final displays = PlatformDispatcher.instance.displays;
+  if (displays.isEmpty) return true;
+
+  double totalLogicalW = 0;
+  double maxLogicalH = 0;
+  for (final d in displays) {
+    final dpr = d.devicePixelRatio > 0 ? d.devicePixelRatio : 1.0;
+    totalLogicalW += d.size.width / dpr;
+    final h = d.size.height / dpr;
+    if (h > maxLogicalH) maxLogicalH = h;
+  }
+  final maxDim = totalLogicalW > maxLogicalH ? totalLogicalW : maxLogicalH;
+
+  // A window rect that overlaps the estimated virtual screen region at all.
+  final winRight = pos.dx + windowSize.width;
+  final winBottom = pos.dy + windowSize.height;
+  return winRight > -maxDim &&
+      pos.dx < totalLogicalW + maxDim &&
+      winBottom > -maxDim &&
+      pos.dy < maxLogicalH + maxDim;
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,11 +77,23 @@ void main() async {
     final ws = initialWorkspace;
     // Apply saved geometry before the window is shown (the MainFlutterWindow
     // override of order(_:relativeTo:) keeps it hidden until show() is called).
-    if (ws.windowWidth != null && ws.windowHeight != null) {
-      await windowManager.setSize(Size(ws.windowWidth!, ws.windowHeight!));
+    final ww = ws.windowWidth;
+    final wh = ws.windowHeight;
+    if (ww != null && wh != null) {
+      await windowManager.setSize(Size(ww, wh));
     }
-    if (ws.windowX != null && ws.windowY != null) {
-      await windowManager.setPosition(Offset(ws.windowX!, ws.windowY!));
+    final wx = ws.windowX;
+    final wy = ws.windowY;
+    if (wx != null && wy != null) {
+      // Only restore position if the window would land on a connected screen.
+      // dart:ui gives physical size + DPR per display but no layout positions,
+      // so we estimate total logical screen space as the sum of widths × margin.
+      // Monitors to the left/above appear at negative logical coordinates, hence
+      // the -maxDim lower bound. This catches the common "disconnected second
+      // monitor" case without platform-specific screen-geometry queries.
+      if (_positionOnScreen(Offset(wx, wy), Size(ww ?? 900, wh ?? 600))) {
+        await windowManager.setPosition(Offset(wx, wy));
+      }
     }
     await windowManager.show();
     await windowManager.focus();
