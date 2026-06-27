@@ -10,10 +10,10 @@ class FlashApplicator extends ChangeNotifier {
     Color dmColor = Colors.blue,
     Future<void> Function()? onAlert,
     Future<void> Function(Color, int)? onPulseOverlay,
-  })  : _broadcastColor = broadcastColor,
-        _dmColor = dmColor,
-        _onAlert = onAlert,
-        _onPulseOverlay = onPulseOverlay;
+  })  : _broadcastColor = broadcastColor, // ignore: prefer_initializing_formals
+        _dmColor = dmColor, // ignore: prefer_initializing_formals
+        _onAlert = onAlert, // ignore: prefer_initializing_formals
+        _onPulseOverlay = onPulseOverlay; // ignore: prefer_initializing_formals
 
   final Color _broadcastColor;
   final Color _dmColor;

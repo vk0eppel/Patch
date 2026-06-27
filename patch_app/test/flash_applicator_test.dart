@@ -216,7 +216,7 @@ void main() {
   group('onPulseOverlay callback', () {
     test('fired on selected channel flash when flashWholeScreen is true', () {
       int calls = 0;
-      final app = FlashApplicator(onPulseOverlay: (_, __) async => calls++)
+      final app = FlashApplicator(onPulseOverlay: (_, _) async => calls++)
         ..flashWholeScreen = true;
       app.apply(
         const ChannelFlashEvent(channelId: 'rf', color: Colors.red, pulseCount: 3),
@@ -230,7 +230,7 @@ void main() {
 
     test('not fired when channel is not selected', () {
       int calls = 0;
-      final app = FlashApplicator(onPulseOverlay: (_, __) async => calls++)
+      final app = FlashApplicator(onPulseOverlay: (_, _) async => calls++)
         ..flashWholeScreen = true;
       app.apply(
         const ChannelFlashEvent(channelId: 'rf', color: Colors.red, pulseCount: 3),
