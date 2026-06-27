@@ -1,5 +1,6 @@
 import Cocoa
 import FlutterMacOS
+import window_manager
 
 class MainFlutterWindow: NSWindow {
   private var flashOverlay: FlashOverlayWindow?
@@ -35,6 +36,13 @@ class MainFlutterWindow: NSWindow {
     }
 
     super.awakeFromNib()
+  }
+
+  // Keep the window hidden until window_manager applies the saved geometry and
+  // calls show() — prevents a visible jump from default size/position to saved.
+  override public func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {
+    super.order(place, relativeTo: otherWin)
+    hiddenWindowAtLaunch()
   }
 }
 

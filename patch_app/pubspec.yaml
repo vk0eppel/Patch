@@ -47,6 +47,7 @@ dependencies:
   # See patch_app/rust_builder/.
   patch_core:
     path: rust_builder
+  window_manager: ^0.5.1
 
 dev_dependencies:
   flutter_test:

@@ -3,8 +3,10 @@ import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
@@ -20,6 +22,7 @@ import '../theme/patch_theme.dart';
 import '../util/flash_overlay_gateway.dart';
 import '../util/message_filter.dart';
 import '../util/run_guarded.dart';
+import '../util/workspace_store.dart';
 import '../widgets/channel_tab.dart';
 import '../widgets/flash_button.dart';
 import '../widgets/message_list.dart';
@@ -38,13 +41,24 @@ import 'settings_screen.dart';
 /// Root screen — channel tab strip on the left, message area on the right.
 class HomeScreen extends StatefulWidget {
   final BridgeClient bridge;
-  const HomeScreen({super.key, required this.bridge});
+  final WorkspaceStore? workspaceStore;
+  final WorkspaceState initialWorkspace;
+
+  const HomeScreen({
+    super.key,
+    required this.bridge,
+    this.workspaceStore,
+    this.initialWorkspace = const WorkspaceState(),
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+bool get _isDesktop =>
+    !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+
+class _HomeScreenState extends State<HomeScreen> with WindowListener {
   /// Channels are owned by the AppStore (#57); selection reconciliation on
   /// change happens in the store listener (`_onStoreChanged`).
   List<PatchChannel> get _channels => AppStoreScope.of(context).channels;
@@ -92,8 +106,13 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Peers are owned by the shared [AppStore]; reading via `of(context)`
   /// rebuilds the screen when the list changes (candidate 2, ADR-0004).
   List<PeerInfo> get _peers => AppStoreScope.of(context).peers;
-  bool _showPeers = false;
-  bool _showMacros = false;
+  late bool _showPeers;
+  late bool _showMacros;
+  // Full workspace state — panel flags + geometry kept together so a panel
+  // toggle never clobbers previously-saved window geometry.
+  late WorkspaceState _workspace;
+  // Debounce timer for window move/resize saves.
+  Timer? _windowSaveDebounce;
   /// First-run name prompt: shown at most once per session. Reset on relaunch,
   /// so an unnamed operator is nudged again next time but never nagged twice.
   bool _namePromptShown = false;
@@ -288,6 +307,10 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _workspace = widget.initialWorkspace;
+    _showPeers = _workspace.showPeers;
+    _showMacros = _workspace.showMacros;
+    if (_isDesktop) windowManager.addListener(this);
     _flashApp = FlashApplicator(
       broadcastColor: PatchTheme.broadcast,
       dmColor: PatchTheme.accent,
@@ -378,6 +401,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _windowSaveDebounce?.cancel();
+    if (_isDesktop) windowManager.removeListener(this);
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     _store?.removeListener(_onStoreChanged);
     _pushSub?.cancel();
@@ -385,6 +410,42 @@ class _HomeScreenState extends State<HomeScreen> {
     _alertPlayer.dispose();
     super.dispose();
   }
+
+  // ── Workspace persistence ───────────────────────────────────────────────────
+
+  void _savePanels() {
+    _workspace = _workspace.copyWith(
+      showPeers: _showPeers,
+      showMacros: _showMacros,
+    );
+    widget.workspaceStore?.save(_workspace);
+  }
+
+  void _scheduleWindowSave() {
+    _windowSaveDebounce?.cancel();
+    _windowSaveDebounce = Timer(
+      const Duration(milliseconds: 500),
+      _saveWindowGeometry,
+    );
+  }
+
+  Future<void> _saveWindowGeometry() async {
+    final pos = await windowManager.getPosition();
+    final size = await windowManager.getSize();
+    _workspace = _workspace.copyWith(
+      windowX: pos.dx,
+      windowY: pos.dy,
+      windowWidth: size.width,
+      windowHeight: size.height,
+    );
+    widget.workspaceStore?.save(_workspace);
+  }
+
+  @override
+  void onWindowMoved() => _scheduleWindowSave();
+
+  @override
+  void onWindowResized() => _scheduleWindowSave();
 
   /// Global F-key handler — fires the first shortcut whose keyBinding matches.
   /// Returns true to consume the event (prevents the key reaching other widgets).
@@ -675,7 +736,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   peers: _peers,
                   onClearStale: () =>
                       runGuarded(context, () => widget.bridge.clearStalePeers()),
-                  onClose: () => setState(() => _showPeers = false),
+                  onClose: () {
+                    setState(() => _showPeers = false);
+                    _savePanels();
+                  },
                   onDm: _openDm,
                   unreadPeerIds: {
                     for (final k in _flashApp.unreadDms) k.substring(3),
@@ -709,13 +773,17 @@ class _HomeScreenState extends State<HomeScreen> {
                       aggregatedMacros: _aggregatedMacros,
                       bridge: widget.bridge,
                       showPeers: _showPeers,
-                      onTogglePeers: () =>
-                          setState(() => _showPeers = !_showPeers),
+                      onTogglePeers: () {
+                        setState(() => _showPeers = !_showPeers);
+                        _savePanels();
+                      },
                       hasUnreadDms: _flashApp.unreadDms.isNotEmpty,
                       dmPulseNotify: _flashApp.dmPulseNotify,
                       showMacros: _showMacros,
-                      onToggleMacros: () =>
-                          setState(() => _showMacros = !_showMacros),
+                      onToggleMacros: () {
+                        setState(() => _showMacros = !_showMacros);
+                        _savePanels();
+                      },
                       flashNotify: _flashApp.flashNotify,
                       flashColor: _flashApp.flashColor,
                       flashPulseCount: _flashApp.flashPulseCount,
@@ -739,7 +807,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   isMulti: _isMultiChannel,
                   columns: _macrosColumns,
                   onMacro: _fireMacro,
-                  onClose: () => setState(() => _showMacros = false),
+                  onClose: () {
+                    setState(() => _showMacros = false);
+                    _savePanels();
+                  },
                 ),
               ),
             ),

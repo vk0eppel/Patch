@@ -1,15 +1,20 @@
 import 'dart:io' show Platform;
-import 'dart:ui' show AppExitResponse;
+import 'dart:ui' show AppExitResponse, Size, Offset;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'bridge/bridge_client.dart';
 import 'screens/home_screen.dart';
 import 'store/app_store.dart';
 import 'theme/patch_theme.dart';
 import 'util/orientation_lock.dart';
+import 'util/workspace_store.dart';
+
+bool get _isDesktop =>
+    !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,11 +32,43 @@ void main() async {
     ]);
   }
 
-  runApp(const PatchApp());
+  WorkspaceState initialWorkspace = const WorkspaceState();
+  WorkspaceStore? workspaceStore;
+
+  if (_isDesktop) {
+    await windowManager.ensureInitialized();
+    final store = WorkspaceStore(computeDataDir());
+    workspaceStore = store;
+    initialWorkspace = await store.load();
+
+    final ws = initialWorkspace;
+    // Apply saved geometry before the window is shown (the MainFlutterWindow
+    // override of order(_:relativeTo:) keeps it hidden until show() is called).
+    if (ws.windowWidth != null && ws.windowHeight != null) {
+      await windowManager.setSize(Size(ws.windowWidth!, ws.windowHeight!));
+    }
+    if (ws.windowX != null && ws.windowY != null) {
+      await windowManager.setPosition(Offset(ws.windowX!, ws.windowY!));
+    }
+    await windowManager.show();
+    await windowManager.focus();
+  }
+
+  runApp(PatchApp(
+    workspaceStore: workspaceStore,
+    initialWorkspace: initialWorkspace,
+  ));
 }
 
 class PatchApp extends StatefulWidget {
-  const PatchApp({super.key});
+  final WorkspaceStore? workspaceStore;
+  final WorkspaceState initialWorkspace;
+
+  const PatchApp({
+    super.key,
+    this.workspaceStore,
+    this.initialWorkspace = const WorkspaceState(),
+  });
 
   @override
   State<PatchApp> createState() => _PatchAppState();
@@ -153,6 +190,10 @@ class _PatchAppState extends State<PatchApp> {
         ),
       );
     }
-    return HomeScreen(bridge: _bridge);
+    return HomeScreen(
+      bridge: _bridge,
+      workspaceStore: widget.workspaceStore,
+      initialWorkspace: widget.initialWorkspace,
+    );
   }
 }
