@@ -11,6 +11,7 @@ import '../models/channel.dart';
 import '../models/config.dart';
 import '../models/events.dart';
 import '../models/flash.dart';
+import '../models/flash_applicator.dart';
 import '../models/message.dart';
 import '../models/selection.dart';
 import '../models/selection_controller.dart';
@@ -61,13 +62,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, List<PatchMessage>> get _messages =>
       AppStoreScope.of(context).messages;
 
-  /// Incremented each time a flash arrives per channel — drives tab animation.
-  final Map<String, int> _flashCounts = {};
-
-  /// Incremented on every flash (any channel) — drives the message box pulse.
-  int _flashNotify = 0;
-  Color _flashColor = Colors.white;
-
   // Config-derived values are owned by the AppStore (#56); reading via
   // `of(context)` rebuilds when config changes. Defaults apply before the
   // first load completes.
@@ -75,7 +69,6 @@ class _HomeScreenState extends State<HomeScreen> {
   bool get _flashOnCritical => _config?.flashOnCritical ?? true;
   bool get _flashOnMessage => _config?.flashOnMessage ?? false;
   int get _globalFlashCount => _config?.flashCount ?? 4;
-  int _flashPulseCount = 4; // resolved count at the time of the last flash
 
   // ── F-key map ───────────────────────────────────────────────────────────────
   static final _fKeyLabels = <LogicalKeyboardKey, String>{
@@ -111,32 +104,17 @@ class _HomeScreenState extends State<HomeScreen> {
   /// regardless of the underlying config value (#78).
   bool get _hideKeyboard =>
       (Platform.isIOS || Platform.isAndroid) && (_config?.hideKeyboard ?? true);
-  /// Play a sound when a channel flashes (critical / page / broadcast). Off by default.
-  bool get _audibleAlert => _config?.audibleAlert ?? false;
-  /// Desktop-only: also pulse a native whole-screen overlay on every Flash,
-  /// in addition to the in-app pulse. Off by default; absent on iOS/Android.
-  bool get _flashWholeScreen =>
-      (_config?.flashWholeScreen ?? false) &&
-      (Platform.isMacOS || Platform.isWindows);
   /// Plays the bundled alert sound. A single reusable player; the source is
   /// preloaded in initState (ReleaseMode.stop) so even the first alert is instant.
   final AudioPlayer _alertPlayer = AudioPlayer();
+
+  late final FlashApplicator _flashApp;
   /// Macros shown on every channel (configured once); fired on the currently-
   /// selected channel(s). Owned by the AppStore config (#56).
   List<MacroMessage> get _globalMacros => _config?.globalMacros ?? const [];
 
   String get _clientName => _config?.clientName ?? '';
   String get _clientRole => _config?.role ?? '';
-
-  /// Peer ids with an open DM thread (so history is preserved when returning).
-  final Set<String> _openDms = {};
-
-  /// DM thread keys (`dm:<peer>`) with unread messages — cleared when viewed.
-  final Set<String> _unreadDms = {};
-
-  /// Bumped on each new unread DM while the peers panel is closed; drives the
-  /// one-shot pulse on the peers toggle ([PulsingPeersButton]).
-  int _dmPulseNotify = 0;
 
   StreamSubscription<PatchEvent>? _pushSub;
 
@@ -310,6 +288,12 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _flashApp = FlashApplicator(
+      broadcastColor: PatchTheme.broadcast,
+      dmColor: PatchTheme.accent,
+      onAlert: _emitAlert,
+      onPulseOverlay: FlashOverlayGateway.pulse,
+    )..addListener(_onFlashAppChanged);
     _pushSub = widget.bridge.pushes.listen(_handlePush);
     // Peers, config, and channels are all loaded by the AppStore (see main).
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
@@ -323,6 +307,10 @@ class _HomeScreenState extends State<HomeScreen> {
     // between plays, so `_emitAlert` just seeks to the start and resumes.
     unawaited(_alertPlayer.setReleaseMode(ReleaseMode.stop));
     unawaited(_alertPlayer.setSource(AssetSource('sounds/alert.wav')));
+  }
+
+  void _onFlashAppChanged() {
+    if (mounted) setState(() {});
   }
 
   AppStore? _store;
@@ -346,6 +334,9 @@ class _HomeScreenState extends State<HomeScreen> {
   void _onStoreChanged() {
     final cfg = _store?.config;
     if (cfg != null) {
+      _flashApp.audibleAlert = cfg.audibleAlert;
+      _flashApp.flashWholeScreen =
+          cfg.flashWholeScreen && (Platform.isMacOS || Platform.isWindows);
       _maybeShowNamePrompt(
         nameIsDefault: cfg.nameIsDefault,
         currentName: cfg.clientName,
@@ -390,6 +381,7 @@ class _HomeScreenState extends State<HomeScreen> {
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     _store?.removeListener(_onStoreChanged);
     _pushSub?.cancel();
+    _flashApp.dispose();
     _alertPlayer.dispose();
     super.dispose();
   }
@@ -504,18 +496,14 @@ class _HomeScreenState extends State<HomeScreen> {
       globalPulseCount: _globalFlashCount,
     );
     if (flash != null) {
-      _applyFlash(flash);
+      _flashApp.apply(flash, _selection,
+          globalFlashCount: _globalFlashCount, showPeers: _showPeers);
     } else if (msg.channelId.startsWith('dm:') &&
         !_selection.containsRawId(msg.channelId)) {
       // A non-critical DM that isn't flashing still needs a silent unread dot
       // when its thread isn't in view — that's DM-visibility, not a flash
       // decision (see decideMessageFlash's doc comment).
-      setState(() {
-        _unreadDms.add(msg.channelId);
-        // Pulse the peers toggle only when the panel is closed (open → the
-        // unread dot on the peer row is already visible).
-        if (!_showPeers) _dmPulseNotify++;
-      });
+      _flashApp.markDmUnread(msg.channelId, showPeers: _showPeers);
     }
   }
 
@@ -539,20 +527,23 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onChannelFlashed(String chId) {
+    final FlashEvent event;
     if (chId == kAllChannelId) {
-      _applyFlash(BroadcastFlashEvent(pulseCount: _globalFlashCount));
+      event = BroadcastFlashEvent(pulseCount: _globalFlashCount);
     } else if (chId.startsWith('dm:')) {
-      _applyFlash(DmFlashEvent(peerId: chId.substring(3)));
+      event = DmFlashEvent(peerId: chId.substring(3));
     } else {
       final ch = _channels
           .cast<PatchChannel?>()
           .firstWhere((c) => c?.id == chId, orElse: () => null);
-      _applyFlash(ChannelFlashEvent(
+      event = ChannelFlashEvent(
         channelId: chId,
         color: ch?.color ?? Colors.white,
         pulseCount: ch?.flashCount ?? _globalFlashCount,
-      ));
+      );
     }
+    _flashApp.apply(event, _selection,
+        globalFlashCount: _globalFlashCount, showPeers: _showPeers);
   }
 
   /// Drop the store's buffer for cleared messages after a `clearMessages`
@@ -574,13 +565,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Short audible alert played alongside a flash, when enabled in Settings.
-  /// Uses the preloaded bundled asset via `audioplayers` (`SystemSound.alert` is
-  /// a no-op on macOS/iOS). Fire-and-forget.
-  void _playAlert() {
-    if (_audibleAlert) unawaited(_emitAlert());
-  }
-
   /// Replays the preloaded alert from the start (no first-play latency); falls
   /// back to a fresh load if the preload wasn't ready yet.
   Future<void> _emitAlert() async {
@@ -596,54 +580,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Hands the resolved color/pulse count to the native whole-screen overlay
-  /// gateway (#80) when enabled — fire-and-forget, same as [_playAlert].
-  void _pulseWholeScreen(Color color, int pulseCount) {
-    if (_flashWholeScreen) unawaited(FlashOverlayGateway.pulse(color, pulseCount));
-  }
-
-  /// Applies a [FlashEvent]: plays the alert, bumps the relevant tab's flash
-  /// count, and pulses the message area if its target is currently selected —
-  /// otherwise marks it unread (DM threads only; channel/ALL tabs show their
-  /// own flash count instead of a separate unread marker). The whole-screen
-  /// overlay (#80) is a second consumer of this same in-app-pulse decision —
-  /// it fires alongside it, with the same resolved color/count, never instead.
-  void _applyFlash(FlashEvent event) {
-    _playAlert();
-    setState(() {
-      switch (event) {
-        case ChannelFlashEvent(channelId: final id, color: final color, pulseCount: final count):
-          _flashCounts[id] = (_flashCounts[id] ?? 0) + 1;
-          if (_selection.containsRawId(id)) {
-            _flashNotify++;
-            _flashColor = color;
-            _flashPulseCount = count;
-            _pulseWholeScreen(color, count);
-          }
-        case BroadcastFlashEvent(pulseCount: final count):
-          // Always pulses — a broadcast is visible in whatever view the
-          // Operator is in, regardless of selection.
-          _flashCounts[kAllChannelId] = (_flashCounts[kAllChannelId] ?? 0) + 1;
-          _flashNotify++;
-          _flashColor = PatchTheme.broadcast;
-          _flashPulseCount = count;
-          _pulseWholeScreen(PatchTheme.broadcast, count);
-        case DmFlashEvent(peerId: final peerId):
-          final dmKey = 'dm:$peerId';
-          _openDms.add(peerId); // ensure the tab exists even on a first-ever ping
-          if (_selection.containsRawId(dmKey)) {
-            _flashNotify++;
-            _flashColor = PatchTheme.accent;
-            _flashPulseCount = _globalFlashCount;
-            _pulseWholeScreen(PatchTheme.accent, _globalFlashCount);
-          } else {
-            _unreadDms.add(dmKey);
-            if (!_showPeers) _dmPulseNotify++;
-          }
-      }
-    });
-  }
-
   // ── Channel selection ───────────────────────────────────────────────────────
 
   /// Tap — toggle channel in/out of selection. At least one channel stays selected.
@@ -654,8 +590,8 @@ class _HomeScreenState extends State<HomeScreen> {
     late Set<String> toFetch;
     setState(() {
       toFetch = _selectionController.selectTab(id);
-      if (id.startsWith('dm:')) _unreadDms.remove(id);
     });
+    if (id.startsWith('dm:')) _flashApp.clearUnread(id);
     for (final fetchId in toFetch) {
       AppStoreScope.read(context).ensureMessages(fetchId);
     }
@@ -681,13 +617,11 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Transition rule moved to [SelectionController.openDm] (#63); this screen
   /// keeps the screen-local open-thread/unread bookkeeping (ADR-0005).
   void _openDm(String peerId) {
-    final key = 'dm:$peerId';
     late Set<String> toFetch;
     setState(() {
       toFetch = _selectionController.openDm(peerId);
-      _openDms.add(peerId);
-      _unreadDms.remove(key);
     });
+    _flashApp.openDmThread(peerId);
     for (final id in toFetch) {
       AppStoreScope.read(context).ensureMessages(id);
     }
@@ -720,7 +654,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _ChannelStrip(
             channels: _channels,
             selectedIds: _selection.tabIds,
-            flashCounts: _flashCounts,
+            flashCounts: _flashApp.flashCounts,
             globalFlashCount: _globalFlashCount,
             onTap: _toggleChannel,
             bridge: widget.bridge,
@@ -744,7 +678,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   onClose: () => setState(() => _showPeers = false),
                   onDm: _openDm,
                   unreadPeerIds: {
-                    for (final k in _unreadDms) k.substring(3),
+                    for (final k in _flashApp.unreadDms) k.substring(3),
                   },
                   onRefresh: () => AppStoreScope.read(context).refreshPeers(),
                 ),
@@ -777,14 +711,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       showPeers: _showPeers,
                       onTogglePeers: () =>
                           setState(() => _showPeers = !_showPeers),
-                      hasUnreadDms: _unreadDms.isNotEmpty,
-                      dmPulseNotify: _dmPulseNotify,
+                      hasUnreadDms: _flashApp.unreadDms.isNotEmpty,
+                      dmPulseNotify: _flashApp.dmPulseNotify,
                       showMacros: _showMacros,
                       onToggleMacros: () =>
                           setState(() => _showMacros = !_showMacros),
-                      flashNotify: _flashNotify,
-                      flashColor: _flashColor,
-                      flashPulseCount: _flashPulseCount,
+                      flashNotify: _flashApp.flashNotify,
+                      flashColor: _flashApp.flashColor,
+                      flashPulseCount: _flashApp.flashPulseCount,
                       hideKeyboard: _hideKeyboard,
                       onOneShotSent: _snapBackFromAll,
                     ),
