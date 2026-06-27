@@ -25,6 +25,7 @@ void main() {
         timestamp: ts,
         priority: rust_osc.Priority.critical,
         payload: 'standby',
+        isFlash: false,
       );
 
   group('data-carrying variants', () {

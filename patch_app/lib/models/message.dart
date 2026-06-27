@@ -10,6 +10,9 @@ class PatchMessage {
   final DateTime timestamp;
   final int priority;
   final String payload;
+  final bool isFlash;
+  final String? flashSenderName;
+  final String? flashSenderRole;
 
   const PatchMessage({
     required this.messageId,
@@ -19,6 +22,9 @@ class PatchMessage {
     required this.timestamp,
     required this.priority,
     required this.payload,
+    this.isFlash = false,
+    this.flashSenderName,
+    this.flashSenderRole,
   });
 
   bool get isCritical => priority >= 3;

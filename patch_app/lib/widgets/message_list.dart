@@ -120,8 +120,40 @@ class _MessageTile extends StatelessWidget {
     };
   }
 
+  String get _flashLabel {
+    final name = message.flashSenderName ?? message.senderName;
+    final role = message.flashSenderRole;
+    return (role != null && role.isNotEmpty) ? '$name ($role) flashed' : '$name flashed';
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (message.isFlash) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+        child: Row(
+          children: [
+            Text(
+              _formatTime(message.timestamp),
+              style: const TextStyle(
+                color: PatchTheme.textMuted,
+                fontSize: PatchTheme.fontSizeSmall,
+                fontFamily: 'monospace',
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              _flashLabel,
+              style: const TextStyle(
+                color: PatchTheme.textMuted,
+                fontSize: PatchTheme.fontSizeSmall,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     final isCritical = message.isCritical;
     final isWarning = message.isWarning;
 

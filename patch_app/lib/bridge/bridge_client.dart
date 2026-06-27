@@ -643,6 +643,9 @@ PatchMessage _messageFromRust(rust_osc.PatchMessage m) => PatchMessage(
       timestamp: m.timestamp,
       priority: m.priority.index,
       payload: m.payload,
+      isFlash: m.isFlash,
+      flashSenderName: m.flashSenderName,
+      flashSenderRole: m.flashSenderRole,
     );
 
 PeerInfo _peerFromRust(rust.PeerSnapshot p) => PeerInfo(

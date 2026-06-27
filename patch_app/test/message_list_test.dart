@@ -96,6 +96,91 @@ void main() {
     expect(find.text('LUNCH BREAK'), findsOneWidget);
   });
 
+  testWidgets('flash entry with role renders "Name (Role) flashed"', (tester) async {
+    final flash = PatchMessage(
+      messageId: 'f1',
+      senderId: 's',
+      senderName: 'James',
+      channelId: 'rf',
+      timestamp: DateTime(2026, 6, 4, 9, 30),
+      priority: 1,
+      payload: '',
+      isFlash: true,
+      flashSenderName: 'James',
+      flashSenderRole: 'FOH Audio',
+    );
+    await tester.pumpWidget(_host([flash]));
+    await tester.pumpAndSettle();
+    expect(find.text('James (FOH Audio) flashed'), findsOneWidget);
+  });
+
+  testWidgets('flash entry without role renders "Name flashed" — no parenthetical', (tester) async {
+    final flash = PatchMessage(
+      messageId: 'f2',
+      senderId: 's',
+      senderName: 'James',
+      channelId: 'rf',
+      timestamp: DateTime(2026, 6, 4, 9, 30),
+      priority: 1,
+      payload: '',
+      isFlash: true,
+      flashSenderName: 'James',
+    );
+    await tester.pumpWidget(_host([flash]));
+    await tester.pumpAndSettle();
+    expect(find.text('James flashed'), findsOneWidget);
+    expect(find.textContaining('('), findsNothing);
+  });
+
+  testWidgets('flash row shows a timestamp', (tester) async {
+    final flash = PatchMessage(
+      messageId: 'f3',
+      senderId: 's',
+      senderName: 'James',
+      channelId: 'rf',
+      timestamp: DateTime(2026, 6, 4, 9, 30, 15),
+      priority: 1,
+      payload: '',
+      isFlash: true,
+      flashSenderName: 'James',
+      flashSenderRole: 'FOH Audio',
+    );
+    await tester.pumpWidget(_host([flash]));
+    await tester.pumpAndSettle();
+    // Local time may differ from UTC; just verify some HH:MM:SS pattern exists.
+    expect(find.textContaining(':'), findsWidgets);
+  });
+
+  testWidgets('flash row has no priority badge or sender-name chrome', (tester) async {
+    final flash = PatchMessage(
+      messageId: 'f4',
+      senderId: 's',
+      senderName: 'James',
+      channelId: 'rf',
+      timestamp: DateTime(2026, 6, 4, 9, 30),
+      priority: 3, // critical — would normally show red border+sender
+      payload: '',
+      isFlash: true,
+      flashSenderName: 'James',
+      flashSenderRole: 'FOH Audio',
+    );
+    await tester.pumpWidget(_host([flash]));
+    await tester.pumpAndSettle();
+    // The flash label is one combined text node — "James" does NOT appear alone
+    // as a separate coloured sender widget.
+    expect(find.text('James'), findsNothing);
+    // No priority-coloured Container border — the flash row uses a plain Padding.
+    expect(find.byType(Container), findsNothing);
+  });
+
+  testWidgets('regular messages are unaffected by flash fields', (tester) async {
+    await tester.pumpWidget(_host([_msg('Channel clear', priority: 1)]));
+    await tester.pumpAndSettle();
+    expect(find.text('Channel clear'), findsOneWidget);
+    expect(find.text('FOH'), findsOneWidget);
+    expect(find.textContaining('flashed'), findsNothing);
+  });
+
   testWidgets('sender name colour encodes priority', (tester) async {
     Color senderColour() => tester.widget<Text>(find.text('FOH')).style!.color!;
 
