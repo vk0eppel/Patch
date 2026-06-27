@@ -2627,6 +2627,9 @@ impl SseDecode for crate::osc::types::PatchMessage {
         let mut var_timestamp = <chrono::DateTime<chrono::Utc>>::sse_decode(deserializer);
         let mut var_priority = <crate::osc::types::Priority>::sse_decode(deserializer);
         let mut var_payload = <String>::sse_decode(deserializer);
+        let mut var_isFlash = <bool>::sse_decode(deserializer);
+        let mut var_flashSenderName = <Option<String>>::sse_decode(deserializer);
+        let mut var_flashSenderRole = <Option<String>>::sse_decode(deserializer);
         return crate::osc::types::PatchMessage {
             message_id: var_messageId,
             sender_id: var_senderId,
@@ -2635,6 +2638,9 @@ impl SseDecode for crate::osc::types::PatchMessage {
             timestamp: var_timestamp,
             priority: var_priority,
             payload: var_payload,
+            is_flash: var_isFlash,
+            flash_sender_name: var_flashSenderName,
+            flash_sender_role: var_flashSenderRole,
         };
     }
 }
@@ -3208,6 +3214,9 @@ impl flutter_rust_bridge::IntoDart for crate::osc::types::PatchMessage {
             self.timestamp.into_into_dart().into_dart(),
             self.priority.into_into_dart().into_dart(),
             self.payload.into_into_dart().into_dart(),
+            self.is_flash.into_into_dart().into_dart(),
+            self.flash_sender_name.into_into_dart().into_dart(),
+            self.flash_sender_role.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -3817,6 +3826,9 @@ impl SseEncode for crate::osc::types::PatchMessage {
         <chrono::DateTime<chrono::Utc>>::sse_encode(self.timestamp, serializer);
         <crate::osc::types::Priority>::sse_encode(self.priority, serializer);
         <String>::sse_encode(self.payload, serializer);
+        <bool>::sse_encode(self.is_flash, serializer);
+        <Option<String>>::sse_encode(self.flash_sender_name, serializer);
+        <Option<String>>::sse_encode(self.flash_sender_role, serializer);
     }
 }
 

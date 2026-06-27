@@ -371,6 +371,9 @@ fn decode_patch_message(msg: OscMessage) -> Result<PatchEvent> {
             .context("Invalid timestamp")?,
         priority,
         payload,
+        is_flash: false,
+        flash_sender_name: None,
+        flash_sender_role: None,
     }))
 }
 
@@ -441,6 +444,9 @@ fn decode_dm(msg: OscMessage) -> Result<PatchEvent> {
             .context("Invalid timestamp")?,
         priority,
         payload,
+        is_flash: false,
+        flash_sender_name: None,
+        flash_sender_role: None,
     };
     Ok(PatchEvent::DirectMessage {
         msg: pmsg,
@@ -654,6 +660,9 @@ mod tests {
             timestamp: Utc::now(),
             priority: Priority::Critical,
             payload: "Battery low".to_string(),
+            is_flash: false,
+            flash_sender_name: None,
+            flash_sender_role: None,
         }
     }
 

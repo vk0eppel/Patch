@@ -45,6 +45,8 @@ class ChannelFlash {
 enum OscArgKind { string, int, float }
 
 /// A single PATCH message — maps 1-to-1 to the `/patch/message` OSC packet.
+/// Flash log entries reuse this type with `is_flash: true` so they flow
+/// through the same message buffer and bridge path as regular messages.
 class PatchMessage {
   /// UUID v4 — unique per message, used for ACK and dedup.
   final UuidValue messageId;
@@ -65,6 +67,15 @@ class PatchMessage {
   /// The actual message text or shortcut payload.
   final String payload;
 
+  /// True for synthesized Flash log entries (never for wire messages).
+  final bool isFlash;
+
+  /// Display name of the peer that sent the Flash (Flash log entries only).
+  final String? flashSenderName;
+
+  /// Production role of the peer that sent the Flash (Flash log entries only).
+  final String? flashSenderRole;
+
   const PatchMessage({
     required this.messageId,
     required this.senderId,
@@ -73,6 +84,9 @@ class PatchMessage {
     required this.timestamp,
     required this.priority,
     required this.payload,
+    required this.isFlash,
+    this.flashSenderName,
+    this.flashSenderRole,
   });
 
   @override
@@ -83,7 +97,10 @@ class PatchMessage {
       channelId.hashCode ^
       timestamp.hashCode ^
       priority.hashCode ^
-      payload.hashCode;
+      payload.hashCode ^
+      isFlash.hashCode ^
+      flashSenderName.hashCode ^
+      flashSenderRole.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -96,7 +113,10 @@ class PatchMessage {
           channelId == other.channelId &&
           timestamp == other.timestamp &&
           priority == other.priority &&
-          payload == other.payload;
+          payload == other.payload &&
+          isFlash == other.isFlash &&
+          flashSenderName == other.flashSenderName &&
+          flashSenderRole == other.flashSenderRole;
 }
 
 /// A presence/heartbeat announcement.

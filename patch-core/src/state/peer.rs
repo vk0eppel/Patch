@@ -297,6 +297,11 @@ impl PeerRegistry {
         self.peers.read().await.contains_key(&peer_id)
     }
 
+    /// Returns the production role string for `peer_id`, if known.
+    pub(crate) async fn get_role(&self, peer_id: Uuid) -> Option<String> {
+        self.peers.read().await.get(&peer_id)?.role.clone()
+    }
+
     /// Fully remove a peer from the registry. Caller publishes `PeerExpired`.
     pub(crate) async fn expire(&self, peer_id: Uuid) {
         self.peers.write().await.remove(&peer_id);

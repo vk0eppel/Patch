@@ -167,6 +167,17 @@ pub(crate) async fn handle(
         PatchEvent::Flash(f) => {
             // Same sighting as for Message.
             record_sender_sighting(state, f.sender_id, f.sender_name.clone(), from).await;
+            // Log a Flash entry in the channel's message thread so operators
+            // can see who flashed and when. Role is best-effort: it's only
+            // available after a presence heartbeat has arrived.
+            let sender_role = state.peer_role(f.sender_id).await;
+            let flash_log = PatchMessage::new_flash_log(
+                f.sender_id,
+                f.sender_name.clone(),
+                sender_role,
+                f.channel_id.clone(),
+            );
+            state.store_message(flash_log).await;
             state.publish(AppEvent::ChannelFlash(f)).await;
         }
         PatchEvent::Say {
@@ -718,11 +729,20 @@ mod tests {
 
         let peers = state.get_peers().await;
         assert!(peers.iter().any(|p| p.peer_id == sender_id));
-        // The sighting publishes PeerUpdated first, then the flash itself.
+        // PeerUpdated from the sighting, MessageReceived for the flash log
+        // entry, then ChannelFlash for the UI trigger.
         assert!(matches!(
             events.recv().await.unwrap(),
             AppEvent::PeerUpdated(_)
         ));
+        match events.recv().await.unwrap() {
+            AppEvent::MessageReceived(m) => {
+                assert!(m.is_flash);
+                assert_eq!(m.channel_id, "rf");
+                assert_eq!(m.flash_sender_name.as_deref(), Some("Sender"));
+            }
+            other => panic!("expected MessageReceived(flash log), got {other:?}"),
+        }
         match events.recv().await.unwrap() {
             AppEvent::ChannelFlash(f) => assert_eq!(f.channel_id, "rf"),
             other => panic!("expected ChannelFlash, got {other:?}"),

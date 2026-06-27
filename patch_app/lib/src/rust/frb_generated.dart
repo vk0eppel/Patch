@@ -2385,8 +2385,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PatchMessage dco_decode_patch_message(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
     return PatchMessage(
       messageId: dco_decode_Uuid(arr[0]),
       senderId: dco_decode_Uuid(arr[1]),
@@ -2395,6 +2395,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       timestamp: dco_decode_Chrono_Utc(arr[4]),
       priority: dco_decode_priority(arr[5]),
       payload: dco_decode_String(arr[6]),
+      isFlash: dco_decode_bool(arr[7]),
+      flashSenderName: dco_decode_opt_String(arr[8]),
+      flashSenderRole: dco_decode_opt_String(arr[9]),
     );
   }
 
@@ -3049,6 +3052,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_timestamp = sse_decode_Chrono_Utc(deserializer);
     var var_priority = sse_decode_priority(deserializer);
     var var_payload = sse_decode_String(deserializer);
+    var var_isFlash = sse_decode_bool(deserializer);
+    var var_flashSenderName = sse_decode_opt_String(deserializer);
+    var var_flashSenderRole = sse_decode_opt_String(deserializer);
     return PatchMessage(
       messageId: var_messageId,
       senderId: var_senderId,
@@ -3057,6 +3063,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       timestamp: var_timestamp,
       priority: var_priority,
       payload: var_payload,
+      isFlash: var_isFlash,
+      flashSenderName: var_flashSenderName,
+      flashSenderRole: var_flashSenderRole,
     );
   }
 
@@ -3659,6 +3668,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_Chrono_Utc(self.timestamp, serializer);
     sse_encode_priority(self.priority, serializer);
     sse_encode_String(self.payload, serializer);
+    sse_encode_bool(self.isFlash, serializer);
+    sse_encode_opt_String(self.flashSenderName, serializer);
+    sse_encode_opt_String(self.flashSenderRole, serializer);
   }
 
   @protected

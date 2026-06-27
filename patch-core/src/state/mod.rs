@@ -396,6 +396,12 @@ impl AppState {
         }
     }
 
+    /// Returns the production role string for a peer by their UUID, if known.
+    /// Used when synthesizing Flash log entries.
+    pub async fn peer_role(&self, peer_id: Uuid) -> Option<String> {
+        self.0.peers.get_role(peer_id).await
+    }
+
     /// Every known peer, including a synthetic entry per configured static
     /// peer that hasn't been heard from dynamically yet. The static-peer merge
     /// is cross-domain (it needs `Config`, not just the peer registry), so it

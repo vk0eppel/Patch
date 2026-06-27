@@ -62,6 +62,8 @@ pub enum OscArgKind {
 }
 
 /// A single PATCH message — maps 1-to-1 to the `/patch/message` OSC packet.
+/// Flash log entries reuse this type with `is_flash: true` so they flow
+/// through the same message buffer and bridge path as regular messages.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PatchMessage {
     /// UUID v4 — unique per message, used for ACK and dedup.
@@ -77,6 +79,12 @@ pub struct PatchMessage {
     pub priority: Priority,
     /// The actual message text or shortcut payload.
     pub payload: String,
+    /// True for synthesized Flash log entries (never for wire messages).
+    pub is_flash: bool,
+    /// Display name of the peer that sent the Flash (Flash log entries only).
+    pub flash_sender_name: Option<String>,
+    /// Production role of the peer that sent the Flash (Flash log entries only).
+    pub flash_sender_role: Option<String>,
 }
 
 impl PatchMessage {
@@ -95,6 +103,33 @@ impl PatchMessage {
             timestamp: Utc::now(),
             priority,
             payload: payload.into(),
+            is_flash: false,
+            flash_sender_name: None,
+            flash_sender_role: None,
+        }
+    }
+
+    /// Synthesize a Flash log entry for a received channel Flash.
+    /// Stored in the message buffer so the message thread can display
+    /// "Name (Role) flashed". Never sent over the wire.
+    pub fn new_flash_log(
+        sender_id: Uuid,
+        sender_name: impl Into<String>,
+        sender_role: Option<String>,
+        channel_id: impl Into<String>,
+    ) -> Self {
+        let name: String = sender_name.into();
+        Self {
+            message_id: Uuid::new_v4(),
+            sender_id,
+            sender_name: name.clone(),
+            channel_id: channel_id.into(),
+            timestamp: Utc::now(),
+            priority: Priority::Info,
+            payload: String::new(),
+            is_flash: true,
+            flash_sender_name: Some(name),
+            flash_sender_role: sender_role,
         }
     }
 
