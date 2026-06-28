@@ -139,3 +139,143 @@ pub struct ShowFileMeta {
     pub created_at: DateTime<Utc>,
     pub channel_count: usize,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::config::{set_data_dir, test_data_dir_guard};
+
+    fn make_show_file(name: &str) -> ShowFileConfig {
+        ShowFileConfig::new(name, Vec::new(), Vec::new())
+    }
+
+    // ── slugify (pure) ────────────────────────────────────────────────────────
+
+    #[test]
+    fn slugify_lowercases_and_replaces_spaces() {
+        assert_eq!(slugify("Main Stage"), "main_stage");
+    }
+
+    #[test]
+    fn slugify_trims_leading_and_trailing_underscores() {
+        assert_eq!(slugify("!!!foo!!!"), "foo");
+    }
+
+    #[test]
+    fn slugify_preserves_hyphens() {
+        assert_eq!(slugify("show-1"), "show-1");
+    }
+
+    #[test]
+    fn slugify_empty_string_is_empty() {
+        assert_eq!(slugify(""), "");
+    }
+
+    // ── disk I/O ─────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn save_and_load_round_trip() {
+        let _guard = test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        set_data_dir(dir.clone());
+
+        let sf = make_show_file("Main Stage");
+        let slug = save_show_file(&sf).unwrap();
+        assert_eq!(slug, "main_stage");
+        let loaded = load_show_file(&slug).unwrap();
+        assert_eq!(loaded.name, "Main Stage");
+        assert_eq!(loaded.channels.len(), 0);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn save_creates_show_files_dir_if_absent() {
+        let _guard = test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        set_data_dir(dir.clone());
+
+        assert!(!dir.join("show_files").exists());
+        save_show_file(&make_show_file("Night One")).unwrap();
+        assert!(dir.join("show_files").exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn load_missing_slug_returns_descriptive_err() {
+        let _guard = test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        set_data_dir(dir.clone());
+
+        let err = load_show_file("nonexistent").unwrap_err();
+        assert!(err.to_string().contains("nonexistent"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn save_name_with_empty_slug_returns_err() {
+        let _guard = test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        set_data_dir(dir.clone());
+
+        assert!(save_show_file(&make_show_file("!!!")).is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn list_returns_files_sorted_by_name() {
+        let _guard = test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        set_data_dir(dir.clone());
+
+        save_show_file(&make_show_file("Zebra Show")).unwrap();
+        save_show_file(&make_show_file("Alpha Show")).unwrap();
+        save_show_file(&make_show_file("Main Show")).unwrap();
+
+        let files = list_show_files().unwrap();
+        assert_eq!(files.len(), 3);
+        assert_eq!(files[0].name, "Alpha Show");
+        assert_eq!(files[1].name, "Main Show");
+        assert_eq!(files[2].name, "Zebra Show");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn list_returns_empty_when_dir_absent() {
+        let _guard = test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        set_data_dir(dir.clone());
+
+        assert!(list_show_files().unwrap().is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn delete_removes_file_and_second_delete_is_noop() {
+        let _guard = test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        set_data_dir(dir.clone());
+
+        save_show_file(&make_show_file("Night One")).unwrap();
+        assert_eq!(list_show_files().unwrap().len(), 1);
+
+        delete_show_file("night_one").unwrap();
+        assert_eq!(list_show_files().unwrap().len(), 0);
+
+        delete_show_file("night_one").unwrap(); // no-op, not an error
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

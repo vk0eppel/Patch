@@ -224,23 +224,10 @@ impl Discovery {
                             "Heartbeat — presence broadcast + unicast on port {}",
                             osc_port
                         );
-                        // Broadcast so still-undiscovered peers can find us.
-                        if let Err(e) = hb_transport
-                            .broadcast(bytes.clone(), osc_port, cfg.network_interface.as_deref())
-                            .await
-                        {
-                            warn!("Presence broadcast failed: {}", e);
-                        }
-                        // macOS only (no-op elsewhere): also push the limited
-                        // broadcast out every NIC so a multi-interface Mac whose
-                        // default route is a VPN/Ethernet can still make first
-                        // contact on the show Wi-Fi.
+                        // Broadcast so still-undiscovered peers can find us
+                        // (subnet-directed + macOS per-NIC, see transport::broadcast_all_paths).
                         hb_transport
-                            .broadcast_per_interface(
-                                bytes.clone(),
-                                osc_port,
-                                cfg.network_interface.as_deref(),
-                            )
+                            .broadcast_all_paths(&bytes, osc_port, cfg.network_interface.as_deref())
                             .await;
                         // Also unicast to peers we already know (dynamic + static):
                         // a peer we can see learns about us even when our broadcast

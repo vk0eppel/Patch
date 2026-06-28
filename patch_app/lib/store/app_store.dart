@@ -16,10 +16,7 @@ import '../models/message.dart';
 /// stream — and a change made in one screen is reflected in the other via
 /// [notifyListeners].
 ///
-/// Migrated incrementally: this slice owns **peers**. Channels, config, and
-/// messages move here in later slices; until then the screens keep handling
-/// those pushes themselves (both the store and the screens subscribe to
-/// `bridge.pushes`, each reducing the domains it owns).
+/// Owns all shared domain state: peers, channels, config, and messages.
 class AppStore extends ChangeNotifier {
   AppStore(this._bridge) {
     _sub = _bridge.pushes.listen(_onPush);

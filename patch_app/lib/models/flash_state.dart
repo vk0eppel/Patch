@@ -57,6 +57,8 @@ class FlashSettings {
     required this.broadcastColor,
     required this.dmColor,
     required this.showPeers,
+    this.audibleAlert = false,
+    this.flashWholeScreen = false,
   });
 
   final int flashCount;
@@ -65,6 +67,8 @@ class FlashSettings {
   final Color broadcastColor;
   final Color dmColor;
   final bool showPeers;
+  final bool audibleAlert;
+  final bool flashWholeScreen;
 
   FlashSettings copyWith({
     int? flashCount,
@@ -73,6 +77,8 @@ class FlashSettings {
     Color? broadcastColor,
     Color? dmColor,
     bool? showPeers,
+    bool? audibleAlert,
+    bool? flashWholeScreen,
   }) =>
       FlashSettings(
         flashCount: flashCount ?? this.flashCount,
@@ -81,5 +87,7 @@ class FlashSettings {
         broadcastColor: broadcastColor ?? this.broadcastColor,
         dmColor: dmColor ?? this.dmColor,
         showPeers: showPeers ?? this.showPeers,
+        audibleAlert: audibleAlert ?? this.audibleAlert,
+        flashWholeScreen: flashWholeScreen ?? this.flashWholeScreen,
       );
 }

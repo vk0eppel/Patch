@@ -11,8 +11,7 @@ import 'package:window_manager/window_manager.dart';
 import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
 import '../models/config.dart';
-import '../models/events.dart';
-import '../models/flash_applicator.dart';
+import '../presenters/home_presenter.dart';
 import '../models/message.dart';
 import '../models/selection.dart';
 import '../models/selection_controller.dart';
@@ -21,6 +20,7 @@ import '../theme/patch_theme.dart';
 import '../util/flash_overlay_gateway.dart';
 import '../util/macro_dispatch.dart';
 import '../util/message_filter.dart';
+import '../util/message_view.dart';
 import '../util/run_guarded.dart';
 import '../util/workspace_store.dart';
 import '../widgets/channel_tab.dart';
@@ -105,7 +105,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   List<PeerInfo> get _peers => AppStoreScope.of(context).peers;
   bool _showPeersValue = false;
   bool get _showPeers => _showPeersValue;
-  set _showPeers(bool v) { _showPeersValue = v; _flashApp.showPeers = v; }
+  set _showPeers(bool v) { _showPeersValue = v; _presenter.showPeers = v; }
   late bool _showMacros;
   // Full workspace state — panel flags + geometry kept together so a panel
   // toggle never clobbers previously-saved window geometry.
@@ -126,15 +126,14 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   /// preloaded in initState (ReleaseMode.stop) so even the first alert is instant.
   final AudioPlayer _alertPlayer = AudioPlayer();
 
-  late final FlashApplicator _flashApp;
+  late final HomePresenter _presenter;
+  StreamSubscription<HomeCommand>? _commandSub;
   /// Macros shown on every channel (configured once); fired on the currently-
   /// selected channel(s). Owned by the AppStore config (#56).
   List<MacroMessage> get _globalMacros => _config?.globalMacros ?? const [];
 
   String get _clientName => _config?.clientName ?? '';
   String get _clientRole => _config?.role ?? '';
-
-  StreamSubscription<PatchEvent>? _pushSub;
 
   // ── Derived state ───────────────────────────────────────────────────────────
 
@@ -143,10 +142,6 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
           _channels.where((c) => ids.contains(c.id)).toList(),
         _ => const [],
       };
-
-  /// ALL mode — the broadcast tab is selected (exclusive). Shows every
-  /// channel's traffic; sends broadcasts.
-  bool get _isAllMode => _selection.isAllMode;
 
   bool get _isMultiChannel => _selection.isMultiChannel;
 
@@ -203,36 +198,11 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
       );
   }
 
-  /// Messages for the current view, merged and sorted by timestamp. In ALL mode
-  /// that's every channel's traffic (but not DM threads); in DM mode the one
-  /// thread; otherwise the selected channels plus any broadcasts (`__all__`).
-  List<PatchMessage> get _combinedMessages {
-    final all = <PatchMessage>[];
-    switch (_selection) {
-      case DmSelection(peerId: final p):
-        all.addAll(_messages['dm:$p'] ?? []);
-      case AllSelection():
-        for (final entry in _messages.entries) {
-          if (entry.key.startsWith('dm:')) continue; // DMs stay private
-          all.addAll(entry.value);
-        }
-      case ChannelSelection(ids: final ids):
-        for (final id in ids) {
-          all.addAll(_messages[id] ?? []);
-        }
-        all.addAll(_messages[kAllChannelId] ?? []);
-    }
-    all.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-    return all;
-  }
+  List<PatchMessage> get _combinedMessages =>
+      combinedMessages(_messages, _selection);
 
-  /// Channel-colour map for the message list. Populated in multi-channel and ALL
-  /// modes (so each row shows its channel dot); empty for a single channel.
-  Map<String, Color> get _channelColors {
-    if (_isAllMode) return {for (final c in _channels) c.id: c.color};
-    if (!_isMultiChannel) return {};
-    return {for (final c in _selectedChannels) c.id: c.color};
-  }
+  Map<String, Color> get _channelColors =>
+      channelColors(_channels, _selectedChannels, _selection);
 
   /// Macros from all selected channels, each tagged with their channel.
   List<ChannelMacro> get _aggregatedMacros {
@@ -289,7 +259,6 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
     _showMacros = _workspace.showMacros;
     if (_isDesktop) windowManager.addListener(this);
     _showPeersValue = _workspace.showPeers;
-    _pushSub = widget.bridge.pushes.listen(_handlePush);
     // Peers, config, and channels are all loaded by the AppStore (see main).
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     // Use the playback audio category so the alert sounds on iOS even with the
@@ -321,15 +290,15 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
     if (!_controllerReady) {
       // Both deps are available here — AppStore via context, BridgeClient via widget.
       _selectionController = SelectionController(store, widget.bridge);
-      _flashApp = FlashApplicator(
-        selectionController: _selectionController,
+      _presenter = HomePresenter(
         pushes: widget.bridge.pushes,
+        selectionController: _selectionController,
+        channelGetter: () => AppStoreScope.read(context).channels,
         showPeers: _workspace.showPeers,
         broadcastColor: PatchTheme.broadcast,
         dmColor: PatchTheme.accent,
-        onAlert: _emitAlert,
-        onPulseOverlay: FlashOverlayGateway.pulse,
       )..addListener(_onFlashAppChanged);
+      _commandSub = _presenter.commands.listen(_handleCommand);
       _controllerReady = true;
     }
     if (!identical(_store, store)) {
@@ -343,23 +312,20 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   void _onStoreChanged() {
     final cfg = _store?.config;
     if (cfg != null) {
-      _flashApp.audibleAlert = cfg.audibleAlert;
-      _flashApp.flashWholeScreen =
+      _presenter.audibleAlert = cfg.audibleAlert;
+      _presenter.flashWholeScreen =
           cfg.flashWholeScreen && (Platform.isMacOS || Platform.isWindows);
-      _flashApp.flashCount = cfg.flashCount;
-      _flashApp.flashOnCritical = cfg.flashOnCritical;
-      _flashApp.flashOnMessage = cfg.flashOnMessage;
+      _presenter.flashCount = cfg.flashCount;
+      _presenter.flashOnCritical = cfg.flashOnCritical;
+      _presenter.flashOnMessage = cfg.flashOnMessage;
       _maybeShowNamePrompt(
         nameIsDefault: cfg.nameIsDefault,
         currentName: cfg.clientName,
       );
     }
-    // Always push the channel list so FlashApplicator sees color/flashCount
-    // changes even when the channel ids haven't changed.
-    final channels = _store?.channels;
-    if (channels != null) _flashApp.channels = channels;
     // Reconcile the selection only when the channel set actually changed (the
     // listener fires on any store notify, incl. peers/config).
+    final channels = _store?.channels;
     final ids = channels?.map((c) => c.id).toList();
     if (ids != null && !_sameIds(ids, _lastChannelIds)) {
       _lastChannelIds = ids;
@@ -388,8 +354,8 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
     if (_isDesktop) windowManager.removeListener(this);
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     _store?.removeListener(_onStoreChanged);
-    _pushSub?.cancel();
-    _flashApp.dispose();
+    _commandSub?.cancel();
+    _presenter.dispose();
     _alertPlayer.dispose();
     super.dispose();
   }
@@ -492,40 +458,38 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
     });
   }
 
-  /// Handles the two push variants that require BuildContext: delivery failure
-  /// SnackBar and network permission denial. Flash and message reactions are
-  /// handled internally by [FlashApplicator] (#91).
-  void _handlePush(PatchEvent event) {
-    try {
-      switch (event) {
-        case DeliveryUpdated(:final messageId, :final status):
-          _onDeliveryUpdated(messageId, status);
-        case PermissionDenied(:final context):
-          _onPermissionDenied(context);
-        default:
-          break;
-      }
-    } catch (e, stack) {
-      debugPrint('Push event error [$event]: $e\n$stack');
-    }
-  }
-
-  /// The store tracks delivery status (#58); this only raises the failure
-  /// SnackBar for a critical that couldn't be delivered.
-  void _onDeliveryUpdated(String id, MessageDeliveryStatus status) {
-    if (status.failed && mounted) {
-      final who = status.total == 0
-          ? 'no peers were online'
-          : status.failedPeers.isNotEmpty
-              ? 'not received by ${status.failedPeers.join(', ')}'
-              : 'not received by all peers';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Critical message $who'),
-          backgroundColor: PatchTheme.critical,
-          duration: const Duration(seconds: 6),
-        ),
-      );
+  /// Routes imperative commands from [HomePresenter] — SnackBars need
+  /// BuildContext, audio needs the pre-loaded player, overlay needs the gateway.
+  void _handleCommand(HomeCommand cmd) {
+    if (!mounted) return;
+    switch (cmd) {
+      case ShowDeliveryFailure(:final status):
+        final who = status.total == 0
+            ? 'no peers were online'
+            : status.failedPeers.isNotEmpty
+                ? 'not received by ${status.failedPeers.join(', ')}'
+                : 'not received by all peers';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Critical message $who'),
+            backgroundColor: PatchTheme.critical,
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      case ShowPermissionDenied(:final context):
+        ScaffoldMessenger.of(this.context).showSnackBar(
+          SnackBar(
+            content: Text(context.isEmpty
+                ? 'Network access denied — check Local Network permission in System Settings'
+                : context),
+            backgroundColor: PatchTheme.critical,
+            duration: const Duration(seconds: 8),
+          ),
+        );
+      case PlayAlert():
+        unawaited(_emitAlert());
+      case PulseOverlay(:final color, :final pulseCount):
+        unawaited(FlashOverlayGateway.pulse(color, pulseCount));
     }
   }
 
@@ -533,19 +497,6 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   /// command (#58). `channelId` null = all.
   void _onMessagesCleared(String? channelId) {
     AppStoreScope.read(context).dropMessages(channelId);
-  }
-
-  void _onPermissionDenied(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message.isEmpty
-            ? 'Network access denied — check Local Network permission in System Settings'
-            : message),
-        backgroundColor: PatchTheme.critical,
-        duration: const Duration(seconds: 8),
-      ),
-    );
   }
 
   /// Replays the preloaded alert from the start (no first-play latency); falls
@@ -571,7 +522,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   /// this screen keeps only the screen-local unread-clear (ADR-0005).
   void _toggleChannel(String id) {
     setState(() => _selectionController.selectTab(id));
-    if (id.startsWith('dm:')) _flashApp.clearUnread(id);
+    if (id.startsWith('dm:')) _presenter.clearUnread(id);
     if (_hideKeyboard) FocusScope.of(context).unfocus();
   }
 
@@ -584,7 +535,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   /// This screen keeps the screen-local open-thread/unread bookkeeping (ADR-0005).
   void _openDm(String peerId) {
     setState(() => _selectionController.openDm(peerId));
-    _flashApp.openDmThread(peerId);
+    _presenter.openDmThread(peerId);
     if (_hideKeyboard) FocusScope.of(context).unfocus();
   }
 
@@ -601,7 +552,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
           _ChannelStrip(
             channels: _channels,
             selectedIds: _selection.tabIds,
-            flashCounts: _flashApp.flashCounts,
+            flashCounts: _presenter.flashCounts,
             globalFlashCount: _globalFlashCount,
             onTap: _toggleChannel,
             bridge: widget.bridge,
@@ -628,7 +579,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
                   },
                   onDm: _openDm,
                   unreadPeerIds: {
-                    for (final k in _flashApp.unreadDms) k.substring(3),
+                    for (final k in _presenter.unreadDms) k.substring(3),
                   },
                   onRefresh: () => AppStoreScope.read(context).refreshPeers(),
                 ),
@@ -663,16 +614,16 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
                         setState(() => _showPeers = !_showPeers);
                         _savePanels();
                       },
-                      hasUnreadDms: _flashApp.unreadDms.isNotEmpty,
-                      dmPulseNotify: _flashApp.dmPulseNotify,
+                      hasUnreadDms: _presenter.unreadDms.isNotEmpty,
+                      dmPulseNotify: _presenter.dmPulseNotify,
                       showMacros: _showMacros,
                       onToggleMacros: () {
                         setState(() => _showMacros = !_showMacros);
                         _savePanels();
                       },
-                      flashNotify: _flashApp.flashNotify,
-                      flashColor: _flashApp.flashColor,
-                      flashPulseCount: _flashApp.flashPulseCount,
+                      flashNotify: _presenter.flashNotify,
+                      flashColor: _presenter.flashColor,
+                      flashPulseCount: _presenter.flashPulseCount,
                       hideKeyboard: _hideKeyboard,
                       onOneShotSent: _snapBackFromAll,
                     ),

@@ -15,6 +15,8 @@ const _defaultSettings = FlashSettings(
   broadcastColor: Colors.white,
   dmColor: Colors.blue,
   showPeers: false,
+  audibleAlert: false,
+  flashWholeScreen: false,
 );
 
 PatchMessage _msg({required String channelId, int priority = 1}) => PatchMessage(
@@ -244,6 +246,50 @@ void main() {
       final s = clearDmThread(seeded, 'p1');
 
       expect(s.unreadDms, {'dm:p2'});
+    });
+  });
+
+  group('flashOutput', () {
+    final prev = FlashState.empty;
+    final next = FlashState.empty.copyWith(
+      flashNotify: 1,
+      flashColor: Colors.green,
+      flashPulseCount: 3,
+    );
+
+    test('no flashNotify change → playAlert=false, pulse=null', () {
+      final out = flashOutput(prev, prev, _defaultSettings.copyWith(
+        audibleAlert: true,
+        flashWholeScreen: true,
+      ));
+      expect(out.playAlert, isFalse);
+      expect(out.pulse, isNull);
+    });
+
+    test('audibleAlert=true + flashNotify changed → playAlert=true', () {
+      final out = flashOutput(prev, next,
+          _defaultSettings.copyWith(audibleAlert: true));
+      expect(out.playAlert, isTrue);
+    });
+
+    test('audibleAlert=false + flashNotify changed → playAlert=false', () {
+      final out = flashOutput(prev, next,
+          _defaultSettings.copyWith(audibleAlert: false));
+      expect(out.playAlert, isFalse);
+    });
+
+    test('flashWholeScreen=true + flashNotify changed → pulse carries color and count', () {
+      final out = flashOutput(prev, next,
+          _defaultSettings.copyWith(flashWholeScreen: true));
+      expect(out.pulse, isNotNull);
+      expect(out.pulse!.color, Colors.green);
+      expect(out.pulse!.count, 3);
+    });
+
+    test('flashWholeScreen=false + flashNotify changed → pulse=null', () {
+      final out = flashOutput(prev, next,
+          _defaultSettings.copyWith(flashWholeScreen: false));
+      expect(out.pulse, isNull);
     });
   });
 }

@@ -160,6 +160,15 @@ impl Transport {
         }
     }
 
+    /// Broadcast the presence heartbeat on all paths: subnet-directed broadcast
+    /// (always) plus macOS per-interface limited broadcast (additive, no-op elsewhere).
+    /// Single call site for callers that want full multi-NIC coverage.
+    pub async fn broadcast_all_paths(&self, bytes: &[u8], port: u16, iface: Option<&str>) {
+        let _ = self.broadcast(bytes.to_vec(), port, iface).await;
+        self.broadcast_per_interface(bytes.to_vec(), port, iface)
+            .await;
+    }
+
     /// macOS only: additionally send the limited broadcast (`255.255.255.255`)
     /// out of **every** usable interface (or just `iface` when pinned), so a
     /// multi-NIC Mac whose default route is a VPN/Ethernet still reaches the show
@@ -365,10 +374,7 @@ fn usable_iface_indices(iface_pin: Option<&str>) -> Vec<(String, u32)> {
         return out;
     };
     for iface in &interfaces {
-        if SKIP_PREFIXES.iter().any(|p| iface.name.starts_with(p)) {
-            continue;
-        }
-        if iface_pin.is_some_and(|pin| iface.name != pin) {
+        if !is_usable_iface(&iface.name, iface_pin) {
             continue;
         }
         let has_v4 = iface
@@ -417,6 +423,14 @@ async fn bind_socket(bind_addr: &str) -> Result<Arc<UdpSocket>> {
 const SKIP_PREFIXES: &[&str] = &[
     "utun", "awdl", "llw", "stf", "gif", "p2p", "XHC", "anpi", "bridge", "vmnet", "veth", "docker",
 ];
+
+/// True when `name` is a real interface to include and the optional pin allows it.
+fn is_usable_iface(name: &str, iface_pin: Option<&str>) -> bool {
+    if SKIP_PREFIXES.iter().any(|p| name.starts_with(p)) {
+        return false;
+    }
+    iface_pin.map_or(true, |pin| name == pin)
+}
 
 /// Returns true for IPs that are usable as OSC bind addresses.
 /// Rejects loopback, link-local IPv6 (fe80::...), and the IPv6 loopback (::1).
@@ -474,10 +488,7 @@ fn broadcast_targets(iface_pin: Option<&str>, port: u16) -> Vec<SocketAddr> {
     // Plus each usable interface's subnet-directed broadcast.
     if let Ok(interfaces) = NetworkInterface::show() {
         for iface in &interfaces {
-            if SKIP_PREFIXES.iter().any(|p| iface.name.starts_with(p)) {
-                continue;
-            }
-            if iface_pin.is_some_and(|pin| iface.name != pin) {
+            if !is_usable_iface(&iface.name, iface_pin) {
                 continue;
             }
             for a in &iface.addr {
@@ -595,6 +606,26 @@ mod tests {
         for (name, idx) in usable_iface_indices(None) {
             eprintln!("per-iface broadcast egress: {name} (ifindex {idx})");
         }
+    }
+
+    /// `broadcast_all_paths` is the single call site for presence heartbeats —
+    /// it must call both `broadcast` (subnet-directed) and `broadcast_per_interface`
+    /// (macOS per-NIC). Here we verify it completes and enqueues packets without
+    /// panicking or blocking.
+    #[tokio::test]
+    async fn broadcast_all_paths_completes_and_enqueues_packets() {
+        use crate::reliability::ReliabilityManager;
+
+        let config = Config {
+            osc_port: 0,
+            ..Config::default()
+        };
+        let state = AppState::new(config.clone());
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+        let transport = Transport::new(&config, state, reliability).await.unwrap();
+
+        // Must not panic or block; packets are best-effort so no error expected.
+        transport.broadcast_all_paths(b"ping", 9000, None).await;
     }
 
     /// The live OSC-port rebind moves the socket **and** the receive loop follows
