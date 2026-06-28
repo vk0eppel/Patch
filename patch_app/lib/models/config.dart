@@ -61,25 +61,4 @@ class AppConfig {
     required this.nameIsDefault,
   });
 
-  factory AppConfig.fromJson(Map<String, dynamic> j) => AppConfig(
-        clientName: j['client_name'] as String? ?? '',
-        role: j['role'] as String?,
-        oscPort: (j['osc_port'] as num?)?.toInt() ?? 9000,
-        networkInterface: j['network_interface'] as String?,
-        staticPeers: ((j['static_peers'] as List<dynamic>?) ?? const [])
-            .map((p) => StaticPeerInfo.fromJson(p as Map<String, dynamic>))
-            .toList(),
-        flashOnCritical: (j['flash_on_critical'] as bool?) ?? true,
-        flashOnMessage: (j['flash_on_message'] as bool?) ?? false,
-        flashCount: (j['flash_count'] as num?)?.toInt() ?? 4,
-        macrosColumns: (j['macros_columns'] as num?)?.toInt() ?? 1,
-        hideKeyboard: (j['hide_keyboard'] as bool?) ?? true,
-        audibleAlert: (j['audible_alert'] as bool?) ?? false,
-        globalMacros: ((j['global_macros'] as List<dynamic>?) ?? const [])
-            .map((m) => MacroMessage.fromJson(m as Map<String, dynamic>))
-            .toList(),
-        heartbeatIntervalSecs:
-            (j['heartbeat_interval_secs'] as num?)?.toInt() ?? 7,
-        nameIsDefault: (j['name_is_default'] as bool?) ?? false,
-      );
 }

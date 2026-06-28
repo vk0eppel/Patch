@@ -1,27 +1,51 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import 'channel.dart';
+import 'events.dart';
 import 'flash.dart';
 import 'message.dart' show kAllChannelId;
-import 'selection.dart';
+import 'selection_controller.dart';
 
 class FlashApplicator extends ChangeNotifier {
   FlashApplicator({
+    required SelectionController selectionController,
+    required Stream<PatchEvent> pushes,
+    this.showPeers = false,
+    this.flashCount = 4,
+    this.flashOnCritical = true,
+    this.flashOnMessage = false,
+    List<PatchChannel> channels = const [],
     Color broadcastColor = Colors.white,
     Color dmColor = Colors.blue,
     Future<void> Function()? onAlert,
     Future<void> Function(Color, int)? onPulseOverlay,
-  })  : _broadcastColor = broadcastColor, // ignore: prefer_initializing_formals
+  })  : _selectionController = selectionController, // ignore: prefer_initializing_formals
+        _channels = List.of(channels),
+        _broadcastColor = broadcastColor, // ignore: prefer_initializing_formals
         _dmColor = dmColor, // ignore: prefer_initializing_formals
         _onAlert = onAlert, // ignore: prefer_initializing_formals
-        _onPulseOverlay = onPulseOverlay; // ignore: prefer_initializing_formals
+        _onPulseOverlay = onPulseOverlay { // ignore: prefer_initializing_formals
+    _pushSub = pushes.listen(_handlePush);
+  }
 
+  final SelectionController _selectionController;
   final Color _broadcastColor;
   final Color _dmColor;
   final Future<void> Function()? _onAlert;
   final Future<void> Function(Color, int)? _onPulseOverlay;
+  StreamSubscription<PatchEvent>? _pushSub;
 
   bool audibleAlert = false;
   bool flashWholeScreen = false;
+  bool showPeers;
+  int flashCount;
+  bool flashOnCritical;
+  bool flashOnMessage;
+
+  List<PatchChannel> _channels;
+  set channels(List<PatchChannel> v) => _channels = List.of(v);
 
   final Map<String, int> _flashCounts = {};
   int _flashNotify = 0;
@@ -39,12 +63,46 @@ class FlashApplicator extends ChangeNotifier {
   Set<String> get unreadDms => Set.unmodifiable(_unreadDms);
   int get dmPulseNotify => _dmPulseNotify;
 
-  void apply(
-    FlashEvent event,
-    Selection selection, {
-    required int globalFlashCount,
-    required bool showPeers,
-  }) {
+  void _handlePush(PatchEvent event) {
+    switch (event) {
+      case MessageReceived(:final message):
+        final flash = decideMessageFlash(
+          msg: message,
+          channels: _channels,
+          globalOnCritical: flashOnCritical,
+          globalOnMessage: flashOnMessage,
+          globalPulseCount: flashCount,
+        );
+        if (flash != null) {
+          apply(flash);
+        } else if (message.channelId.startsWith('dm:') &&
+            !_selectionController.selection.containsRawId(message.channelId)) {
+          markDmUnread(message.channelId);
+        }
+      case Flashed(:final channelId):
+        final FlashEvent flashEvent;
+        if (channelId == kAllChannelId) {
+          flashEvent = BroadcastFlashEvent(pulseCount: flashCount);
+        } else if (channelId.startsWith('dm:')) {
+          flashEvent = DmFlashEvent(peerId: channelId.substring(3));
+        } else {
+          final ch = _channels
+              .cast<PatchChannel?>()
+              .firstWhere((c) => c?.id == channelId, orElse: () => null);
+          flashEvent = ChannelFlashEvent(
+            channelId: channelId,
+            color: ch?.color ?? Colors.white,
+            pulseCount: ch?.flashCount ?? flashCount,
+          );
+        }
+        apply(flashEvent);
+      default:
+        break;
+    }
+  }
+
+  void apply(FlashEvent event) {
+    final selection = _selectionController.selection;
     switch (event) {
       case ChannelFlashEvent(:final channelId, :final color, :final pulseCount):
         _flashCounts[channelId] = (_flashCounts[channelId] ?? 0) + 1;
@@ -68,9 +126,9 @@ class FlashApplicator extends ChangeNotifier {
         if (selection.containsRawId(dmKey)) {
           _flashNotify++;
           _flashColor = _dmColor;
-          _flashPulseCount = globalFlashCount;
+          _flashPulseCount = flashCount;
           _fireAlert();
-          _firePulseOverlay(_dmColor, globalFlashCount);
+          _firePulseOverlay(_dmColor, flashCount);
         } else {
           _unreadDms.add(dmKey);
           if (!showPeers) _dmPulseNotify++;
@@ -79,7 +137,7 @@ class FlashApplicator extends ChangeNotifier {
     notifyListeners();
   }
 
-  void markDmUnread(String channelId, {required bool showPeers}) {
+  void markDmUnread(String channelId) {
     _unreadDms.add(channelId);
     if (!showPeers) _dmPulseNotify++;
     notifyListeners();
@@ -103,6 +161,12 @@ class FlashApplicator extends ChangeNotifier {
     _openDms.add(peerId);
     _unreadDms.remove('dm:$peerId');
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _pushSub?.cancel();
+    super.dispose();
   }
 
   void _fireAlert() {

@@ -135,7 +135,7 @@ class BridgeClient {
   /// candidate 2, ADR-0004); throws on failure.
   Future<AppConfig> getConfig() async {
     final cfg = await rust.getConfig();
-    return _configFromRust(cfg);
+    return configFromRust(cfg);
   }
 
   /// Change the network interface (empty/'auto' → all interfaces). Throws on
@@ -682,7 +682,7 @@ ShowFileMeta _showFileMetaFromRust(rust_show_file.ShowFileMeta s) => ShowFileMet
       channelCount: s.channelCount.toInt(),
     );
 
-AppConfig _configFromRust(rust.ConfigSnapshot cfg) => AppConfig(
+AppConfig configFromRust(rust.ConfigSnapshot cfg) => AppConfig(
       clientName: cfg.clientName,
       role: cfg.role,
       oscPort: cfg.oscPort,

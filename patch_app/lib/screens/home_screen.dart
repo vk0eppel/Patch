@@ -12,7 +12,6 @@ import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
 import '../models/config.dart';
 import '../models/events.dart';
-import '../models/flash.dart';
 import '../models/flash_applicator.dart';
 import '../models/message.dart';
 import '../models/selection.dart';
@@ -20,6 +19,7 @@ import '../models/selection_controller.dart';
 import '../store/app_store.dart';
 import '../theme/patch_theme.dart';
 import '../util/flash_overlay_gateway.dart';
+import '../util/macro_dispatch.dart';
 import '../util/message_filter.dart';
 import '../util/run_guarded.dart';
 import '../util/workspace_store.dart';
@@ -80,8 +80,6 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   // `of(context)` rebuilds when config changes. Defaults apply before the
   // first load completes.
   AppConfig? get _config => AppStoreScope.of(context).config;
-  bool get _flashOnCritical => _config?.flashOnCritical ?? true;
-  bool get _flashOnMessage => _config?.flashOnMessage ?? false;
   int get _globalFlashCount => _config?.flashCount ?? 4;
 
   // ── F-key map ───────────────────────────────────────────────────────────────
@@ -106,7 +104,9 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   /// Peers are owned by the shared [AppStore]; reading via `of(context)`
   /// rebuilds the screen when the list changes (candidate 2, ADR-0004).
   List<PeerInfo> get _peers => AppStoreScope.of(context).peers;
-  late bool _showPeers;
+  bool _showPeersValue = false;
+  bool get _showPeers => _showPeersValue;
+  set _showPeers(bool v) { _showPeersValue = v; _flashApp.showPeers = v; }
   late bool _showMacros;
   // Full workspace state — panel flags + geometry kept together so a panel
   // toggle never clobbers previously-saved window geometry.
@@ -251,54 +251,31 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
           ChannelMacro(channelId: '', channelColor: PatchTheme.accent, macro: gm),
       ];
 
-  /// Send a macro. In a DM thread the macro text is sent as a DM (a quick canned
-  /// reply); otherwise a per-channel macro goes to its own channel and a global
-  /// macro (empty `channelId`) fires on every selected channel — or, in ALL mode,
-  /// broadcasts on `__all__`.
+  /// Send a macro. Routing is determined by [resolveMacroTarget]; bridge calls
+  /// and OSC dual-action stay here so they can use BuildContext.
   void _fireMacro(ChannelMacro cm) {
-    if (_isDmMode) {
-      runGuarded(
-        context,
-        () => widget.bridge.sendDirectMessage(
-          peerId: _dmPeerId!,
+    switch (resolveMacroTarget(cm, _selection)) {
+      case DmTarget(:final peerId):
+        runGuarded(context, () => widget.bridge.sendDirectMessage(
+          peerId: peerId,
           payload: cm.macro.payload,
           priority: cm.macro.priority,
-        ),
-      );
-      _warnIfDmPeerOffline();
-    } else if (cm.channelId.isEmpty) {
-      final targets = switch (_selection) {
-        AllSelection() => [kAllChannelId],
-        ChannelSelection(ids: final ids) => ids.toList(),
-        DmSelection() => const <String>[], // unreachable: _isDmMode handled above
-      };
-      for (final id in targets) {
-        runGuarded(
-          context,
-          () => widget.bridge.sendMessage(
+        ));
+        _warnIfDmPeerOffline();
+      case ChannelTarget(:final channelIds):
+        for (final id in channelIds) {
+          runGuarded(context, () => widget.bridge.sendMessage(
             channelId: id,
             payload: cm.macro.payload,
             priority: cm.macro.priority,
-          ),
-        );
-      }
-    } else {
-      runGuarded(
-        context,
-        () => widget.bridge.sendMessage(
-          channelId: cm.channelId,
-          payload: cm.macro.payload,
-          priority: cm.macro.priority,
-        ),
-      );
+          ));
+        }
     }
     // Dual action: also fire the macro's OSC packet to external gear (once).
     final osc = cm.macro.osc;
     if (osc != null) {
-      runGuarded(
-          context,
-          () => widget.bridge
-              .sendOscMacro(osc.address, osc.port, osc.path, osc.arg, osc.argType));
+      runGuarded(context, () => widget.bridge
+          .sendOscMacro(osc.address, osc.port, osc.path, osc.arg, osc.argType));
     }
   }
 
@@ -308,15 +285,18 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   void initState() {
     super.initState();
     _workspace = widget.initialWorkspace;
-    _showPeers = _workspace.showPeers;
     _showMacros = _workspace.showMacros;
     if (_isDesktop) windowManager.addListener(this);
     _flashApp = FlashApplicator(
+      selectionController: _selectionController,
+      pushes: widget.bridge.pushes,
+      showPeers: _workspace.showPeers,
       broadcastColor: PatchTheme.broadcast,
       dmColor: PatchTheme.accent,
       onAlert: _emitAlert,
       onPulseOverlay: FlashOverlayGateway.pulse,
     )..addListener(_onFlashAppChanged);
+    _showPeersValue = _workspace.showPeers; // bypass write-through setter — _flashApp already has it
     _pushSub = widget.bridge.pushes.listen(_handlePush);
     // Peers, config, and channels are all loaded by the AppStore (see main).
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
@@ -360,14 +340,21 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
       _flashApp.audibleAlert = cfg.audibleAlert;
       _flashApp.flashWholeScreen =
           cfg.flashWholeScreen && (Platform.isMacOS || Platform.isWindows);
+      _flashApp.flashCount = cfg.flashCount;
+      _flashApp.flashOnCritical = cfg.flashOnCritical;
+      _flashApp.flashOnMessage = cfg.flashOnMessage;
       _maybeShowNamePrompt(
         nameIsDefault: cfg.nameIsDefault,
         currentName: cfg.clientName,
       );
     }
+    // Always push the channel list so FlashApplicator sees color/flashCount
+    // changes even when the channel ids haven't changed.
+    final channels = _store?.channels;
+    if (channels != null) _flashApp.channels = channels;
     // Reconcile the selection only when the channel set actually changed (the
     // listener fires on any store notify, incl. peers/config).
-    final ids = _store?.channels.map((c) => c.id).toList();
+    final ids = channels?.map((c) => c.id).toList();
     if (ids != null && !_sameIds(ids, _lastChannelIds)) {
       _lastChannelIds = ids;
       _reconcileSelectionWithChannels();
@@ -509,62 +496,21 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
     });
   }
 
-  /// Typed engine pushes (slice 1.2, ADR-0004). Exhaustive over [PatchEvent]:
-  /// the compiler forces every variant to be handled or explicitly ignored, so
-  /// a new engine event can't be silently dropped here.
+  /// Handles the two push variants that require BuildContext: delivery failure
+  /// SnackBar and network permission denial. Flash and message reactions are
+  /// handled internally by [FlashApplicator] (#91).
   void _handlePush(PatchEvent event) {
     try {
       switch (event) {
-        case MessageReceived(:final message):
-          _onMessageReceived(message);
         case DeliveryUpdated(:final messageId, :final status):
           _onDeliveryUpdated(messageId, status);
-        case Flashed(:final channelId):
-          _onChannelFlashed(channelId);
-        // Peers are owned by the AppStore now — it reduces these (#55).
-        case PeerExpired():
-        case PeersChanged():
-          break;
-        // Channels are owned by the AppStore now — it reduces ChannelsChanged;
-        // home reconciles its selection in the store listener (#57).
-        case ChannelsChanged():
-          break;
-        // Config (incl. the client name) is owned by the AppStore now — it
-        // reduces ClientNameChanged by refetching config (#56).
-        case ClientNameChanged():
-          break;
         case PermissionDenied(:final context):
           _onPermissionDenied(context);
-        case ChannelsOffered():
-          break; // settings_screen handles the adopt/merge prompt
-        case GlobalMacrosOffered():
-          break; // settings_screen handles the adopt/merge prompt
+        default:
+          break;
       }
     } catch (e, stack) {
       debugPrint('Push event error [$event]: $e\n$stack');
-    }
-  }
-
-  /// Flash/unread reaction to an inbound message. Storage is the store's job
-  /// (#58); this only decides what (if anything) pulses. The store's append +
-  /// notify rebuilds the message list separately.
-  void _onMessageReceived(PatchMessage msg) {
-    final flash = decideMessageFlash(
-      msg: msg,
-      channels: _channels,
-      globalOnCritical: _flashOnCritical,
-      globalOnMessage: _flashOnMessage,
-      globalPulseCount: _globalFlashCount,
-    );
-    if (flash != null) {
-      _flashApp.apply(flash, _selection,
-          globalFlashCount: _globalFlashCount, showPeers: _showPeers);
-    } else if (msg.channelId.startsWith('dm:') &&
-        !_selection.containsRawId(msg.channelId)) {
-      // A non-critical DM that isn't flashing still needs a silent unread dot
-      // when its thread isn't in view — that's DM-visibility, not a flash
-      // decision (see decideMessageFlash's doc comment).
-      _flashApp.markDmUnread(msg.channelId, showPeers: _showPeers);
     }
   }
 
@@ -585,26 +531,6 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
         ),
       );
     }
-  }
-
-  void _onChannelFlashed(String chId) {
-    final FlashEvent event;
-    if (chId == kAllChannelId) {
-      event = BroadcastFlashEvent(pulseCount: _globalFlashCount);
-    } else if (chId.startsWith('dm:')) {
-      event = DmFlashEvent(peerId: chId.substring(3));
-    } else {
-      final ch = _channels
-          .cast<PatchChannel?>()
-          .firstWhere((c) => c?.id == chId, orElse: () => null);
-      event = ChannelFlashEvent(
-        channelId: chId,
-        color: ch?.color ?? Colors.white,
-        pulseCount: ch?.flashCount ?? _globalFlashCount,
-      );
-    }
-    _flashApp.apply(event, _selection,
-        globalFlashCount: _globalFlashCount, showPeers: _showPeers);
   }
 
   /// Drop the store's buffer for cleared messages after a `clearMessages`
