@@ -314,6 +314,15 @@ impl PeerRegistry {
         removed
     }
 
+    /// Drop per-peer addresses older than `threshold`. Called by
+    /// `AppState::prune_peer_addresses` on each heartbeat tick.
+    pub(crate) async fn prune_addresses(&self, threshold: DateTime<Utc>) {
+        let mut peers = self.peers.write().await;
+        for peer in peers.values_mut() {
+            peer.prune_old_addresses(threshold);
+        }
+    }
+
     pub(crate) async fn has(&self, peer_id: Uuid) -> bool {
         self.peers.read().await.contains_key(&peer_id)
     }

@@ -232,6 +232,11 @@ impl Discovery {
                     Err(e) => warn!("Failed to encode presence: {}", e),
                 }
 
+                // Shed dead per-peer address paths at 3× heartbeat interval
+                // without expiring the peer itself — liveness classification
+                // is driven by last_seen, not by which addresses remain.
+                hb_state.prune_peer_addresses(cfg.heartbeat_interval_secs).await;
+
                 // Peers are never auto-expired — they stay in the list for the
                 // whole session. The Flutter side uses lastSeen to show green/gray.
 

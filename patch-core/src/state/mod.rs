@@ -525,6 +525,17 @@ impl AppState {
             .collect()
     }
 
+    // ── Per-address prune ────────────────────────────────────────────────────
+
+    /// Drop per-peer addresses not seen within 3× the heartbeat interval.
+    /// Called on each heartbeat tick to shed dead paths without expiring the
+    /// whole peer — `last_seen` and Online/Stale/Offline are unaffected.
+    pub async fn prune_peer_addresses(&self, heartbeat_secs: u64) {
+        let threshold_secs = heartbeat_secs.saturating_mul(3) as i64;
+        let threshold = chrono::Utc::now() - chrono::Duration::seconds(threshold_secs);
+        self.0.peers.prune_addresses(threshold).await;
+    }
+
     // ── Receive dedup ────────────────────────────────────────────────────────
 
     /// Returns `true` if `message_id` was already seen within the last 10 s
@@ -2135,6 +2146,31 @@ mod tests {
         assert_eq!(loaded.static_peers[0].address, "10.0.0.5");
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn prune_peer_addresses_removes_stale_addrs_keeps_fresh() {
+        let st = AppState::new(Config {
+            heartbeat_interval_secs: 7,
+            ..Config::default()
+        });
+        let peer_id = Uuid::new_v4();
+        let heartbeat_secs = 7u64;
+
+        // Record a peer with a fresh address.
+        st.record_sighting(
+            PeerSighting::Presence(presence(peer_id, chrono::Utc::now())),
+            "10.0.0.1".into(),
+            9000,
+        )
+        .await;
+
+        st.prune_peer_addresses(heartbeat_secs).await;
+
+        let peers = st.get_peers().await;
+        let peer = peers.iter().find(|p| p.peer_id == peer_id).unwrap();
+        // Fresh address (just recorded) must survive a 3x-heartbeat prune.
+        assert!(peer.has_address());
     }
 
     #[tokio::test]
