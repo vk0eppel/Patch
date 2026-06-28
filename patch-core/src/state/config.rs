@@ -313,25 +313,43 @@ pub fn migrate(config: &mut Config) -> bool {
     }
 }
 
+/// Coalesce rapid mutations into a single disk write — 500 ms in production,
+/// effectively zero in tests so they don't need to sleep.
+#[cfg(not(test))]
+const SAVE_DEBOUNCE_MS: u64 = 500;
+#[cfg(test)]
+const SAVE_DEBOUNCE_MS: u64 = 0;
+
 /// Pure config-persistence logic — no `AppEvent`/broadcast-channel
 /// dependency. Owns `Config` *and* the lock serializing writes to
 /// `patch.toml` (`save_lock` previously lived on `AppState`'s inner state —
 /// it's purely a config-persistence concern, see ADR-0003).
-#[derive(Debug)]
+///
+/// Callers mutate config via [`mutate_and_persist`], which applies the
+/// closure immediately and schedules a debounced disk write. Rapid sequential
+/// calls coalesce — only the last write fires within the debounce window.
 pub(crate) struct ConfigStore {
-    config: tokio::sync::RwLock<Config>,
-    /// Serializes config persistence so concurrent mutators can't write
-    /// `patch.toml` out of order (which would let an earlier change clobber a
-    /// later one). Held only across the clone + offloaded write, never with
-    /// `config`, so it doesn't block readers on the hot send path.
-    save_lock: tokio::sync::Mutex<()>,
+    config: std::sync::Arc<tokio::sync::RwLock<Config>>,
+    /// Serializes config persistence so concurrent writers can't clobber each
+    /// other. Held only across the clone + offloaded write, never with the
+    /// config read lock, so it doesn't block readers on the hot send path.
+    save_lock: std::sync::Arc<tokio::sync::Mutex<()>>,
+    /// The in-flight debounced save task, if any.
+    pending_save: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+}
+
+impl std::fmt::Debug for ConfigStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConfigStore").finish_non_exhaustive()
+    }
 }
 
 impl ConfigStore {
     pub(crate) fn new(config: Config) -> Self {
         Self {
-            config: tokio::sync::RwLock::new(config),
-            save_lock: tokio::sync::Mutex::new(()),
+            config: std::sync::Arc::new(tokio::sync::RwLock::new(config)),
+            save_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
+            pending_save: tokio::sync::Mutex::new(None),
         }
     }
 
@@ -347,22 +365,38 @@ impl ConfigStore {
         f(&*self.config.read().await)
     }
 
-    /// Apply a mutation under the write lock. Does not persist — call
-    /// [`ConfigStore::save`] afterward (every current caller does,
-    /// immediately).
-    pub(crate) async fn mutate<R>(&self, f: impl FnOnce(&mut Config) -> R) -> R {
-        f(&mut *self.config.write().await)
+    /// Apply a mutation and schedule a debounced disk write. The in-memory
+    /// change is visible immediately; the file write happens after
+    /// `SAVE_DEBOUNCE_MS`. Rapid calls cancel the previous pending write so
+    /// only one file I/O fires per burst.
+    pub(crate) async fn mutate_and_persist<R>(&self, f: impl FnOnce(&mut Config) -> R) -> R {
+        let result = f(&mut *self.config.write().await);
+        let config = std::sync::Arc::clone(&self.config);
+        let save_lock = std::sync::Arc::clone(&self.save_lock);
+        let mut pending = self.pending_save.lock().await;
+        if let Some(h) = pending.take() {
+            h.abort();
+        }
+        *pending = Some(tokio::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(SAVE_DEBOUNCE_MS)).await;
+            let _guard = save_lock.lock().await;
+            let cfg = config.read().await.clone();
+            if let Err(e) = tokio::task::spawn_blocking(move || cfg.save())
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!(e)))
+            {
+                tracing::warn!("ConfigStore: debounced save failed: {e}");
+            }
+        }));
+        result
     }
 
-    /// Persist the current config to disk, off the async runtime.
-    ///
-    /// `Config::save` does blocking file I/O (`std::fs::write` of the whole
-    /// file), so it's offloaded via `spawn_blocking` rather than running on
-    /// the async runtime's worker threads.
-    pub(crate) async fn save(&self) -> Result<()> {
-        let _guard = self.save_lock.lock().await;
-        let cfg = self.config.read().await.clone();
-        tokio::task::spawn_blocking(move || cfg.save()).await?
+    /// Wait for any pending debounced write to complete. Test-only.
+    #[cfg(test)]
+    pub(crate) async fn flush(&self) {
+        if let Some(h) = self.pending_save.lock().await.take() {
+            let _ = h.await;
+        }
     }
 }
 
@@ -758,17 +792,19 @@ default_channels = []
     }
 
     #[tokio::test]
-    async fn mutate_applies_under_the_write_lock() {
+    async fn mutate_and_persist_applies_immediately() {
         let store = ConfigStore::new(Config::default());
-        store.mutate(|c| c.client_name = "Bob".into()).await;
+        store
+            .mutate_and_persist(|c| c.client_name = "Bob".into())
+            .await;
         assert_eq!(store.snapshot().await.client_name, "Bob");
     }
 
     #[tokio::test]
-    async fn mutate_returns_the_closures_value() {
+    async fn mutate_and_persist_returns_the_closures_value() {
         let store = ConfigStore::new(Config::default());
         let port = store
-            .mutate(|c| {
+            .mutate_and_persist(|c| {
                 c.osc_port = 9001;
                 c.osc_port
             })
@@ -787,19 +823,45 @@ default_channels = []
     }
 
     #[tokio::test]
-    async fn save_then_reload_round_trips_a_mutation() {
+    async fn rapid_mutations_coalesce_into_one_write() {
         let _guard = test_data_dir_guard().await;
         let dir = std::env::temp_dir().join(format!("patch-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         set_data_dir(dir.clone());
 
         let store = ConfigStore::new(Config::default());
-        store.mutate(|c| c.client_name = "Persisted".into()).await;
-        store.save().await.unwrap();
+        store
+            .mutate_and_persist(|c| c.client_name = "First".into())
+            .await;
+        store
+            .mutate_and_persist(|c| c.client_name = "Second".into())
+            .await;
+        store
+            .mutate_and_persist(|c| c.client_name = "Third".into())
+            .await;
+        // Flush waits for the single coalesced write.
+        store.flush().await;
+
+        let reloaded = Config::load_or_default().unwrap();
+        assert_eq!(reloaded.client_name, "Third");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn mutate_and_persist_then_flush_round_trips() {
+        let _guard = test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        set_data_dir(dir.clone());
+
+        let store = ConfigStore::new(Config::default());
+        store
+            .mutate_and_persist(|c| c.client_name = "Persisted".into())
+            .await;
+        store.flush().await;
 
         let reloaded = Config::load_or_default().unwrap();
         assert_eq!(reloaded.client_name, "Persisted");
-
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

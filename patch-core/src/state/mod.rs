@@ -135,8 +135,7 @@ impl AppState {
     // ── Client name ───────────────────────────────────────────────────────────
 
     pub async fn set_client_name(&self, name: String) -> anyhow::Result<()> {
-        self.0.config.mutate(|c| c.client_name = name.clone()).await;
-        self.save_config().await?;
+        self.0.config.mutate_and_persist(|c| c.client_name = name.clone()).await;
         self.publish(AppEvent::ClientNameChanged(name)).await;
         Ok(())
     }
@@ -168,8 +167,8 @@ impl AppState {
     /// presence heartbeat (the loop re-reads config each tick, like client_name),
     /// so it propagates to other peers within one interval without a restart.
     pub async fn set_role(&self, role: Option<String>) -> anyhow::Result<()> {
-        self.0.config.mutate(|c| c.role = role).await;
-        self.save_config().await
+        self.0.config.mutate_and_persist(|c| c.role = role).await;
+        Ok(())
     }
 
     /// Persist the discovery-beacon interface scope (None = announce on all).
@@ -180,12 +179,12 @@ impl AppState {
     /// peer list rebuilds via the new NIC's discovery. ManualIp/static peers
     /// are kept — their addresses don't depend on which NIC was used.
     pub async fn set_network_interface(&self, iface: Option<String>) -> anyhow::Result<()> {
-        self.0.config.mutate(|c| c.network_interface = iface).await;
+        self.0.config.mutate_and_persist(|c| c.network_interface = iface).await;
         let removed = self.clear_dynamic_peers().await;
         for id in removed {
             self.publish(AppEvent::PeerExpired(id)).await;
         }
-        self.save_config().await
+        Ok(())
     }
 
     /// Remove all OscBeacon/Mdns peers from the registry immediately.
@@ -199,50 +198,50 @@ impl AppState {
     pub async fn set_flash_on_critical(&self, enabled: bool) -> anyhow::Result<()> {
         self.0
             .config
-            .mutate(|c| c.flash_on_critical = enabled)
+            .mutate_and_persist(|c| c.flash_on_critical = enabled)
             .await;
-        self.save_config().await
+        Ok(())
     }
 
     /// Persist the flash-on-every-message setting.
     pub async fn set_flash_on_message(&self, enabled: bool) -> anyhow::Result<()> {
-        self.0.config.mutate(|c| c.flash_on_message = enabled).await;
-        self.save_config().await
+        self.0.config.mutate_and_persist(|c| c.flash_on_message = enabled).await;
+        Ok(())
     }
 
     /// Persist the global flash pulse count (clamped to 3–7).
     pub async fn set_flash_count(&self, count: u8) -> anyhow::Result<()> {
         self.0
             .config
-            .mutate(|c| c.flash_count = count.clamp(3, 7))
+            .mutate_and_persist(|c| c.flash_count = count.clamp(3, 7))
             .await;
-        self.save_config().await
+        Ok(())
     }
 
     pub async fn set_macros_columns(&self, columns: u8) -> anyhow::Result<()> {
         self.0
             .config
-            .mutate(|c| c.macros_columns = columns.clamp(1, 3))
+            .mutate_and_persist(|c| c.macros_columns = columns.clamp(1, 3))
             .await;
-        self.save_config().await
+        Ok(())
     }
 
     pub async fn set_hide_keyboard(&self, enabled: bool) -> anyhow::Result<()> {
-        self.0.config.mutate(|c| c.hide_keyboard = enabled).await;
-        self.save_config().await
+        self.0.config.mutate_and_persist(|c| c.hide_keyboard = enabled).await;
+        Ok(())
     }
 
     pub async fn set_audible_alert(&self, enabled: bool) -> anyhow::Result<()> {
-        self.0.config.mutate(|c| c.audible_alert = enabled).await;
-        self.save_config().await
+        self.0.config.mutate_and_persist(|c| c.audible_alert = enabled).await;
+        Ok(())
     }
 
     pub async fn set_flash_whole_screen(&self, enabled: bool) -> anyhow::Result<()> {
         self.0
             .config
-            .mutate(|c| c.flash_whole_screen = enabled)
+            .mutate_and_persist(|c| c.flash_whole_screen = enabled)
             .await;
-        self.save_config().await
+        Ok(())
     }
 
     /// Persist the presence heartbeat interval (seconds). Validated 1–60: below
@@ -255,9 +254,9 @@ impl AppState {
         }
         self.0
             .config
-            .mutate(|c| c.heartbeat_interval_secs = secs)
+            .mutate_and_persist(|c| c.heartbeat_interval_secs = secs)
             .await;
-        self.save_config().await
+        Ok(())
     }
 
     /// Persist the OSC UDP port. Validated 1024–65535 (privileged ports < 1024
@@ -267,8 +266,8 @@ impl AppState {
         if !(1024..=65535).contains(&port) {
             anyhow::bail!("OSC port must be 1024–65535 (got {})", port);
         }
-        self.0.config.mutate(|c| c.osc_port = port).await;
-        self.save_config().await
+        self.0.config.mutate_and_persist(|c| c.osc_port = port).await;
+        Ok(())
     }
 
     /// Update per-channel flash flags. `None` means "leave unchanged".
@@ -299,7 +298,7 @@ impl AppState {
         let peer = config::StaticPeer::new(address, port, label)?;
         self.0
             .config
-            .mutate(|cfg| {
+            .mutate_and_persist(|cfg| {
                 if cfg
                     .static_peers
                     .iter()
@@ -311,18 +310,18 @@ impl AppState {
                 Ok(())
             })
             .await?;
-        self.save_config().await
+        Ok(())
     }
 
     pub async fn remove_static_peer(&self, address: &str, port: u16) -> anyhow::Result<()> {
         self.0
             .config
-            .mutate(|cfg| {
+            .mutate_and_persist(|cfg| {
                 cfg.static_peers
                     .retain(|p| !(p.address == address && p.port == port))
             })
             .await;
-        self.save_config().await
+        Ok(())
     }
 
     // ── Messages ──────────────────────────────────────────────────────────────
@@ -544,12 +543,11 @@ impl AppState {
         let channels_snapshot = self.0.channels.list().await;
         self.0
             .config
-            .mutate(|cfg| {
+            .mutate_and_persist(|cfg| {
                 cfg.default_channels = channels_snapshot;
                 cfg.static_peers = validated_peers;
             })
             .await;
-        self.save_config().await?;
         self.publish(AppEvent::ChannelListUpdated).await;
         Ok(())
     }
@@ -628,9 +626,8 @@ impl AppState {
         if !to_add.is_empty() {
             self.0
                 .config
-                .mutate(|cfg| cfg.global_macros.extend(to_add))
+                .mutate_and_persist(|cfg| cfg.global_macros.extend(to_add))
                 .await;
-            self.save_config().await?;
             self.publish(AppEvent::ChannelListUpdated).await;
         }
         Ok(outcomes)
@@ -729,7 +726,7 @@ impl AppState {
 
         self.0
             .config
-            .mutate(|cfg| {
+            .mutate_and_persist(|cfg| {
                 if let Some(pos) = cfg
                     .global_macros
                     .iter()
@@ -741,25 +738,25 @@ impl AppState {
                 }
             })
             .await;
-        self.save_config().await
+        Ok(())
     }
 
     /// Replace all global macros with the factory defaults.
     pub async fn reset_global_macros(&self) -> anyhow::Result<()> {
         self.0
             .config
-            .mutate(|cfg| cfg.global_macros = config::default_global_macros())
+            .mutate_and_persist(|cfg| cfg.global_macros = config::default_global_macros())
             .await;
-        self.save_config().await
+        Ok(())
     }
 
     /// Remove a global macro by label.
     pub async fn delete_global_macro(&self, label: &str) -> anyhow::Result<()> {
         self.0
             .config
-            .mutate(|cfg| cfg.global_macros.retain(|m| m.label != label))
+            .mutate_and_persist(|cfg| cfg.global_macros.retain(|m| m.label != label))
             .await;
-        self.save_config().await
+        Ok(())
     }
 
     /// Reorder global macros to match `ordered_labels` (drag-to-reorder); macros
@@ -768,7 +765,7 @@ impl AppState {
     pub async fn reorder_global_macros(&self, ordered_labels: Vec<String>) -> anyhow::Result<()> {
         self.0
             .config
-            .mutate(|cfg| {
+            .mutate_and_persist(|cfg| {
                 let mut remaining = std::mem::take(&mut cfg.global_macros);
                 let mut reordered = Vec::with_capacity(remaining.len());
                 for label in &ordered_labels {
@@ -780,7 +777,7 @@ impl AppState {
                 cfg.global_macros = reordered;
             })
             .await;
-        self.save_config().await
+        Ok(())
     }
 
     /// Remove a macro from a channel by label.
@@ -796,15 +793,18 @@ impl AppState {
         let channels = self.0.channels.list().await;
         self.0
             .config
-            .mutate(|cfg| cfg.default_channels = channels)
+            .mutate_and_persist(|cfg| cfg.default_channels = channels)
             .await;
-        self.save_config().await
+        Ok(())
     }
 
-    /// Persist the current config to disk, off the async runtime.
-    async fn save_config(&self) -> anyhow::Result<()> {
-        self.0.config.save().await
+    /// Flush the debounced config write immediately. Test-only — used by tests
+    /// that need to confirm disk state right after a mutation.
+    #[cfg(test)]
+    async fn flush_config(&self) {
+        self.0.config.flush().await;
     }
+
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────────
@@ -1167,6 +1167,7 @@ mod tests {
         let st = test_state();
         // A valid value persists to disk.
         st.set_heartbeat_interval(12).await.unwrap();
+        st.flush_config().await;
         assert_eq!(
             Config::load_or_default().unwrap().heartbeat_interval_secs,
             12
@@ -1174,6 +1175,7 @@ mod tests {
         // Boundaries are accepted.
         st.set_heartbeat_interval(1).await.unwrap();
         st.set_heartbeat_interval(60).await.unwrap();
+        st.flush_config().await;
         // Out-of-range values are rejected and leave the stored value untouched.
         assert!(st.set_heartbeat_interval(0).await.is_err());
         assert!(st.set_heartbeat_interval(61).await.is_err());
@@ -1194,10 +1196,12 @@ mod tests {
         let st = test_state();
         // A valid port persists to disk.
         st.set_osc_port(9100).await.unwrap();
+        st.flush_config().await;
         assert_eq!(Config::load_or_default().unwrap().osc_port, 9100);
         // Boundaries are accepted.
         st.set_osc_port(1024).await.unwrap();
         st.set_osc_port(65535).await.unwrap();
+        st.flush_config().await;
         // Privileged / zero ports are rejected and leave the stored value untouched.
         assert!(st.set_osc_port(1023).await.is_err());
         assert!(st.set_osc_port(0).await.is_err());
@@ -1269,6 +1273,7 @@ mod tests {
         assert_eq!(labels(&st.config().await), vec!["C", "B"]);
 
         // Persisted to disk.
+        st.flush_config().await;
         let loaded = Config::load_or_default().unwrap();
         assert_eq!(
             loaded
@@ -1465,7 +1470,8 @@ mod tests {
             .map(|m| m.label.clone())
             .collect();
         assert_eq!(got, want); // custom replaced by the factory set
-                               // Persisted to disk.
+        // Persisted to disk.
+        st.flush_config().await;
         assert_eq!(
             Config::load_or_default().unwrap().global_macros.len(),
             want.len()
@@ -1522,6 +1528,7 @@ mod tests {
         st.apply_show_file_full(channels, show_file_peers)
             .await
             .unwrap();
+        st.flush_config().await;
 
         let cfg = st.config().await;
         // Old peer replaced; only the one valid, de-duped peer remains.
@@ -2035,6 +2042,7 @@ mod tests {
         st.add_static_peer("10.0.0.5".into(), 9000, Some("Booth".into()))
             .await
             .unwrap();
+        st.flush_config().await;
 
         let loaded = Config::load_or_default().unwrap();
         assert_eq!(loaded.flash_count, 6);
