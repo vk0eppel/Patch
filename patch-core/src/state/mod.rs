@@ -9,7 +9,8 @@ pub mod show_file;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use std::time::Instant;
+use tokio::sync::{broadcast, Mutex, RwLock};
 use uuid::Uuid;
 
 use channel::ChannelRegistry;
@@ -92,6 +93,9 @@ struct Inner {
     pub dm_target: RwLock<Option<Uuid>>,
     /// Event bus — clone a receiver to subscribe
     pub events: broadcast::Sender<AppEvent>,
+    /// Global receive-side dedup cache — message IDs seen in the last 10 s.
+    /// Prevents duplicate processing when a message arrives on multiple paths.
+    seen_messages: Mutex<HashMap<Uuid, Instant>>,
 }
 
 /// True when `id` is our own client_id — every event/discovery loop that
@@ -116,6 +120,7 @@ impl AppState {
             selected: RwLock::new(Vec::new()),
             dm_target: RwLock::new(None),
             events: tx,
+            seen_messages: Mutex::new(HashMap::new()),
         }))
     }
 
@@ -518,6 +523,24 @@ impl AppState {
             .filter(|p| p.peer_id != client_id && p.has_address())
             .map(|p| (p.peer_id, p.all_addrs()))
             .collect()
+    }
+
+    // ── Receive dedup ────────────────────────────────────────────────────────
+
+    /// Returns `true` if `message_id` was already seen within the last 10 s
+    /// (a duplicate from multi-path delivery). Inserts it on first call and
+    /// prunes expired entries.
+    pub async fn is_message_duplicate(&self, message_id: Uuid) -> bool {
+        use std::time::Duration;
+        const TTL: Duration = Duration::from_secs(10);
+        let now = Instant::now();
+        let mut seen = self.0.seen_messages.lock().await;
+        seen.retain(|_, t| now.duration_since(*t) < TTL);
+        if seen.contains_key(&message_id) {
+            return true;
+        }
+        seen.insert(message_id, now);
+        false
     }
 
     // ── Channels & macros ────────────────────────────────────────────────────
@@ -2112,6 +2135,23 @@ mod tests {
         assert_eq!(loaded.static_peers[0].address, "10.0.0.5");
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn is_message_duplicate_returns_false_first_time_true_second() {
+        let st = test_state();
+        let id = Uuid::new_v4();
+        assert!(!st.is_message_duplicate(id).await);
+        assert!(st.is_message_duplicate(id).await);
+    }
+
+    #[tokio::test]
+    async fn is_message_duplicate_different_ids_are_independent() {
+        let st = test_state();
+        let id1 = Uuid::new_v4();
+        let id2 = Uuid::new_v4();
+        assert!(!st.is_message_duplicate(id1).await);
+        assert!(!st.is_message_duplicate(id2).await);
     }
 
     #[tokio::test]

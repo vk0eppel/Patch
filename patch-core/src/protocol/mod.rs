@@ -64,6 +64,10 @@ pub(crate) async fn handle(
     let mut out = Vec::new();
     match event {
         PatchEvent::Message(msg) => {
+            // Drop duplicates that arrive on multiple paths (multi-VLAN send).
+            if state.is_message_duplicate(msg.message_id).await {
+                return out;
+            }
             // Record the sighting so the sender appears in the peers panel
             // immediately (even when AP isolation blocks their broadcast
             // heartbeats) and so an already-known sender's address stays
@@ -86,6 +90,10 @@ pub(crate) async fn handle(
             // Only accept DMs addressed to us (they're unicast, so this should
             // always hold — defensive).
             if !is_self(target_id, client_id) {
+                return out;
+            }
+            // Drop duplicates from multi-path delivery.
+            if state.is_message_duplicate(msg.message_id).await {
                 return out;
             }
             // Record the sighting so the DM thread + peers panel show them.
@@ -745,5 +753,49 @@ mod tests {
             AppEvent::ChannelFlash(f) => assert_eq!(f.channel_id, "rf"),
             other => panic!("expected ChannelFlash, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn duplicate_message_is_silently_dropped() {
+        use crate::osc::types::Priority;
+        let client_id = Uuid::new_v4();
+        let state = test_state_with_id(client_id);
+        let mut events = state.subscribe();
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+        let sender_id = Uuid::new_v4();
+        let msg_id = Uuid::new_v4();
+
+        let make_event = || {
+            PatchEvent::Message(PatchMessage {
+                message_id: msg_id,
+                sender_id,
+                sender_name: "Sender".into(),
+                channel_id: "ops".into(),
+                priority: Priority::Info,
+                payload: "hello".into(),
+                is_flash: false,
+                flash_sender_name: None,
+                flash_sender_role: None,
+                timestamp: chrono::Utc::now(),
+            })
+        };
+
+        handle(make_event(), addr(1), &state, client_id, &reliability).await;
+        handle(make_event(), addr(2), &state, client_id, &reliability).await; // same id, different path
+
+        // Consume events from first delivery.
+        events.recv().await.unwrap(); // PeerUpdated
+        events.recv().await.unwrap(); // MessageReceived
+
+        // Second delivery should be silent — no more events.
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(50),
+                events.recv()
+            )
+            .await
+            .is_err(),
+            "duplicate message must not produce a second event"
+        );
     }
 }
