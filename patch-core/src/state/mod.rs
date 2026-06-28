@@ -184,11 +184,16 @@ impl AppState {
     pub async fn set_network_interface(&self, iface: Option<String>) -> anyhow::Result<()> {
         self.0
             .config
-            .mutate_and_persist(|c| c.network_interface = iface)
+            .mutate_and_persist(|c| c.network_interface = iface.clone())
             .await;
-        let removed = self.clear_dynamic_peers().await;
-        for id in removed {
-            self.publish(AppEvent::PeerExpired(id)).await;
+        // Only clear dynamic peers when switching TO a pinned interface. In auto
+        // mode (None) the per-address prune window handles dead paths; a full
+        // clear would discard valid peer state on other interfaces.
+        if iface.is_some() {
+            let removed = self.clear_dynamic_peers().await;
+            for id in removed {
+                self.publish(AppEvent::PeerExpired(id)).await;
+            }
         }
         Ok(())
     }
@@ -2105,6 +2110,107 @@ mod tests {
         assert_eq!(loaded.macros_columns, 2);
         assert_eq!(loaded.static_peers.len(), 1);
         assert_eq!(loaded.static_peers[0].address, "10.0.0.5");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn reachable_peer_addrs_returns_all_addresses_per_peer() {
+        let st = test_state();
+        let client_id = Uuid::new_v4();
+        let peer_id = Uuid::new_v4();
+
+        // Same peer seen on two different interfaces.
+        st.record_sighting(
+            PeerSighting::Presence(presence(peer_id, chrono::Utc::now())),
+            "10.0.0.5".into(),
+            9000,
+        )
+        .await;
+        st.record_sighting(
+            PeerSighting::Presence(presence(peer_id, chrono::Utc::now())),
+            "192.168.1.5".into(),
+            9000,
+        )
+        .await;
+
+        let addrs = st.reachable_peer_addrs(client_id).await;
+        assert_eq!(addrs.len(), 2);
+        assert!(addrs.contains(&"10.0.0.5:9000".parse().unwrap()));
+        assert!(addrs.contains(&"192.168.1.5:9000".parse().unwrap()));
+    }
+
+    #[tokio::test]
+    async fn reachable_peers_with_addrs_groups_by_peer_id() {
+        let st = test_state();
+        let client_id = Uuid::new_v4();
+        let peer_id = Uuid::new_v4();
+
+        st.record_sighting(
+            PeerSighting::Presence(presence(peer_id, chrono::Utc::now())),
+            "10.0.0.5".into(),
+            9000,
+        )
+        .await;
+        st.record_sighting(
+            PeerSighting::Presence(presence(peer_id, chrono::Utc::now())),
+            "192.168.1.5".into(),
+            9000,
+        )
+        .await;
+
+        let targets = st.reachable_peers_with_addrs(client_id).await;
+        assert_eq!(targets.len(), 1); // one peer
+        assert_eq!(targets[0].0, peer_id);
+        assert_eq!(targets[0].1.len(), 2); // two addresses
+    }
+
+    #[tokio::test]
+    async fn set_network_interface_to_auto_does_not_clear_peers() {
+        let _guard = config::test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        config::set_data_dir(dir.clone());
+
+        let st = test_state();
+        let peer_id = Uuid::new_v4();
+        st.record_sighting(
+            PeerSighting::Presence(presence(peer_id, chrono::Utc::now())),
+            "10.0.0.5".into(),
+            9000,
+        )
+        .await;
+
+        // Switching to auto (None) must not wipe discovered peers.
+        st.set_network_interface(None).await.unwrap();
+        assert!(!st.get_peers().await.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn set_network_interface_to_pinned_clears_dynamic_peers() {
+        let _guard = config::test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        config::set_data_dir(dir.clone());
+
+        let st = test_state();
+        let peer_id = Uuid::new_v4();
+        st.record_sighting(
+            PeerSighting::Presence(presence(peer_id, chrono::Utc::now())),
+            "10.0.0.5".into(),
+            9000,
+        )
+        .await;
+
+        // Switching to a pinned interface clears dynamic peers.
+        st.set_network_interface(Some("en0".into())).await.unwrap();
+        // Only ManualIp peers survive; dynamic ones are gone.
+        let peers = st.get_peers().await;
+        assert!(peers
+            .iter()
+            .all(|p| matches!(p.discovery_mode, peer::DiscoveryMode::ManualIp)));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
