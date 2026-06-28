@@ -185,21 +185,24 @@ pub(crate) async fn dispatch_message(
         payload,
     );
     let bytes = encode_message(&msg)?;
-    let targets = transport
+    let _targets = transport
         .send_to_peers(bytes.clone(), state, &config)
         .await?;
     let message_id = msg.message_id;
     let is_critical = msg.is_critical();
     // Critical messages require ACKs — register for retransmit until every
     // contacted peer acknowledges (or MAX_RETRIES is exceeded).
+    // Use peer-keyed targets for ACK matching (separate from the flat address
+    // list used for the actual send above).
     let target_count = if is_critical {
+        let peer_targets = state.reachable_peers_with_addrs(config.client_id).await;
         crate::reliability::track_critical(
             reliability,
             state,
             config.heartbeat_interval_secs,
             message_id,
             bytes,
-            targets,
+            peer_targets,
         )
         .await
     } else {

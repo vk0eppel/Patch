@@ -119,11 +119,9 @@ pub(crate) async fn handle(
             message_id,
             peer_id,
         } => {
-            // Record the ACK (matched by the ACK's source address — see
-            // reliability::ReliabilityManager::ack). On a tracked target this
-            // returns delivery progress, which we surface so the sender's UI can
-            // show "delivered N/M" and a check once every peer has it.
-            let progress = reliability.lock().await.ack(message_id, from);
+            // Record the ACK matched by peer_id (the wire format already carries
+            // it). Returns delivery progress so the UI can show "delivered N/M".
+            let progress = reliability.lock().await.ack(message_id, peer_id);
             if let Some((delivered, total)) = progress {
                 state
                     .publish(AppEvent::MessageDelivery {
@@ -134,13 +132,10 @@ pub(crate) async fn handle(
                         failed_peers: Vec::new(),
                     })
                     .await;
+                if delivered >= total {
+                    state.publish(AppEvent::MessageAcked { message_id, peer_id }).await;
+                }
             }
-            state
-                .publish(AppEvent::MessageAcked {
-                    message_id,
-                    peer_id,
-                })
-                .await;
         }
         PatchEvent::Presence(p) => {
             // Ignore our own presence broadcast — we receive it on the same socket.
@@ -208,15 +203,17 @@ pub(crate) async fn handle(
                     // Track criticals for retransmit, like a hand-sent message —
                     // same offline-peer filter `dispatch_message` applies, so an
                     // injected critical doesn't retransmit against peers already
-                    // known to be gone.
+                    // known to be gone. Use peer-keyed targets for ACK matching.
                     if msg.is_critical() {
+                        let peer_targets =
+                            state.reachable_peers_with_addrs(config.client_id).await;
                         crate::reliability::track_critical(
                             reliability,
                             state,
                             config.heartbeat_interval_secs,
                             msg.message_id,
                             bytes,
-                            targets,
+                            peer_targets,
                         )
                         .await;
                     }
@@ -668,15 +665,16 @@ mod tests {
         let mut events = state.subscribe();
         let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
         let message_id = Uuid::new_v4();
+        let sender_peer_id = Uuid::new_v4();
         reliability
             .lock()
             .await
-            .track(message_id, vec![0], vec![addr(6)]);
+            .track(message_id, vec![0], vec![(sender_peer_id, vec![addr(6)])]);
 
         handle(
             PatchEvent::Ack {
                 message_id,
-                peer_id: Uuid::new_v4(),
+                peer_id: sender_peer_id,
             },
             addr(6),
             &state,
