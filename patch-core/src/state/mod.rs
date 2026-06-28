@@ -2149,6 +2149,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn mdns_sighting_with_multiple_addrs_adds_all() {
+        let st = test_state();
+        let peer_id = Uuid::new_v4();
+
+        // Two mDNS sightings for the same peer — different addresses (as would
+        // happen when mDNS resolves on two interfaces).
+        st.record_sighting(
+            PeerSighting::Mdns(presence(peer_id, chrono::Utc::now())),
+            "10.0.0.1".into(),
+            9000,
+        )
+        .await;
+        st.record_sighting(
+            PeerSighting::Mdns(presence(peer_id, chrono::Utc::now())),
+            "192.168.1.1".into(),
+            9000,
+        )
+        .await;
+
+        let peers = st.get_peers().await;
+        let peer = peers.iter().find(|p| p.peer_id == peer_id).unwrap();
+        assert_eq!(peer.all_addrs().len(), 2);
+    }
+
+    #[tokio::test]
     async fn prune_peer_addresses_removes_stale_addrs_keeps_fresh() {
         let st = AppState::new(Config {
             heartbeat_interval_secs: 7,

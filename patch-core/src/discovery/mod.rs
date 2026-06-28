@@ -18,29 +18,27 @@ use crate::osc::{codec::encode_presence, types::PeerPresence};
 use crate::state::{is_self, AppState, Config, PeerSighting};
 use crate::transport::{in_pinned_subnet, pinned_ipv4_subnet, Transport};
 
-/// Picks which of a resolved mDNS service's addresses to use as the peer's
-/// contact address. mDNS multicasts over every active interface, so a peer
-/// with multiple NICs (e.g. wired/Dante + Wi-Fi) can resolve with an address
-/// per interface. When we're pinned to a specific NIC, prefer the resolved
-/// address on that same subnet (`pinned_subnet` is the pinned interface's own
-/// IPv4 address + netmask); if none matches — or the pinned interface's own
-/// subnet couldn't be resolved — return `None` rather than guessing. Better
-/// to leave whatever address OSC presence already learned untouched than
-/// overwrite it with an address from an unrelated interface. With no pin
-/// configured, fall back to the first resolved address (prior behavior).
-fn pick_resolved_address(
+/// Returns all resolved mDNS addresses that match the configured interface pin.
+/// With no pin, all addresses are returned. With a pin, only addresses on the
+/// pinned subnet are returned — an empty Vec means "no matching address" and
+/// callers should record the peer with an empty address (appears in the panel
+/// but unreachable until an OSC presence provides a usable address).
+fn pick_resolved_addresses(
     addrs: &std::collections::HashSet<IpAddr>,
     pin_configured: bool,
     pinned_subnet: Option<(Ipv4Addr, Ipv4Addr)>,
-) -> Option<String> {
+) -> Vec<String> {
     if pin_configured {
-        let (iface_ip, mask) = pinned_subnet?;
+        let Some((iface_ip, mask)) = pinned_subnet else {
+            return Vec::new();
+        };
         return addrs
             .iter()
-            .find(|ip| matches!(ip, IpAddr::V4(v4) if in_pinned_subnet(*v4, iface_ip, mask)))
-            .map(|ip| ip.to_string());
+            .filter(|ip| matches!(ip, IpAddr::V4(v4) if in_pinned_subnet(*v4, iface_ip, mask)))
+            .map(|ip| ip.to_string())
+            .collect();
     }
-    addrs.iter().next().map(|a| a.to_string())
+    addrs.iter().map(|a| a.to_string()).collect()
 }
 
 pub struct Discovery {
@@ -102,12 +100,11 @@ impl Discovery {
 
                             let iface_pin = browse_state.config().await.network_interface.clone();
                             let pinned_subnet = iface_pin.as_deref().and_then(pinned_ipv4_subnet);
-                            let addr = pick_resolved_address(
+                            let addrs = pick_resolved_addresses(
                                 info.get_addresses(),
                                 iface_pin.is_some(),
                                 pinned_subnet,
-                            )
-                            .unwrap_or_default();
+                            );
                             let port = info.get_port();
 
                             // Prefer the peer_name TXT record; fall back to stripping
@@ -125,24 +122,42 @@ impl Discovery {
                                 });
 
                             debug!(
-                                "mDNS resolved: {} ({}) @ {}:{}",
-                                peer_name, peer_id, addr, port
+                                "mDNS resolved: {} ({}) @ {:?}:{}",
+                                peer_name, peer_id, addrs, port
                             );
-                            let presence = PeerPresence {
-                                peer_id,
-                                peer_name,
-                                channels: Vec::new(),
-                                role: None, // not in the mDNS TXT; set by OSC presence
-                                timestamp: Utc::now(),
-                            };
                             resolved_ids.insert(info.get_fullname().to_string(), peer_id);
-                            // Record the address for unicast, but do NOT refresh
-                            // liveness — mDNS can replay from a stale cache long
-                            // after a peer quits. `last_seen` is driven only by
+                            // Record all resolved addresses for unicast, but do NOT
+                            // refresh liveness — mDNS can replay from a stale cache
+                            // long after a peer quits. `last_seen` is driven only by
                             // a `PeerSighting::Presence`/`Heartbeat` sighting.
-                            browse_state
-                                .record_sighting(PeerSighting::Mdns(presence), addr, port)
-                                .await;
+                            if addrs.is_empty() {
+                                // No usable address (e.g. pinned to a subnet with no
+                                // match) — record without an address so the peer shows
+                                // up in the panel; OSC presence will fill it in.
+                                let presence = PeerPresence {
+                                    peer_id,
+                                    peer_name,
+                                    channels: Vec::new(),
+                                    role: None,
+                                    timestamp: Utc::now(),
+                                };
+                                browse_state
+                                    .record_sighting(PeerSighting::Mdns(presence), String::new(), port)
+                                    .await;
+                            } else {
+                                for addr in addrs {
+                                    let presence = PeerPresence {
+                                        peer_id,
+                                        peer_name: peer_name.clone(),
+                                        channels: Vec::new(),
+                                        role: None,
+                                        timestamp: Utc::now(),
+                                    };
+                                    browse_state
+                                        .record_sighting(PeerSighting::Mdns(presence), addr, port)
+                                        .await;
+                                }
+                            }
                         }
                         ServiceEvent::ServiceRemoved(_, fullname) => {
                             debug!("mDNS removed: {}", fullname);
@@ -291,16 +306,23 @@ mod tests {
     }
 
     #[test]
-    fn no_pin_falls_back_to_first_address() {
+    fn no_pin_returns_all_addresses() {
+        let set = addrs(&["10.0.2.5", "192.168.1.1"]);
+        let result = pick_resolved_addresses(&set, false, None);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn no_pin_single_address_returns_it() {
         let set = addrs(&["10.0.2.5"]);
         assert_eq!(
-            pick_resolved_address(&set, false, None),
-            Some("10.0.2.5".to_string())
+            pick_resolved_addresses(&set, false, None),
+            vec!["10.0.2.5".to_string()]
         );
     }
 
     #[test]
-    fn pin_picks_address_on_matching_subnet_over_unrelated_one() {
+    fn pin_returns_only_addresses_on_matching_subnet() {
         // M1 pinned to the wired Dante NIC (169.254.x.x/16); Intel's service
         // resolved with both its Dante address and an unrelated Wi-Fi one.
         let set = addrs(&["169.254.30.7", "10.0.2.9"]);
@@ -309,26 +331,40 @@ mod tests {
             "255.255.0.0".parse().unwrap(),
         ));
         assert_eq!(
-            pick_resolved_address(&set, true, pinned_subnet),
-            Some("169.254.30.7".to_string())
+            pick_resolved_addresses(&set, true, pinned_subnet),
+            vec!["169.254.30.7".to_string()]
         );
     }
 
     #[test]
-    fn pin_with_no_matching_address_returns_none_rather_than_guessing() {
+    fn pin_with_no_matching_address_returns_empty_rather_than_guessing() {
         let set = addrs(&["10.0.2.9"]); // only the unrelated Wi-Fi address resolved
         let pinned_subnet = Some((
             "169.254.10.1".parse().unwrap(),
             "255.255.0.0".parse().unwrap(),
         ));
-        assert_eq!(pick_resolved_address(&set, true, pinned_subnet), None);
+        assert!(pick_resolved_addresses(&set, true, pinned_subnet).is_empty());
     }
 
     #[test]
-    fn pin_configured_but_unresolvable_returns_none_rather_than_first() {
+    fn pin_configured_but_unresolvable_returns_empty_rather_than_first() {
         // The pinned interface itself couldn't be found/resolved this tick —
         // don't fall back to "first address", which could be the wrong NIC.
         let set = addrs(&["10.0.2.9"]);
-        assert_eq!(pick_resolved_address(&set, true, None), None);
+        assert!(pick_resolved_addresses(&set, true, None).is_empty());
+    }
+
+    #[test]
+    fn pin_returns_multiple_matching_addresses() {
+        // Peer with two Dante addresses on the pinned subnet — both should be kept.
+        let set = addrs(&["169.254.30.7", "169.254.31.2", "10.0.2.9"]);
+        let pinned_subnet = Some((
+            "169.254.10.1".parse().unwrap(),
+            "255.255.0.0".parse().unwrap(),
+        ));
+        let result = pick_resolved_addresses(&set, true, pinned_subnet);
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&"169.254.30.7".to_string()));
+        assert!(result.contains(&"169.254.31.2".to_string()));
     }
 }
