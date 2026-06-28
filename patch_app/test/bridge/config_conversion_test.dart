@@ -1,17 +1,17 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:patch/bridge/bridge_client.dart';
+import 'package:patch/models/config.dart';
 import 'package:patch/src/rust/api.dart' as rust;
 import 'package:patch/src/rust/osc/types.dart' as rust_osc;
 import 'package:patch/src/rust/state/channel.dart' as rust_channel;
 import 'package:patch/src/rust/state/config.dart' as rust_config;
 
 // When adding a field to ConfigSnapshot: add a sentinel value here, add the
-// field to AppConfig, wire it in configFromRust().
+// field to AppConfig, wire it in AppConfig.fromRust().
 //
 // The ConfigSnapshot data classes need no RustLib.init() — they are pure Dart.
 void main() {
-  test('configFromRust maps every field from a non-default sentinel snapshot', () {
+  test('AppConfig.fromRust maps every field from a non-default sentinel snapshot', () {
     final snapshot = rust.ConfigSnapshot(
       clientName: 'FOH',
       role: 'Monitors',
@@ -45,7 +45,7 @@ void main() {
       nameIsDefault: true,
     );
 
-    final cfg = configFromRust(snapshot);
+    final cfg = AppConfig.fromRust(snapshot);
 
     expect(cfg.clientName, 'FOH');
     expect(cfg.role, 'Monitors');

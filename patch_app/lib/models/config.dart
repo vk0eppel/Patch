@@ -1,3 +1,6 @@
+import 'package:patch/src/rust/api.dart' as rust;
+import 'package:patch/src/rust/state/config.dart' as rust_config;
+
 import 'channel.dart';
 
 /// A manually-configured peer at a known fixed address (see CONTEXT.md: Static
@@ -17,6 +20,12 @@ class StaticPeerInfo {
         address: j['address'] as String,
         port: (j['port'] as num).toInt(),
         label: j['label'] as String?,
+      );
+
+  factory StaticPeerInfo.fromRust(rust_config.StaticPeer s) => StaticPeerInfo(
+        address: s.address,
+        port: s.port,
+        label: s.label,
       );
 }
 
@@ -61,4 +70,21 @@ class AppConfig {
     required this.nameIsDefault,
   });
 
+  factory AppConfig.fromRust(rust.ConfigSnapshot cfg) => AppConfig(
+        clientName: cfg.clientName,
+        role: cfg.role,
+        oscPort: cfg.oscPort,
+        networkInterface: cfg.networkInterface,
+        staticPeers: cfg.staticPeers.map(StaticPeerInfo.fromRust).toList(),
+        flashOnCritical: cfg.flashOnCritical,
+        flashOnMessage: cfg.flashOnMessage,
+        flashCount: cfg.flashCount,
+        macrosColumns: cfg.macrosColumns,
+        hideKeyboard: cfg.hideKeyboard,
+        audibleAlert: cfg.audibleAlert,
+        flashWholeScreen: cfg.flashWholeScreen,
+        globalMacros: cfg.globalMacros.map(MacroMessage.fromRust).toList(),
+        heartbeatIntervalSecs: cfg.heartbeatIntervalSecs,
+        nameIsDefault: cfg.nameIsDefault,
+      );
 }

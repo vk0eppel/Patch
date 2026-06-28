@@ -105,14 +105,14 @@ class BridgeClient {
   /// candidate 2, ADR-0004); throws on failure.
   Future<List<PatchChannel>> getChannels() async {
     final channels = await rust.getChannels();
-    return channels.map(_channelFromRust).toList();
+    return channels.map(PatchChannel.fromRust).toList();
   }
 
   /// The current peer list. Returns directly (owned by `AppStore` — candidate
   /// 2, ADR-0004); throws on failure.
   Future<List<PeerInfo>> getPeers() async {
     final peers = await rust.getPeers();
-    return peers.map(_peerFromRust).toList();
+    return peers.map(PeerInfo.fromRust).toList();
   }
 
   /// Fetch [channelId]'s recent message history. Returns directly (owned by
@@ -121,7 +121,7 @@ class BridgeClient {
       {int limit = 500}) async {
     final messages =
         await rust.getMessages(channelId: channelId, limit: limit);
-    return messages.map(_messageFromRust).toList();
+    return messages.map(PatchMessage.fromRust).toList();
   }
 
   /// Available network interfaces (name + ip). Returns directly (single
@@ -135,7 +135,7 @@ class BridgeClient {
   /// candidate 2, ADR-0004); throws on failure.
   Future<AppConfig> getConfig() async {
     final cfg = await rust.getConfig();
-    return configFromRust(cfg);
+    return AppConfig.fromRust(cfg);
   }
 
   /// Change the network interface (empty/'auto' → all interfaces). Throws on
@@ -348,7 +348,7 @@ class BridgeClient {
     final outcomes = await rust.previewGlobalMacros(
       globalMacros: globalMacros.map(_macroToRust).toList(),
     );
-    return outcomes.map(_macroImportOutcomeFromRust).toList();
+    return outcomes.map(MacroImportOutcome.fromRust).toList();
   }
 
   /// Adopt offered global Macros — merge (adds new ones, strips colliding
@@ -361,7 +361,7 @@ class BridgeClient {
     final outcomes = await rust.adoptGlobalMacros(
       globalMacros: globalMacros.map(_macroToRust).toList(),
     );
-    return outcomes.map(_macroImportOutcomeFromRust).toList();
+    return outcomes.map(MacroImportOutcome.fromRust).toList();
   }
 
   /// Reset all channels to factory defaults (AUDIO · RF · LIGHTING · VIDEO ·
@@ -400,7 +400,7 @@ class BridgeClient {
   /// dialog); throws on failure (#59, ADR-0004).
   Future<List<ShowFileMeta>> listShowFiles() async {
     final list = await rust.listShowFiles();
-    return list.map(_showFileMetaFromRust).toList();
+    return list.map(ShowFileMeta.fromRust).toList();
   }
 
   Future<void> deleteShowFile(String slug) => rust.deleteShowFile(slug: slug);
@@ -488,7 +488,7 @@ class BridgeClient {
 /// the UI. See ADR-0004.
 PatchEvent? patchEventFromRust(rust.PatchAppEvent event) => switch (event) {
       rust.PatchAppEvent_Message(:final field0) =>
-        MessageReceived(_messageFromRust(field0)),
+        MessageReceived(PatchMessage.fromRust(field0)),
       rust.PatchAppEvent_MessageDelivery(
         :final messageId,
         :final delivered,
@@ -519,7 +519,7 @@ PatchEvent? patchEventFromRust(rust.PatchAppEvent event) => switch (event) {
         ChannelsOffered(
           fromPeerId: fromPeerId,
           fromName: fromName,
-          channels: channels.map(_channelFromRust).toList(),
+          channels: channels.map(PatchChannel.fromRust).toList(),
         ),
       rust.PatchAppEvent_GlobalMacrosOffered(
         :final fromPeerId,
@@ -529,7 +529,7 @@ PatchEvent? patchEventFromRust(rust.PatchAppEvent event) => switch (event) {
         GlobalMacrosOffered(
           fromPeerId: fromPeerId,
           fromName: fromName,
-          globalMacros: globalMacros.map(_macroFromRust).toList(),
+          globalMacros: globalMacros.map(MacroMessage.fromRust).toList(),
         ),
       rust.PatchAppEvent_ClientNameChanged(:final name) =>
         ClientNameChanged(name),
@@ -543,59 +543,8 @@ PatchEvent? patchEventFromRust(rust.PatchAppEvent event) => switch (event) {
       rust.PatchAppEvent_MessageAcked() => null,
     };
 
-PatchChannel _channelFromRust(rust_channel.Channel c) => PatchChannel(
-      id: c.id,
-      displayName: c.displayName,
-      color: _parseHexColor(c.color),
-      macros: c.macros.map(_macroFromRust).toList(),
-      flashOnCritical: c.flashOnCritical,
-      flashOnMessage: c.flashOnMessage,
-      flashCount: c.flashCount,
-    );
-
-MacroMessage _macroFromRust(rust_channel.MacroMessage s) => MacroMessage(
-      label: s.label,
-      payload: s.payload,
-      keyBinding: s.keyBinding,
-      priority: s.priority,
-      midiNote: s.midiNote,
-      midiCc: s.midiCc,
-      osc: s.osc == null ? null : _oscFromRust(s.osc!),
-    );
-
-MacroOsc _oscFromRust(rust_channel.OscTarget o) => MacroOsc(
-      address: o.address,
-      port: o.port,
-      path: o.path,
-      arg: o.arg,
-      argType: switch (o.argType) {
-        rust_osc.OscArgKind.string => MacroOscArgType.string,
-        rust_osc.OscArgKind.int => MacroOscArgType.int,
-        rust_osc.OscArgKind.float => MacroOscArgType.float,
-      },
-    );
-
-MacroImportOutcome _macroImportOutcomeFromRust(
-  rust_channel.MacroImportOutcome o,
-) =>
-    switch (o) {
-      rust_channel.MacroImportOutcome_AlreadyHave(:final label) =>
-        MacroAlreadyHave(label),
-      rust_channel.MacroImportOutcome_Added(:final msg) =>
-        MacroAdded(_macroFromRust(msg)),
-      rust_channel.MacroImportOutcome_AddedBindingDropped(
-        :final msg,
-        :final reason,
-      ) =>
-        MacroAddedBindingDropped(_macroFromRust(msg), reason),
-      rust_channel.MacroImportOutcome_Skipped(:final label, :final reason) =>
-        MacroSkipped(label, reason),
-    };
-
-Color _parseHexColor(String hex) =>
-    Color(int.parse('FF${hex.replaceFirst('#', '')}', radix: 16));
-
-// Inverse of the three functions above — rebuilds the typed FRB structs from
+// Inverse of the fromRust factories on the Dart model classes — rebuilds the
+// typed FRB structs from
 // a `PatchChannel` so an adopted offer (delivered as `PatchChannel`s in
 // `channels_offered`) can be passed back into `adopt_channels`.
 rust_channel.Channel _channelToRust(PatchChannel c) => rust_channel.Channel(
@@ -634,71 +583,6 @@ rust_osc.OscArgKind _toRustArgType(MacroOscArgType t) => switch (t) {
       MacroOscArgType.int => rust_osc.OscArgKind.int,
       MacroOscArgType.float => rust_osc.OscArgKind.float,
     };
-
-PatchMessage _messageFromRust(rust_osc.PatchMessage m) => PatchMessage(
-      messageId: m.messageId.toString(),
-      senderId: m.senderId.toString(),
-      senderName: m.senderName,
-      channelId: m.channelId,
-      timestamp: m.timestamp,
-      priority: m.priority.index,
-      payload: m.payload,
-      isFlash: m.isFlash,
-      flashSenderName: m.flashSenderName,
-      flashSenderRole: m.flashSenderRole,
-    );
-
-PeerInfo _peerFromRust(rust.PeerSnapshot p) => PeerInfo(
-      peerId: p.peerId.toString(),
-      peerName: p.peerName,
-      role: p.role,
-      channels: p.channels,
-      address: p.address,
-      oscPort: p.oscPort,
-      lastSeen: p.lastSeen,
-      departed: p.departed,
-      discoveryMode: switch (p.discoveryMode) {
-        rust_peer.DiscoveryMode.mdns => 'mdns',
-        rust_peer.DiscoveryMode.oscBeacon => 'osc_beacon',
-        rust_peer.DiscoveryMode.manualIp => 'manual_ip',
-      },
-      status: switch (p.status) {
-        rust_peer.PeerStatus.online => PeerStatus.online,
-        rust_peer.PeerStatus.stale => PeerStatus.stale,
-        rust_peer.PeerStatus.offline => PeerStatus.offline,
-      },
-    );
-
-StaticPeerInfo _staticPeerFromRust(rust_config.StaticPeer s) => StaticPeerInfo(
-      address: s.address,
-      port: s.port,
-      label: s.label,
-    );
-
-ShowFileMeta _showFileMetaFromRust(rust_show_file.ShowFileMeta s) => ShowFileMeta(
-      slug: s.slug,
-      name: s.name,
-      createdAt: s.createdAt,
-      channelCount: s.channelCount.toInt(),
-    );
-
-AppConfig configFromRust(rust.ConfigSnapshot cfg) => AppConfig(
-      clientName: cfg.clientName,
-      role: cfg.role,
-      oscPort: cfg.oscPort,
-      networkInterface: cfg.networkInterface,
-      staticPeers: cfg.staticPeers.map(_staticPeerFromRust).toList(),
-      flashOnCritical: cfg.flashOnCritical,
-      flashOnMessage: cfg.flashOnMessage,
-      flashCount: cfg.flashCount,
-      macrosColumns: cfg.macrosColumns,
-      hideKeyboard: cfg.hideKeyboard,
-      audibleAlert: cfg.audibleAlert,
-      flashWholeScreen: cfg.flashWholeScreen,
-      globalMacros: cfg.globalMacros.map(_macroFromRust).toList(),
-      heartbeatIntervalSecs: cfg.heartbeatIntervalSecs,
-      nameIsDefault: cfg.nameIsDefault,
-    );
 
 // Keep this import alive — `InterfaceInfo` is referenced only via `rust.`,
 // not via the prefix, but the unused-import lint would still trip without it.

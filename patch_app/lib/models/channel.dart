@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:patch/src/rust/osc/types.dart' as rust_osc;
+import 'package:patch/src/rust/state/channel.dart' as rust_channel;
+
+Color _parseHexColor(String hex) =>
+    Color(int.parse('FF${hex.replaceFirst('#', '')}', radix: 16));
 
 /// Mirrors the Rust `osc::types::OscArgKind` enum — which `OscType` variant a
 /// macro's OSC `arg` is parsed into when it fires. Serialized by serde as a
@@ -7,6 +12,12 @@ enum MacroOscArgType {
   string,
   int,
   float;
+
+  factory MacroOscArgType.fromRust(rust_osc.OscArgKind kind) => switch (kind) {
+        rust_osc.OscArgKind.string => MacroOscArgType.string,
+        rust_osc.OscArgKind.int => MacroOscArgType.int,
+        rust_osc.OscArgKind.float => MacroOscArgType.float,
+      };
 
   factory MacroOscArgType.fromJson(String? j) => switch (j) {
         'Int' => MacroOscArgType.int,
@@ -44,6 +55,14 @@ class MacroOsc {
         path: j['path'] as String,
         arg: j['arg'] as String?,
         argType: MacroOscArgType.fromJson(j['arg_type'] as String?),
+      );
+
+  factory MacroOsc.fromRust(rust_channel.OscTarget o) => MacroOsc(
+        address: o.address,
+        port: o.port,
+        path: o.path,
+        arg: o.arg,
+        argType: MacroOscArgType.fromRust(o.argType),
       );
 }
 
@@ -83,6 +102,16 @@ class MacroMessage {
             ? null
             : MacroOsc.fromJson(j['osc'] as Map<String, dynamic>),
       );
+
+  factory MacroMessage.fromRust(rust_channel.MacroMessage s) => MacroMessage(
+        label: s.label,
+        payload: s.payload,
+        keyBinding: s.keyBinding,
+        priority: s.priority,
+        midiNote: s.midiNote,
+        midiCc: s.midiCc,
+        osc: s.osc == null ? null : MacroOsc.fromRust(s.osc!),
+      );
 }
 
 class PatchChannel {
@@ -119,6 +148,16 @@ class PatchChannel {
       flashCount:      (j['flash_count'] as int?),
     );
   }
+
+  factory PatchChannel.fromRust(rust_channel.Channel c) => PatchChannel(
+        id: c.id,
+        displayName: c.displayName,
+        color: _parseHexColor(c.color),
+        macros: c.macros.map(MacroMessage.fromRust).toList(),
+        flashOnCritical: c.flashOnCritical,
+        flashOnMessage: c.flashOnMessage,
+        flashCount: c.flashCount,
+      );
 }
 
 /// Outcome of considering one offered Macro for import from a Peer's global
@@ -128,6 +167,21 @@ class PatchChannel {
 /// the preview dialog and the actual merge can never disagree.
 sealed class MacroImportOutcome {
   const MacroImportOutcome();
+
+  factory MacroImportOutcome.fromRust(rust_channel.MacroImportOutcome o) =>
+      switch (o) {
+        rust_channel.MacroImportOutcome_AlreadyHave(:final label) =>
+          MacroAlreadyHave(label),
+        rust_channel.MacroImportOutcome_Added(:final msg) =>
+          MacroAdded(MacroMessage.fromRust(msg)),
+        rust_channel.MacroImportOutcome_AddedBindingDropped(
+          :final msg,
+          :final reason,
+        ) =>
+          MacroAddedBindingDropped(MacroMessage.fromRust(msg), reason),
+        rust_channel.MacroImportOutcome_Skipped(:final label, :final reason) =>
+          MacroSkipped(label, reason),
+      };
 }
 
 /// Every field matches a Macro we already have — not added.

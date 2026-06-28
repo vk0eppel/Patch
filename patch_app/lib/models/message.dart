@@ -1,3 +1,8 @@
+import 'package:patch/src/rust/api.dart' as rust;
+import 'package:patch/src/rust/osc/types.dart' as rust_osc;
+import 'package:patch/src/rust/state/peer.dart' as rust_peer;
+import 'package:patch/src/rust/state/show_file.dart' as rust_show_file;
+
 /// Reserved channel id for crew-wide broadcasts (the ALL tab). A message on this
 /// id is shown in every peer's channel feeds regardless of their configuration.
 const String kAllChannelId = '__all__';
@@ -38,6 +43,19 @@ class PatchMessage {
         timestamp: DateTime.parse(j['timestamp'] as String),
         priority: (j['priority'] as num).toInt(),
         payload: j['payload'] as String,
+      );
+
+  factory PatchMessage.fromRust(rust_osc.PatchMessage m) => PatchMessage(
+        messageId: m.messageId.toString(),
+        senderId: m.senderId.toString(),
+        senderName: m.senderName,
+        channelId: m.channelId,
+        timestamp: m.timestamp,
+        priority: m.priority.index,
+        payload: m.payload,
+        isFlash: m.isFlash,
+        flashSenderName: m.flashSenderName,
+        flashSenderRole: m.flashSenderRole,
       );
 }
 
@@ -88,6 +106,13 @@ class ShowFileMeta {
         createdAt: DateTime.parse(j['created_at'] as String),
         channelCount: (j['channel_count'] as num).toInt(),
       );
+
+  factory ShowFileMeta.fromRust(rust_show_file.ShowFileMeta s) => ShowFileMeta(
+        slug: s.slug,
+        name: s.name,
+        createdAt: s.createdAt,
+        channelCount: s.channelCount.toInt(),
+      );
 }
 
 /// Online/Stale/Offline mirrors `patch_core::state::peer::PeerStatus` — the
@@ -125,4 +150,25 @@ class PeerInfo {
     required this.status,
     this.departed = false,
   });
+
+  factory PeerInfo.fromRust(rust.PeerSnapshot p) => PeerInfo(
+        peerId: p.peerId.toString(),
+        peerName: p.peerName,
+        role: p.role,
+        channels: p.channels,
+        address: p.address,
+        oscPort: p.oscPort,
+        lastSeen: p.lastSeen,
+        departed: p.departed,
+        discoveryMode: switch (p.discoveryMode) {
+          rust_peer.DiscoveryMode.mdns => 'mdns',
+          rust_peer.DiscoveryMode.oscBeacon => 'osc_beacon',
+          rust_peer.DiscoveryMode.manualIp => 'manual_ip',
+        },
+        status: switch (p.status) {
+          rust_peer.PeerStatus.online => PeerStatus.online,
+          rust_peer.PeerStatus.stale => PeerStatus.stale,
+          rust_peer.PeerStatus.offline => PeerStatus.offline,
+        },
+      );
 }
