@@ -2,11 +2,30 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:patch/bridge/bridge_client.dart';
 import 'package:patch/models/events.dart';
 import 'package:patch/models/flash.dart';
 import 'package:patch/models/flash_applicator.dart';
 import 'package:patch/models/message.dart' show kAllChannelId;
 import 'package:patch/models/selection_controller.dart';
+import 'package:patch/store/app_store.dart';
+
+// Minimal no-op fakes — this test suite only needs SelectionController for its
+// .selection getter; ensureMessages / syncSelection calls are not exercised here.
+class _FakeBridge extends BridgeClient {
+  @override
+  Future<void> setSelectedChannels(List<String> ids) async {}
+  @override
+  Future<void> setDmTarget(String? peerId) async {}
+}
+
+class _FakeStore extends AppStore {
+  _FakeStore() : super(_FakeBridge());
+  @override
+  Future<void> ensureMessages(String channelId) async {}
+}
+
+SelectionController _sel() => SelectionController(_FakeStore(), _FakeBridge());
 
 // Tests drive apply() directly. Each call produces a fresh stream so multiple
 // FlashApplicator instances in the same test suite don't fight over one listener.
@@ -25,7 +44,7 @@ FlashApplicator _app(SelectionController sel, {
 void main() {
   group('ChannelFlashEvent', () {
     test('selected channel bumps flashCounts, flashNotify, and sets color/pulseCount', () {
-      final sel = SelectionController()..selectTab('rf');
+      final sel = _sel()..selectTab('rf');
       final app = _app(sel);
       app.apply(const ChannelFlashEvent(channelId: 'rf', color: Colors.red, pulseCount: 3));
 
@@ -36,7 +55,7 @@ void main() {
     });
 
     test('unselected channel bumps flashCounts only — flashNotify unchanged', () {
-      final sel = SelectionController()..selectTab('audio');
+      final sel = _sel()..selectTab('audio');
       final app = _app(sel);
       app.apply(const ChannelFlashEvent(channelId: 'rf', color: Colors.red, pulseCount: 3));
 
@@ -45,7 +64,7 @@ void main() {
     });
 
     test('flash counts accumulate across multiple applies', () {
-      final sel = SelectionController()..selectTab('rf');
+      final sel = _sel()..selectTab('rf');
       final app = _app(sel);
       app.apply(const ChannelFlashEvent(channelId: 'rf', color: Colors.red, pulseCount: 3));
       app.apply(const ChannelFlashEvent(channelId: 'rf', color: Colors.red, pulseCount: 3));
@@ -57,7 +76,7 @@ void main() {
 
   group('BroadcastFlashEvent', () {
     test('always bumps flashCounts[kAllChannelId] and flashNotify regardless of selection', () {
-      final sel = SelectionController()..selectTab('rf'); // not in ALL mode
+      final sel = _sel()..selectTab('rf'); // not in ALL mode
       final app = _app(sel);
       app.apply(const BroadcastFlashEvent(pulseCount: 2));
 
@@ -69,7 +88,7 @@ void main() {
 
   group('DmFlashEvent', () {
     test('selected DM thread bumps flashNotify and adds peer to openDms', () {
-      final sel = SelectionController()..openDm('p1');
+      final sel = _sel()..openDm('p1');
       final app = _app(sel);
       app.apply(const DmFlashEvent(peerId: 'p1'));
 
@@ -80,7 +99,7 @@ void main() {
     });
 
     test('unselected DM, peers panel closed — adds to openDms + unreadDms, bumps dmPulseNotify', () {
-      final sel = SelectionController()..selectTab('rf');
+      final sel = _sel()..selectTab('rf');
       final app = _app(sel);
       app.apply(const DmFlashEvent(peerId: 'p1'));
 
@@ -91,7 +110,7 @@ void main() {
     });
 
     test('unselected DM, peers panel open — adds to openDms + unreadDms, dmPulseNotify unchanged', () {
-      final sel = SelectionController()..selectTab('rf');
+      final sel = _sel()..selectTab('rf');
       final app = _app(sel, showPeers: true);
       app.apply(const DmFlashEvent(peerId: 'p1'));
 
@@ -102,7 +121,7 @@ void main() {
 
   group('clearUnread', () {
     test('removes the id from unreadDms', () {
-      final sel = SelectionController()..selectTab('rf');
+      final sel = _sel()..selectTab('rf');
       final app = _app(sel);
       app.apply(const DmFlashEvent(peerId: 'p1'));
       app.clearUnread('dm:p1');
@@ -113,7 +132,7 @@ void main() {
 
   group('clearDmThread', () {
     test('removes the dm:peerId entry from unreadDms', () {
-      final sel = SelectionController()..selectTab('rf');
+      final sel = _sel()..selectTab('rf');
       final app = _app(sel);
       app.apply(const DmFlashEvent(peerId: 'p1'));
       app.clearDmThread('p1');
@@ -124,7 +143,7 @@ void main() {
 
   group('markDmUnread', () {
     test('panel closed — adds to unreadDms and bumps dmPulseNotify', () {
-      final sel = SelectionController();
+      final sel = _sel();
       final app = _app(sel);
       app.markDmUnread('dm:p1');
 
@@ -133,7 +152,7 @@ void main() {
     });
 
     test('panel open — adds to unreadDms, dmPulseNotify unchanged', () {
-      final sel = SelectionController();
+      final sel = _sel();
       final app = _app(sel, showPeers: true);
       app.markDmUnread('dm:p1');
 
@@ -145,7 +164,7 @@ void main() {
   group('onAlert callback', () {
     test('fired when audibleAlert is true and a flash is applied', () {
       int calls = 0;
-      final sel = SelectionController()..selectTab('rf');
+      final sel = _sel()..selectTab('rf');
       final app = _app(sel, onAlert: () async => calls++)
         ..audibleAlert = true;
       app.apply(const ChannelFlashEvent(channelId: 'rf', color: Colors.red, pulseCount: 3));
@@ -155,7 +174,7 @@ void main() {
 
     test('not fired when audibleAlert is false', () {
       int calls = 0;
-      final sel = SelectionController()..selectTab('rf');
+      final sel = _sel()..selectTab('rf');
       final app = _app(sel, onAlert: () async => calls++)
         ..audibleAlert = false;
       app.apply(const ChannelFlashEvent(channelId: 'rf', color: Colors.red, pulseCount: 3));
@@ -166,7 +185,7 @@ void main() {
 
   group('openDmThread', () {
     test('adds peer to openDms and removes it from unreadDms', () {
-      final sel = SelectionController()..selectTab('rf');
+      final sel = _sel()..selectTab('rf');
       final app = _app(sel);
       // Flash arrives while DM is not selected → unread
       app.apply(const DmFlashEvent(peerId: 'p1'));
@@ -183,7 +202,7 @@ void main() {
   group('onPulseOverlay callback', () {
     test('fired on selected channel flash when flashWholeScreen is true', () {
       int calls = 0;
-      final sel = SelectionController()..selectTab('rf');
+      final sel = _sel()..selectTab('rf');
       final app = _app(sel, onPulseOverlay: (c, n) async => calls++)
         ..flashWholeScreen = true;
       app.apply(const ChannelFlashEvent(channelId: 'rf', color: Colors.red, pulseCount: 3));
@@ -193,7 +212,7 @@ void main() {
 
     test('not fired when channel is not selected', () {
       int calls = 0;
-      final sel = SelectionController()..selectTab('audio');
+      final sel = _sel()..selectTab('audio');
       final app = _app(sel, onPulseOverlay: (c, n) async => calls++)
         ..flashWholeScreen = true;
       app.apply(const ChannelFlashEvent(channelId: 'rf', color: Colors.red, pulseCount: 3));

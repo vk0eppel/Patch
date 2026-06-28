@@ -65,10 +65,9 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
 
   /// What the message area currently shows/targets — Channel(s), ALL compose,
   /// or a DM thread. See models/selection.dart. Transition rules live in
-  /// [SelectionController] (#63); this screen applies what it returns —
-  /// ensureMessages/setSelectedChannels/setDmTarget all need BuildContext,
-  /// which the controller never touches.
-  final SelectionController _selectionController = SelectionController();
+  /// [SelectionController] (#63, #94); it owns ensureMessages + syncSelection
+  /// internally so this screen calls one method per interaction.
+  late final SelectionController _selectionController;
   Selection get _selection => _selectionController.selection;
 
   /// Message buffers + delivery status are owned by the AppStore (#58); reading
@@ -281,22 +280,15 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
 
   // ── Lifecycle ───────────────────────────────────────────────────────────────
 
+  bool _controllerReady = false;
+
   @override
   void initState() {
     super.initState();
     _workspace = widget.initialWorkspace;
     _showMacros = _workspace.showMacros;
     if (_isDesktop) windowManager.addListener(this);
-    _flashApp = FlashApplicator(
-      selectionController: _selectionController,
-      pushes: widget.bridge.pushes,
-      showPeers: _workspace.showPeers,
-      broadcastColor: PatchTheme.broadcast,
-      dmColor: PatchTheme.accent,
-      onAlert: _emitAlert,
-      onPulseOverlay: FlashOverlayGateway.pulse,
-    )..addListener(_onFlashAppChanged);
-    _showPeersValue = _workspace.showPeers; // bypass write-through setter — _flashApp already has it
+    _showPeersValue = _workspace.showPeers;
     _pushSub = widget.bridge.pushes.listen(_handlePush);
     // Peers, config, and channels are all loaded by the AppStore (see main).
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
@@ -326,6 +318,20 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
     // name prompt (config) and selection reconciliation (channels). Rebuilds on
     // store changes are handled separately by the `of(context)` reads in build.
     final store = AppStoreScope.of(context);
+    if (!_controllerReady) {
+      // Both deps are available here — AppStore via context, BridgeClient via widget.
+      _selectionController = SelectionController(store, widget.bridge);
+      _flashApp = FlashApplicator(
+        selectionController: _selectionController,
+        pushes: widget.bridge.pushes,
+        showPeers: _workspace.showPeers,
+        broadcastColor: PatchTheme.broadcast,
+        dmColor: PatchTheme.accent,
+        onAlert: _emitAlert,
+        onPulseOverlay: FlashOverlayGateway.pulse,
+      )..addListener(_onFlashAppChanged);
+      _controllerReady = true;
+    }
     if (!identical(_store, store)) {
       _store?.removeListener(_onStoreChanged);
       _store = store;
@@ -370,20 +376,10 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   }
 
   /// Drop stale ids from a Channel selection (or seed the first channel when
-  /// empty) after the channel list changes, then load messages for whatever's
-  /// now selected. ALL/DM selections don't depend on the channel list. Was the
-  /// `'channels'` arm's body (#57); transition rule moved to
-  /// [SelectionController.reconcileWithChannels] (#63).
+  /// empty) after the channel list changes. Timing owned by the controller (#94).
   void _reconcileSelectionWithChannels() {
     final channels = _store?.channels ?? const [];
-    late Set<String> toFetch;
-    setState(() {
-      toFetch = _selectionController.reconcileWithChannels(channels);
-    });
-    for (final id in toFetch) {
-      AppStoreScope.read(context).ensureMessages(id);
-    }
-    _syncSelection();
+    setState(() => _selectionController.reconcileWithChannels(channels));
   }
 
   @override
@@ -570,62 +566,26 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   // ── Channel selection ───────────────────────────────────────────────────────
 
   /// Tap — toggle channel in/out of selection. At least one channel stays selected.
-  /// ALL and DM threads are exclusive selections. Transition rule moved to
-  /// [SelectionController.selectTab] (#63); this screen keeps the screen-local
-  /// unread-clear (ADR-0005: unread-DM sets stay screen-local).
+  /// ALL and DM threads are exclusive selections. Transition rule and side effects
+  /// (ensureMessages, syncSelection) handled by [SelectionController] (#63, #94);
+  /// this screen keeps only the screen-local unread-clear (ADR-0005).
   void _toggleChannel(String id) {
-    late Set<String> toFetch;
-    setState(() {
-      toFetch = _selectionController.selectTab(id);
-    });
+    setState(() => _selectionController.selectTab(id));
     if (id.startsWith('dm:')) _flashApp.clearUnread(id);
-    for (final fetchId in toFetch) {
-      AppStoreScope.read(context).ensureMessages(fetchId);
-    }
-    _syncSelection();
     if (_hideKeyboard) FocusScope.of(context).unfocus();
   }
 
-  /// After a send in ALL mode, snap back to the channel(s) selected before
-  /// ALL — `AllSelection.previous` holds that data; this just restores it.
-  /// Transition rule moved to [SelectionController.snapBackFromAll] (#63).
+  /// After a send in ALL mode, snap back to the channel(s) selected before ALL.
   void _snapBackFromAll() {
-    late Set<String> toFetch;
-    setState(() {
-      toFetch = _selectionController.snapBackFromAll(_channels);
-    });
-    for (final id in toFetch) {
-      AppStoreScope.read(context).ensureMessages(id);
-    }
-    _syncSelection();
+    setState(() => _selectionController.snapBackFromAll(_channels));
   }
 
   /// Open (and select) the DM thread with a peer — from the peers panel button.
-  /// Transition rule moved to [SelectionController.openDm] (#63); this screen
-  /// keeps the screen-local open-thread/unread bookkeeping (ADR-0005).
+  /// This screen keeps the screen-local open-thread/unread bookkeeping (ADR-0005).
   void _openDm(String peerId) {
-    late Set<String> toFetch;
-    setState(() {
-      toFetch = _selectionController.openDm(peerId);
-    });
+    setState(() => _selectionController.openDm(peerId));
     _flashApp.openDmThread(peerId);
-    for (final id in toFetch) {
-      AppStoreScope.read(context).ensureMessages(id);
-    }
-    _syncSelection();
     if (_hideKeyboard) FocusScope.of(context).unfocus();
-  }
-
-  /// Push the current selection to the engine so a MIDI-triggered macro routes
-  /// the same way a tap/F-key would (the engine has no other view of UI
-  /// selection). DM keys are excluded from the channel list — they aren't
-  /// channels — but the DM peer is pushed separately via `setDmTarget` so a
-  /// MIDI macro fired while a DM thread is open goes to that peer instead of
-  /// silently matching no selected channel (see `_fireMacro`'s DM-mode rule).
-  void _syncSelection() {
-    runGuarded(context,
-        () => widget.bridge.setSelectedChannels(_selection.tabIds.toList()));
-    runGuarded(context, () => widget.bridge.setDmTarget(_selection.dmPeerId));
   }
 
   // ── Build ───────────────────────────────────────────────────────────────────
