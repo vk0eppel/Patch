@@ -429,7 +429,7 @@ fn is_usable_iface(name: &str, iface_pin: Option<&str>) -> bool {
     if SKIP_PREFIXES.iter().any(|p| name.starts_with(p)) {
         return false;
     }
-    iface_pin.map_or(true, |pin| name == pin)
+    iface_pin.is_none_or(|pin| name == pin)
 }
 
 /// Returns true for IPs that are usable as OSC bind addresses.
