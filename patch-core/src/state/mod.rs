@@ -7,7 +7,7 @@ mod message;
 pub mod peer;
 pub mod show_file;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
@@ -430,30 +430,42 @@ impl AppState {
         // Once a real packet arrives from the same address, the dynamic entry
         // takes over and the synthetic one is suppressed by the address check.
         let static_peers = self.0.config.read(|c| c.static_peers.clone()).await;
-        let known_by_addr: std::collections::HashSet<(String, u16)> = peers
+        // All SocketAddrs already known dynamically — static entries whose
+        // address is already covered by a dynamic peer are suppressed.
+        let known_addrs: std::collections::HashSet<std::net::SocketAddr> = peers
             .iter()
-            .map(|p| (p.address.clone(), p.osc_port))
+            .flat_map(|p| p.all_addrs())
             .collect();
 
         for sp in &static_peers {
-            if known_by_addr.contains(&(sp.address.clone(), sp.port)) {
-                continue; // real entry already present for this address
+            let sp_addr: Option<std::net::SocketAddr> = sp
+                .address
+                .parse::<std::net::IpAddr>()
+                .ok()
+                .map(|ip| std::net::SocketAddr::new(ip, sp.port));
+            if let Some(addr) = sp_addr {
+                if known_addrs.contains(&addr) {
+                    continue; // real entry already present for this address
+                }
             }
             // Derive a stable UUID from the address:port so the ID doesn't
             // flicker on every getPeers() call.
             let key = format!("static:{}:{}", sp.address, sp.port);
             let synthetic_id = Uuid::new_v5(&Uuid::NAMESPACE_DNS, key.as_bytes());
-            peers.push(peer::Peer {
+            let mut synthetic = peer::Peer {
                 peer_id: synthetic_id,
                 peer_name: sp.label.clone().unwrap_or_else(|| sp.address.clone()),
                 channels: Vec::new(),
                 role: None,
                 discovery_mode: peer::DiscoveryMode::ManualIp,
-                address: sp.address.clone(),
-                osc_port: sp.port,
+                addresses: HashMap::new(),
                 last_seen: chrono::Utc::now(),
                 departed: false,
-            });
+            };
+            if let Some(addr) = sp_addr {
+                synthetic.add_address(addr, chrono::Utc::now());
+            }
+            peers.push(synthetic);
         }
 
         peers
@@ -469,7 +481,7 @@ impl AppState {
             .await
             .iter()
             .filter(|p| p.looks_offline(heartbeat_secs))
-            .filter_map(|p| p.socket_addr())
+            .flat_map(|p| p.all_addrs())
             .collect()
     }
 
@@ -484,8 +496,22 @@ impl AppState {
             .await
             .into_iter()
             .filter(|p| p.peer_id != client_id)
-            .filter_map(|p| p.socket_addr())
+            .flat_map(|p| p.all_addrs())
             .filter(|addr| seen.insert(*addr))
+            .collect()
+    }
+
+    /// Like `reachable_peer_addrs` but grouped by peer_id — used by `track_critical`
+    /// so ACKs can be matched by peer identity rather than socket address.
+    pub async fn reachable_peers_with_addrs(
+        &self,
+        client_id: Uuid,
+    ) -> Vec<(Uuid, Vec<std::net::SocketAddr>)> {
+        self.get_peers()
+            .await
+            .into_iter()
+            .filter(|p| p.peer_id != client_id && p.has_address())
+            .map(|p| (p.peer_id, p.all_addrs()))
             .collect()
     }
 
@@ -870,8 +896,11 @@ mod tests {
     ) {
         let mut p = peer::Peer::from_presence(presence(id, last_seen));
         p.discovery_mode = mode;
-        p.address = address.to_string();
-        p.osc_port = port;
+        if !address.is_empty() && port > 0 {
+            if let Ok(ip) = address.parse::<std::net::IpAddr>() {
+                p.add_address(std::net::SocketAddr::new(ip, port), last_seen);
+            }
+        }
         st.0.peers.insert_for_test(id, p).await;
     }
 
@@ -907,7 +936,10 @@ mod tests {
         let a = st.get_peers().await;
         assert_eq!(a.len(), 1);
         assert!(matches!(a[0].discovery_mode, peer::DiscoveryMode::ManualIp));
-        assert_eq!(a[0].address, "192.168.1.50");
+        assert_eq!(
+            a[0].best_addr(),
+            Some("192.168.1.50:9000".parse().unwrap())
+        );
         let b = st.get_peers().await;
         assert_eq!(a[0].peer_id, b[0].peer_id); // synthetic id stable across calls
     }
@@ -1099,8 +1131,10 @@ mod tests {
 
         let peers = st.get_peers().await;
         assert_eq!(peers.len(), 1);
-        assert_eq!(peers[0].address, "10.0.0.2");
-        assert_eq!(peers[0].osc_port, 9001);
+        assert_eq!(
+            peers[0].best_addr(),
+            Some("10.0.0.2:9001".parse().unwrap())
+        );
     }
 
     #[tokio::test]
@@ -1120,8 +1154,10 @@ mod tests {
         let peers = st.get_peers().await;
         assert_eq!(peers.len(), 1);
         assert_eq!(peers[0].peer_name, "newcomer");
-        assert_eq!(peers[0].address, "10.0.0.3");
-        assert_eq!(peers[0].osc_port, 9002);
+        assert_eq!(
+            peers[0].best_addr(),
+            Some("10.0.0.3:9002".parse().unwrap())
+        );
     }
 
     #[tokio::test]
@@ -1937,7 +1973,7 @@ mod tests {
             .into_iter()
             .find(|p| p.peer_id == pid)
             .unwrap();
-        assert_eq!(p.address, "10.0.0.2"); // address updated for unicast
+        assert_eq!(p.best_addr(), Some("10.0.0.2:9000".parse().unwrap())); // address updated for unicast
         assert!(matches!(p.discovery_mode, peer::DiscoveryMode::Mdns)); // reclassified
         assert!(p.is_stale(35)); // last_seen NOT refreshed — still stale
     }
@@ -1960,7 +1996,7 @@ mod tests {
             .into_iter()
             .find(|p| p.peer_id == pid)
             .unwrap();
-        assert_eq!(p.address, "10.0.0.3");
+        assert_eq!(p.best_addr(), Some("10.0.0.3:9000".parse().unwrap()));
         assert!(p.is_stale(35)); // grey until a real OSC packet arrives
     }
 

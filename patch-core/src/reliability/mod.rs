@@ -11,7 +11,7 @@
 //! equals the target address we unicast to.
 
 use std::collections::{HashMap, HashSet};
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
@@ -239,13 +239,7 @@ async fn resolve_peer_names(state: &AppState, addrs: &[SocketAddr]) -> Vec<Strin
         .map(|addr| {
             peers
                 .iter()
-                .find(|p| {
-                    p.address
-                        .parse::<IpAddr>()
-                        .map(|ip| SocketAddr::new(ip, p.osc_port))
-                        .map(|sa| sa == *addr)
-                        .unwrap_or(false)
-                })
+                .find(|p| p.all_addrs().contains(addr))
                 .map(|p| p.peer_name.clone())
                 .unwrap_or_else(|| addr.to_string())
         })

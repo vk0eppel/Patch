@@ -297,7 +297,7 @@ pub async fn send_direct_message(
         .into_iter()
         .find(|p| p.peer_id == target)
         .ok_or_else(|| anyhow::anyhow!("peer not found"))?;
-    if let Some(addr) = peer.socket_addr() {
+    if let Some(addr) = peer.best_addr() {
         let bytes = encode_dm(&msg, target)?;
         h.transport.send_to(bytes, addr).await?;
     } else {
@@ -347,7 +347,7 @@ pub async fn send_dm_flash(peer_id: String) -> Result<()> {
         .into_iter()
         .find(|p| p.peer_id == target)
         .ok_or_else(|| anyhow::anyhow!("peer not found"))?;
-    if let Some(addr) = peer.socket_addr() {
+    if let Some(addr) = peer.best_addr() {
         let bytes = encode_dm_flash(&flash, target)?;
         h.transport.send_to(bytes, addr).await?;
     } else {
@@ -372,12 +372,12 @@ pub async fn shutdown() -> Result<()> {
     let bytes = encode_bye(config.client_id)?;
     tracing::info!("Shutdown — broadcasting /patch/bye ({})", config.client_id);
 
-    // Unicast to resolved peers (covers static / AP-isolated).
+    // Unicast to all resolved addresses (covers static / AP-isolated / multi-VLAN).
     for peer in h.state.get_peers().await {
         if peer.peer_id == config.client_id {
             continue;
         }
-        if let Some(addr) = peer.socket_addr() {
+        for addr in peer.all_addrs() {
             let _ = h.transport.send_now(&bytes, addr).await;
         }
     }
@@ -418,17 +418,20 @@ pub async fn get_peers() -> Vec<PeerSnapshot> {
         .get_peers()
         .await
         .into_iter()
-        .map(|p| PeerSnapshot {
-            status: p.status(heartbeat_secs),
-            peer_id: p.peer_id,
-            peer_name: p.peer_name,
-            channels: p.channels,
-            role: p.role,
-            discovery_mode: p.discovery_mode,
-            address: p.address,
-            osc_port: p.osc_port,
-            last_seen: p.last_seen,
-            departed: p.departed,
+        .map(|p| {
+            let best = p.best_addr();
+            PeerSnapshot {
+                status: p.status(heartbeat_secs),
+                peer_id: p.peer_id,
+                peer_name: p.peer_name,
+                channels: p.channels,
+                role: p.role,
+                discovery_mode: p.discovery_mode,
+                address: best.map(|a| a.ip().to_string()).unwrap_or_default(),
+                osc_port: best.map(|a| a.port()).unwrap_or(0),
+                last_seen: p.last_seen,
+                departed: p.departed,
+            }
         })
         .collect()
 }
@@ -732,7 +735,7 @@ pub async fn request_channels(peer_id: String) -> Result<()> {
         .into_iter()
         .find(|p| p.peer_id == pid)
         .ok_or_else(|| anyhow::anyhow!("peer not found"))?;
-    let addr = peer.socket_addr().ok_or_else(|| {
+    let addr = peer.best_addr().ok_or_else(|| {
         anyhow::anyhow!("peer has no resolved address yet — try again once it's online")
     })?;
     let config = h.state.config().await;
@@ -763,7 +766,7 @@ pub async fn request_global_macros(peer_id: String) -> Result<()> {
         .into_iter()
         .find(|p| p.peer_id == pid)
         .ok_or_else(|| anyhow::anyhow!("peer not found"))?;
-    let addr = peer.socket_addr().ok_or_else(|| {
+    let addr = peer.best_addr().ok_or_else(|| {
         anyhow::anyhow!("peer has no resolved address yet — try again once it's online")
     })?;
     let config = h.state.config().await;

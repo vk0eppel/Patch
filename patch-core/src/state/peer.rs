@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::net::SocketAddr;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -18,10 +19,10 @@ pub struct Peer {
     pub role: Option<String>,
     /// How we found this peer.
     pub discovery_mode: DiscoveryMode,
-    /// IP address (v4 or v6).
-    pub address: String,
-    /// OSC UDP port.
-    pub osc_port: u16,
+    /// All known reachable addresses for this peer, each with the timestamp of
+    /// the last packet received from that specific address. Multiple entries
+    /// arise when the peer is reachable on more than one network interface.
+    pub addresses: HashMap<SocketAddr, DateTime<Utc>>,
     pub last_seen: DateTime<Utc>,
     /// True when the peer announced a clean departure (`/patch/bye` or mDNS
     /// `ServiceRemoved`) — drives a distinct "left" treatment in the UI while
@@ -45,31 +46,39 @@ impl Peer {
             channels: p.channels,
             role: p.role,
             discovery_mode: DiscoveryMode::OscBeacon,
-            address: String::new(), // filled in by transport layer
-            osc_port: 0,
+            addresses: HashMap::new(),
             last_seen: p.timestamp,
             departed: false,
         }
     }
 
-    /// Returns true if this peer has a usable network address for unicast.
-    pub fn has_address(&self) -> bool {
-        !self.address.is_empty() && self.osc_port > 0
+    /// Add (or refresh) a known reachable address.
+    pub fn add_address(&mut self, addr: SocketAddr, at: DateTime<Utc>) {
+        self.addresses.insert(addr, at);
     }
 
-    /// Resolved unicast address for this peer, or `None` if it has no address
-    /// yet or `address` isn't a parseable `IpAddr` (e.g. still empty, just
-    /// like `has_address`). Single place that turns the raw `address`/`osc_port`
-    /// fields into something actually sendable — every unicast send path should
-    /// go through this instead of re-deriving the parse-and-check.
-    pub fn socket_addr(&self) -> Option<std::net::SocketAddr> {
-        if !self.has_address() {
-            return None;
-        }
-        self.address
-            .parse::<std::net::IpAddr>()
-            .ok()
-            .map(|ip| std::net::SocketAddr::new(ip, self.osc_port))
+    /// Returns true if at least one address is known.
+    pub fn has_address(&self) -> bool {
+        !self.addresses.is_empty()
+    }
+
+    /// The most recently contacted address for single-target sends (DM, flash,
+    /// channels/macros request). Returns `None` when no address is known yet.
+    pub fn best_addr(&self) -> Option<SocketAddr> {
+        self.addresses
+            .iter()
+            .max_by_key(|(_, t)| *t)
+            .map(|(a, _)| *a)
+    }
+
+    /// All known addresses — used when sending to all paths simultaneously.
+    pub fn all_addrs(&self) -> Vec<SocketAddr> {
+        self.addresses.keys().copied().collect()
+    }
+
+    /// Drop addresses not seen within the given threshold.
+    pub fn prune_old_addresses(&mut self, threshold: DateTime<Utc>) {
+        self.addresses.retain(|_, t| *t >= threshold);
     }
 
     pub fn is_stale(&self, timeout_secs: i64) -> bool {
@@ -175,17 +184,26 @@ impl PeerRegistry {
                     if matches!(existing.discovery_mode, DiscoveryMode::Mdns) {
                         new_peer.discovery_mode = DiscoveryMode::Mdns;
                     }
+                    // Carry over existing addresses — additive, not overwrite.
+                    new_peer.addresses = existing.addresses.clone();
                 }
-                new_peer.address = address;
-                new_peer.osc_port = port;
+                if !address.is_empty() && port > 0 {
+                    if let Ok(ip) = address.parse::<std::net::IpAddr>() {
+                        new_peer.add_address(SocketAddr::new(ip, port), new_peer.last_seen);
+                    }
+                }
                 peers.insert(presence.peer_id, new_peer);
                 presence
             }
             PeerSighting::Heartbeat { peer_id, peer_name } => match peers.get_mut(&peer_id) {
                 Some(peer) => {
-                    peer.address = address;
-                    peer.osc_port = port;
-                    peer.last_seen = chrono::Utc::now();
+                    let now = chrono::Utc::now();
+                    if !address.is_empty() && port > 0 {
+                        if let Ok(ip) = address.parse::<std::net::IpAddr>() {
+                            peer.add_address(SocketAddr::new(ip, port), now);
+                        }
+                    }
+                    peer.last_seen = now;
                     // A real OSC packet proves liveness — clear any prior departure.
                     peer.departed = false;
                     PeerPresence {
@@ -210,8 +228,11 @@ impl PeerRegistry {
                         timestamp: chrono::Utc::now(),
                     };
                     let mut new_peer = Peer::from_presence(presence.clone());
-                    new_peer.address = address;
-                    new_peer.osc_port = port;
+                    if !address.is_empty() && port > 0 {
+                        if let Ok(ip) = address.parse::<std::net::IpAddr>() {
+                            new_peer.add_address(SocketAddr::new(ip, port), new_peer.last_seen);
+                        }
+                    }
                     peers.insert(peer_id, new_peer);
                     presence
                 }
@@ -223,9 +244,13 @@ impl PeerRegistry {
                     // address to unicast to — not that the peer is currently
                     // up. Liveness (`last_seen`) comes solely from a
                     // `Heartbeat`/`Presence` sighting, never from here.
-                    if !address.is_empty() {
-                        peer.address = address;
-                        peer.osc_port = port;
+                    if !address.is_empty() && port > 0 {
+                        if let Ok(ip) = address.parse::<std::net::IpAddr>() {
+                            // Use existing last_seen as the address timestamp — mDNS
+                            // doesn't prove liveness, so we don't bump last_seen.
+                            let ts = peer.last_seen;
+                            peer.add_address(SocketAddr::new(ip, port), ts);
+                        }
                     }
                     peer.discovery_mode = DiscoveryMode::Mdns;
                     PeerPresence {
@@ -239,14 +264,10 @@ impl PeerRegistry {
                 None => {
                     let mut new_peer = Peer::from_presence(presence.clone());
                     new_peer.discovery_mode = DiscoveryMode::Mdns;
-                    // Same rule as the `Some` branch above: an unresolved pinned
-                    // subnet means `address` is empty — leave the peer with no
-                    // address (its `from_presence` default) rather than store an
-                    // empty one, so `Peer::has_address`/`socket_addr` correctly
-                    // read it as unreachable instead of address == "".
-                    if !address.is_empty() {
-                        new_peer.address = address;
-                        new_peer.osc_port = port;
+                    if !address.is_empty() && port > 0 {
+                        if let Ok(ip) = address.parse::<std::net::IpAddr>() {
+                            new_peer.add_address(SocketAddr::new(ip, port), new_peer.last_seen);
+                        }
                     }
                     // Backdate past the UI's stale threshold so the dot starts grey.
                     new_peer.last_seen = chrono::Utc::now() - chrono::Duration::seconds(60);
@@ -441,7 +462,7 @@ mod tests {
         assert_eq!(presence.peer_id, id);
         let listed = reg.list().await;
         assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].address, "10.0.0.1");
+        assert_eq!(listed[0].best_addr(), Some("10.0.0.1:9000".parse().unwrap()));
     }
 
     #[tokio::test]
@@ -470,7 +491,7 @@ mod tests {
         )
         .await;
         let p = &reg.list().await[0];
-        assert_eq!(p.address, "10.0.0.2");
+        assert_eq!(p.best_addr(), Some("10.0.0.2:9001".parse().unwrap()));
         assert!(!p.departed);
     }
 
@@ -597,6 +618,56 @@ mod tests {
         assert!(reg.has(fresh_id).await);
         assert!(!reg.has(stale_id).await);
         assert!(reg.has(manual_id).await);
+    }
+
+    #[test]
+    fn peer_with_no_addresses_has_no_address() {
+        let p = Peer::from_presence(PeerPresence {
+            peer_id: Uuid::new_v4(),
+            peer_name: "p".into(),
+            channels: vec![],
+            role: None,
+            timestamp: Utc::now(),
+        });
+        assert!(!p.has_address());
+        assert!(p.best_addr().is_none());
+        assert!(p.all_addrs().is_empty());
+    }
+
+    #[test]
+    fn best_addr_returns_most_recently_seen() {
+        let mut p = Peer::from_presence(PeerPresence {
+            peer_id: Uuid::new_v4(),
+            peer_name: "p".into(),
+            channels: vec![],
+            role: None,
+            timestamp: Utc::now(),
+        });
+        let older = Utc::now() - chrono::Duration::seconds(5);
+        let newer = Utc::now();
+        let addr_old: std::net::SocketAddr = "10.0.0.1:9000".parse().unwrap();
+        let addr_new: std::net::SocketAddr = "10.0.0.2:9000".parse().unwrap();
+        p.add_address(addr_old, older);
+        p.add_address(addr_new, newer);
+        assert_eq!(p.best_addr(), Some(addr_new));
+    }
+
+    #[test]
+    fn prune_old_addresses_keeps_fresh_drops_stale() {
+        let mut p = Peer::from_presence(PeerPresence {
+            peer_id: Uuid::new_v4(),
+            peer_name: "p".into(),
+            channels: vec![],
+            role: None,
+            timestamp: Utc::now(),
+        });
+        let stale_addr: std::net::SocketAddr = "10.0.0.1:9000".parse().unwrap();
+        let fresh_addr: std::net::SocketAddr = "10.0.0.2:9000".parse().unwrap();
+        p.add_address(stale_addr, Utc::now() - chrono::Duration::seconds(100));
+        p.add_address(fresh_addr, Utc::now());
+        p.prune_old_addresses(Utc::now() - chrono::Duration::seconds(30));
+        assert!(!p.all_addrs().contains(&stale_addr));
+        assert!(p.all_addrs().contains(&fresh_addr));
     }
 
     #[tokio::test]
