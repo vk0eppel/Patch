@@ -135,7 +135,10 @@ impl AppState {
     // ── Client name ───────────────────────────────────────────────────────────
 
     pub async fn set_client_name(&self, name: String) -> anyhow::Result<()> {
-        self.0.config.mutate_and_persist(|c| c.client_name = name.clone()).await;
+        self.0
+            .config
+            .mutate_and_persist(|c| c.client_name = name.clone())
+            .await;
         self.publish(AppEvent::ClientNameChanged(name)).await;
         Ok(())
     }
@@ -179,7 +182,10 @@ impl AppState {
     /// peer list rebuilds via the new NIC's discovery. ManualIp/static peers
     /// are kept — their addresses don't depend on which NIC was used.
     pub async fn set_network_interface(&self, iface: Option<String>) -> anyhow::Result<()> {
-        self.0.config.mutate_and_persist(|c| c.network_interface = iface).await;
+        self.0
+            .config
+            .mutate_and_persist(|c| c.network_interface = iface)
+            .await;
         let removed = self.clear_dynamic_peers().await;
         for id in removed {
             self.publish(AppEvent::PeerExpired(id)).await;
@@ -205,7 +211,10 @@ impl AppState {
 
     /// Persist the flash-on-every-message setting.
     pub async fn set_flash_on_message(&self, enabled: bool) -> anyhow::Result<()> {
-        self.0.config.mutate_and_persist(|c| c.flash_on_message = enabled).await;
+        self.0
+            .config
+            .mutate_and_persist(|c| c.flash_on_message = enabled)
+            .await;
         Ok(())
     }
 
@@ -227,12 +236,18 @@ impl AppState {
     }
 
     pub async fn set_hide_keyboard(&self, enabled: bool) -> anyhow::Result<()> {
-        self.0.config.mutate_and_persist(|c| c.hide_keyboard = enabled).await;
+        self.0
+            .config
+            .mutate_and_persist(|c| c.hide_keyboard = enabled)
+            .await;
         Ok(())
     }
 
     pub async fn set_audible_alert(&self, enabled: bool) -> anyhow::Result<()> {
-        self.0.config.mutate_and_persist(|c| c.audible_alert = enabled).await;
+        self.0
+            .config
+            .mutate_and_persist(|c| c.audible_alert = enabled)
+            .await;
         Ok(())
     }
 
@@ -266,7 +281,10 @@ impl AppState {
         if !(1024..=65535).contains(&port) {
             anyhow::bail!("OSC port must be 1024–65535 (got {})", port);
         }
-        self.0.config.mutate_and_persist(|c| c.osc_port = port).await;
+        self.0
+            .config
+            .mutate_and_persist(|c| c.osc_port = port)
+            .await;
         Ok(())
     }
 
@@ -804,7 +822,6 @@ impl AppState {
     async fn flush_config(&self) {
         self.0.config.flush().await;
     }
-
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────────
@@ -1470,7 +1487,7 @@ mod tests {
             .map(|m| m.label.clone())
             .collect();
         assert_eq!(got, want); // custom replaced by the factory set
-        // Persisted to disk.
+                               // Persisted to disk.
         st.flush_config().await;
         assert_eq!(
             Config::load_or_default().unwrap().global_macros.len(),

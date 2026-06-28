@@ -106,8 +106,7 @@ pub(crate) async fn fire_trigger(
         }
     } else {
         let selected = state.selected_channels().await;
-        for (ch_id, payload, priority) in resolve_targets(&channels, &globals, &selected, trigger)
-        {
+        for (ch_id, payload, priority) in resolve_targets(&channels, &globals, &selected, trigger) {
             let prio = Priority::try_from(priority).unwrap_or(Priority::Info);
             if let Err(e) = crate::api::dispatch_message(
                 state,
