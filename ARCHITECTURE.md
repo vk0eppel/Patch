@@ -111,7 +111,9 @@ DMs are excluded from the ALL feed and `set_selected_channels`. Non-critical DMs
 
 ## MIDI
 
-Desktop-only via `midir` (`#[cfg(any(target_os = "macos", ...))]`; no-op backend on iOS/Android). Opens all physical input ports + a virtual "Patch" port on macOS/Linux. Note On (vel > 0) and CC (≥ 64) trigger macros. Routing mirrors the UI's tap/F-key path (`_fireMacro` → `resolveMacroTarget`) and checks DM mode first: if a DM thread is open (`AppState::dm_target`, pushed from Flutter via `set_dm_target` alongside `set_selected_channels`), every matched macro — per-channel or global alike — sends as a DM (`resolve_dm_payloads`), channel-independent. Otherwise pure `resolve_targets` applies: per-channel macros fire on their own channel (absolute, engine-side); global macros fire on currently-selected channels (Flutter pushes selection via `set_selected_channels`). `MidiInputConnection`s kept alive by a parked `std::thread` (dropping one closes its callback).
+Desktop-only via `midir` (`#[cfg(any(target_os = "macos", ...))]`; no-op backend on iOS/Android). Opens all physical input ports + a virtual "Patch" port on macOS/Linux. Note On (vel > 0) and CC (≥ 64) trigger macros. `MidiInputConnection`s kept alive by a parked `std::thread` (dropping one closes its callback).
+
+Routing is handled by `crate::macro_router` — a platform-agnostic dispatch layer shared by all current and future trigger sources. `midi::backend::MidiTrigger` implements `macro_router::MacroTrigger` (one method: `matches(&MacroMessage) -> bool`) and calls `macro_router::fire_trigger`. The router checks DM mode first: if a DM thread is open (`AppState::dm_target`, pushed from Flutter via `set_dm_target` alongside `set_selected_channels`), every matched macro — per-channel or global alike — sends as a DM (`resolve_dm_payloads`), channel-independent. Otherwise `resolve_targets` applies: per-channel macros fire on their own channel (absolute, engine-side); global macros fire on currently-selected channels (Flutter pushes selection via `set_selected_channels`).
 
 macOS requires CoreMIDI + CoreAudio frameworks explicitly in `patch_app/rust_builder/macos/patch_core.podspec` `OTHER_LDFLAGS` — cargokit's static `.a` doesn't carry `cargo:rustc-link-lib` directives. Run `pod install` after editing the podspec.
 
@@ -127,7 +129,7 @@ Resolving a single peer's address (DM send, DM flash, channels-request, shutdown
 
 ## Config I/O
 
-`ConfigStore` (`state/config.rs`) owns `Config` and persistence together — see ADR-0003. `ConfigStore::save` wraps `Config::save` in `spawn_blocking`. A dedicated `save_lock` (`Mutex<()>`), internal to `ConfigStore`, serialises concurrent whole-file writes — acquired after cloning the current config, so the config lock is not held during disk I/O. `AppState::save_config` is a thin delegation to it. All `std::fs` operations in async paths are `spawn_blocking`-wrapped.
+`ConfigStore` (`state/config.rs`) owns `Config` and persistence together — see ADR-0003. The single entry point for callers is `mutate_and_persist`: it applies a closure under the write lock immediately (in-memory change is visible at once) and schedules a debounced 500ms disk write. Rapid sequential calls coalesce — only the last write fires within the window, preventing bursts of Setting saves from pounding the disk. The write itself is offloaded via `spawn_blocking` so async workers are never blocked on file I/O. A `save_lock` (`Mutex<()>`, `Arc`-wrapped so the spawned task can hold it) serialises concurrent writes — acquired after cloning the config, so the config read lock is not held during I/O. There is no public `save` or `mutate` — callers always go through `mutate_and_persist`. In tests, `SAVE_DEBOUNCE_MS` is 0 and `flush()` lets a test confirm disk state synchronously after a mutation.
 
 ## ALL Mode (Broadcast)
 
