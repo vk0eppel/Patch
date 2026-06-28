@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' show Color;
 
 import '../models/channel.dart';
 import '../models/config.dart';
@@ -9,9 +8,6 @@ import '../src/rust/api.dart' as rust;
 import '../src/rust/frb_generated.dart';
 import '../src/rust/osc/types.dart' as rust_osc;
 import '../src/rust/state/channel.dart' as rust_channel;
-import '../src/rust/state/config.dart' as rust_config;
-import '../src/rust/state/peer.dart' as rust_peer;
-import '../src/rust/state/show_file.dart' as rust_show_file;
 import '../src/rust/transport.dart' as rust_transport;
 
 /// Façade over the `flutter_rust_bridge`-generated engine API.

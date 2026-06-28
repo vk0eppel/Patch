@@ -12,7 +12,7 @@ export 'flash_model.dart' show FlashState, FlashSettings;
 
 class FlashApplicator extends ChangeNotifier {
   FlashApplicator({
-    required SelectionController selectionController,
+    required this._selectionController,
     required Stream<PatchEvent> pushes,
     bool showPeers = false,
     int flashCount = 4,
@@ -21,10 +21,9 @@ class FlashApplicator extends ChangeNotifier {
     List<PatchChannel> channels = const [],
     Color broadcastColor = Colors.white,
     Color dmColor = Colors.blue,
-    Future<void> Function()? onAlert,
-    Future<void> Function(Color, int)? onPulseOverlay,
-  })  : _selectionController = selectionController,
-        _channels = List.of(channels),
+    this._onAlert,
+    this._onPulseOverlay,
+  })  : _channels = List.of(channels),
         _settings = fm.FlashSettings(
           flashCount: flashCount,
           flashOnCritical: flashOnCritical,
@@ -32,9 +31,7 @@ class FlashApplicator extends ChangeNotifier {
           broadcastColor: broadcastColor,
           dmColor: dmColor,
           showPeers: showPeers,
-        ),
-        _onAlert = onAlert,
-        _onPulseOverlay = onPulseOverlay {
+        ) {
     _pushSub = pushes.listen(_handlePush);
   }
 
