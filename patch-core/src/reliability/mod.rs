@@ -168,7 +168,9 @@ impl ReliabilityManager {
                 unacked_peers.len(),
                 entry.retries
             );
-            result.retransmits.push((*id, entry.bytes.clone(), unacked_addrs));
+            result
+                .retransmits
+                .push((*id, entry.bytes.clone(), unacked_addrs));
         }
 
         for id in to_drop {
@@ -270,7 +272,11 @@ mod tests {
         let id = Uuid::new_v4();
         let p1 = Uuid::new_v4();
         let p2 = Uuid::new_v4();
-        r.track(id, vec![1, 2, 3], vec![peer_target(p1, &[1]), peer_target(p2, &[2])]);
+        r.track(
+            id,
+            vec![1, 2, 3],
+            vec![peer_target(p1, &[1]), peer_target(p2, &[2])],
+        );
         assert_eq!(r.ack(id, p1), Some((1, 2))); // progress
         assert_eq!(r.ack(id, p2), Some((2, 2))); // all acked — completes
         assert!(r.drain_retransmits().retransmits.is_empty());
@@ -319,7 +325,11 @@ mod tests {
         let id = Uuid::new_v4();
         let p1 = Uuid::new_v4();
         let p2 = Uuid::new_v4();
-        r.track(id, vec![0], vec![peer_target(p1, &[1]), peer_target(p2, &[2])]);
+        r.track(
+            id,
+            vec![0],
+            vec![peer_target(p1, &[1]), peer_target(p2, &[2])],
+        );
         assert_eq!(r.ack(id, p1), Some((1, 2)));
         assert_eq!(r.ack(id, p1), Some((1, 2))); // same peer — count unchanged
         assert_eq!(r.ack(id, p2), Some((2, 2)));
@@ -465,10 +475,7 @@ mod tests {
             7,
             id,
             vec![0],
-            vec![
-                (offline_id, vec![addr(1)]),
-                (online_id, vec![addr(2)]),
-            ],
+            vec![(offline_id, vec![addr(1)]), (online_id, vec![addr(2)])],
         )
         .await;
 

@@ -442,10 +442,8 @@ impl AppState {
         let static_peers = self.0.config.read(|c| c.static_peers.clone()).await;
         // All SocketAddrs already known dynamically — static entries whose
         // address is already covered by a dynamic peer are suppressed.
-        let known_addrs: std::collections::HashSet<std::net::SocketAddr> = peers
-            .iter()
-            .flat_map(|p| p.all_addrs())
-            .collect();
+        let known_addrs: std::collections::HashSet<std::net::SocketAddr> =
+            peers.iter().flat_map(|p| p.all_addrs()).collect();
 
         for sp in &static_peers {
             let sp_addr: Option<std::net::SocketAddr> = sp
@@ -975,10 +973,7 @@ mod tests {
         let a = st.get_peers().await;
         assert_eq!(a.len(), 1);
         assert!(matches!(a[0].discovery_mode, peer::DiscoveryMode::ManualIp));
-        assert_eq!(
-            a[0].best_addr(),
-            Some("192.168.1.50:9000".parse().unwrap())
-        );
+        assert_eq!(a[0].best_addr(), Some("192.168.1.50:9000".parse().unwrap()));
         let b = st.get_peers().await;
         assert_eq!(a[0].peer_id, b[0].peer_id); // synthetic id stable across calls
     }
@@ -1170,10 +1165,7 @@ mod tests {
 
         let peers = st.get_peers().await;
         assert_eq!(peers.len(), 1);
-        assert_eq!(
-            peers[0].best_addr(),
-            Some("10.0.0.2:9001".parse().unwrap())
-        );
+        assert_eq!(peers[0].best_addr(), Some("10.0.0.2:9001".parse().unwrap()));
     }
 
     #[tokio::test]
@@ -1193,10 +1185,7 @@ mod tests {
         let peers = st.get_peers().await;
         assert_eq!(peers.len(), 1);
         assert_eq!(peers[0].peer_name, "newcomer");
-        assert_eq!(
-            peers[0].best_addr(),
-            Some("10.0.0.3:9002".parse().unwrap())
-        );
+        assert_eq!(peers[0].best_addr(), Some("10.0.0.3:9002".parse().unwrap()));
     }
 
     #[tokio::test]

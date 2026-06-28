@@ -141,7 +141,12 @@ pub(crate) async fn handle(
                     })
                     .await;
                 if delivered >= total {
-                    state.publish(AppEvent::MessageAcked { message_id, peer_id }).await;
+                    state
+                        .publish(AppEvent::MessageAcked {
+                            message_id,
+                            peer_id,
+                        })
+                        .await;
                 }
             }
         }
@@ -213,8 +218,7 @@ pub(crate) async fn handle(
                     // injected critical doesn't retransmit against peers already
                     // known to be gone. Use peer-keyed targets for ACK matching.
                     if msg.is_critical() {
-                        let peer_targets =
-                            state.reachable_peers_with_addrs(config.client_id).await;
+                        let peer_targets = state.reachable_peers_with_addrs(config.client_id).await;
                         crate::reliability::track_critical(
                             reliability,
                             state,
@@ -789,12 +793,9 @@ mod tests {
 
         // Second delivery should be silent — no more events.
         assert!(
-            tokio::time::timeout(
-                std::time::Duration::from_millis(50),
-                events.recv()
-            )
-            .await
-            .is_err(),
+            tokio::time::timeout(std::time::Duration::from_millis(50), events.recv())
+                .await
+                .is_err(),
             "duplicate message must not produce a second event"
         );
     }

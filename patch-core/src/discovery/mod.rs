@@ -142,7 +142,11 @@ impl Discovery {
                                     timestamp: Utc::now(),
                                 };
                                 browse_state
-                                    .record_sighting(PeerSighting::Mdns(presence), String::new(), port)
+                                    .record_sighting(
+                                        PeerSighting::Mdns(presence),
+                                        String::new(),
+                                        port,
+                                    )
                                     .await;
                             } else {
                                 for addr in addrs {
@@ -250,7 +254,9 @@ impl Discovery {
                 // Shed dead per-peer address paths at 3× heartbeat interval
                 // without expiring the peer itself — liveness classification
                 // is driven by last_seen, not by which addresses remain.
-                hb_state.prune_peer_addresses(cfg.heartbeat_interval_secs).await;
+                hb_state
+                    .prune_peer_addresses(cfg.heartbeat_interval_secs)
+                    .await;
 
                 // Peers are never auto-expired — they stay in the list for the
                 // whole session. The Flutter side uses lastSeen to show green/gray.
