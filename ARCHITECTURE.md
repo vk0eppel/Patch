@@ -67,7 +67,7 @@ The whole-screen overlay exists because the in-app pulse is invisible if Patch i
 
 ## Discovery & Broadcast
 
-The socket always binds `0.0.0.0` so it receives on all interfaces including broadcasts. `network_interface` only scopes which NIC the discovery beacon is *announced* on. Changing it is live: the heartbeat picks it up on the next tick, and `set_network_interface` immediately clears all dynamically-discovered peers (OscBeacon/Mdns) so the peer list rebuilds cleanly via the new NIC's discovery. ManualIp/static peers are kept.
+The socket always binds `0.0.0.0` so it receives on all interfaces including broadcasts. `network_interface` only scopes which NIC the discovery beacon is *announced* on. Changing it is live: the heartbeat picks it up on the next tick. When switching *to* a pinned interface, dynamic peers (OscBeacon/Mdns) are cleared so the peer list rebuilds cleanly via the new NIC's discovery; when switching *to* auto mode (`None`), peers are preserved and per-address pruning at 3× heartbeat handles dead paths on other interfaces. ManualIp/static peers are always kept.
 
 Presence heartbeats go to:
 - `255.255.255.255` — load-bearing on macOS (the only broadcast address macOS delivers to apps)
@@ -81,7 +81,7 @@ Peers never auto-expire. Liveness classification (`Peer::status` in `state/peer.
 
 **mDNS liveness rule:** a `PeerSighting::Mdns` sighting sets address+port but never updates `last_seen`. New mDNS-only peers are inserted already-stale (backdated 60 s). Reason: `mdns-sd` replays cached resolutions for ~1–2 min after a peer quits, so bumping `last_seen` there kept departed peers green past the heartbeat window and undid `/patch/bye` expiry.
 
-**An empty `address` (`pick_resolved_address` returning `None` — pinned interface, unresolved subnet) must never overwrite a peer's address, for an already-known peer *or* a brand-new one.** `record_sighting`'s `Mdns` arm applies the same `if !address.is_empty()` guard in both its `Some` and `None` branches — a brand-new peer with no resolved address keeps `Peer::from_presence`'s empty-address default rather than getting one explicitly set, so `has_address()`/`socket_addr()` read it as unreachable instead of address == `""`.
+**Unresolvable mDNS addresses (pinned interface, no subnet match) must not be added to a peer's address map.** `pick_resolved_addresses` returns an empty `Vec` when no resolved address matches the pinned subnet; `record_sighting`'s `Mdns` arm skips `add_address()` when the address string is empty, so `has_address()` returns `false` and the peer appears in the panel as unreachable until an OSC presence heartbeat supplies a usable address.
 
 Self-discovery is filtered in two places: mDNS `ServiceResolved` and every `protocol::handle` arm that registers a sender both call the shared `state::is_self(id, client_id)` predicate (named so the rule is grep-able instead of an inline `==` that looks safe to drop — see ERRORS.md). Both call sites are necessary.
 
@@ -119,13 +119,13 @@ macOS requires CoreMIDI + CoreAudio frameworks explicitly in `patch_app/rust_bui
 
 ## Reliability (Critical Messages)
 
-Critical (`priority=3`) messages are tracked by `ReliabilityManager`. Receivers ACK via `/patch/ack`. A 100ms poller retransmits unacked messages per-target with exponential backoff (2^retries ticks × 100ms, up to `MAX_RETRIES = 5`). ACKs are matched by source `SocketAddr`, not `peer_id`. Delivery progress emitted as `MessageDelivery` events to Flutter (amber N/M → green ✓ → red ⚠).
+Critical (`priority=3`) messages are tracked by `ReliabilityManager`. Receivers ACK via `/patch/ack`. A 100ms poller retransmits unacked messages per-target with exponential backoff (2^retries ticks × 100ms, up to `MAX_RETRIES = 5`). ACKs are matched by `peer_id` (Uuid), not source `SocketAddr` — essential for multi-VLAN setups where a peer ACKs from a different address than the one the critical message was sent to. `InFlight` tracks `(message_id, peer_id)` pairs; retransmit fans out to all known addresses of unacked peers. Delivery progress emitted as `MessageDelivery` events to Flutter (amber N/M → green ✓ → red ⚠).
 
 `reliability::track_critical` skips ACK-tracking for any target that `Peer::looks_offline` (`state/peer.rs`) flags — a clean departure, or quiet for 5x the heartbeat interval. The best-effort send itself still goes to every contacted peer regardless; only the pointless retransmit/failure-warning cycle against a peer already known to be gone is skipped. `ManualIp` (static) peers are exempt from the staleness half of this check — they never heartbeat, so silence doesn't mean anything for *this* question (whether to bother tracking an ACK). That's a different question from the peers panel's grey dot or the DM-offline warning, which both want a `ManualIp` peer to read as not-proven-live — see `Peer::status` (used by both, via `PeerSnapshot`/`PeerInfo.status`) for that classification. Both `dispatch_message` (`api.rs`, typed/macro/MIDI sends) and the `/patch/say` external-OSC relay (`protocol::handle`) call `track_critical` — a critical injected via Say gets the same offline filter as a hand-sent one. `reliability::report_delivery_failure` is the other shared half: the only two places a Critical Message's delivery is ever declared failed (no peers to send to; exceeded `MAX_RETRIES`) both publish through it, so they can't drift on field shape.
 
 `send_to_peers` deduplicates by `SocketAddr`. Static peers are already merged in via `get_peers()` — never add a separate `config.static_peers` loop. The skip-self/has-address/dedup target resolution itself lives in `AppState::reachable_peer_addrs` — shared with the `/patch/say` relay in `handle_event`, which sends the same target list a different way (queued via `send_tx` instead of direct socket send). Don't reimplement the resolution inline at a new send call site; call `reachable_peer_addrs`.
 
-Resolving a single peer's address (DM send, DM flash, channels-request, shutdown's `/patch/bye` unicast) goes through `Peer::socket_addr() -> Option<SocketAddr>` (`state/peer.rs`) — the one place that turns `address`/`osc_port` into something sendable, `None` covering both "no address yet" and "unparseable address". Don't re-parse `peer.address` inline; call `socket_addr()`.
+Resolving a peer's address for single-target sends (DM, DM flash, channels-request) goes through `Peer::best_addr() -> Option<SocketAddr>` (`state/peer.rs`) — returns the most-recently-seen address from the peer's `addresses` map, `None` if the map is empty. For multi-path sends (channel messages, shutdown's `/patch/bye`), use `all_addrs()` to reach every known address. Don't access `peer.addresses` inline; call `best_addr()` or `all_addrs()`.
 
 ## Config I/O
 
