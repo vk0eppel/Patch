@@ -471,7 +471,10 @@ mod tests {
         assert_eq!(presence.peer_id, id);
         let listed = reg.list().await;
         assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].best_addr(), Some("10.0.0.1:9000".parse().unwrap()));
+        assert_eq!(
+            listed[0].best_addr(),
+            Some("10.0.0.1:9000".parse().unwrap())
+        );
     }
 
     #[tokio::test]
