@@ -262,6 +262,86 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn round_trip_preserves_static_peers() {
+        let _guard = test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        set_data_dir(dir.clone());
+
+        use crate::state::config::StaticPeer;
+        let peer = StaticPeer {
+            address: "192.168.1.10".into(),
+            port: 9000,
+            label: Some("Stage Manager".into()),
+        };
+        let sf = ShowFileConfig::new("Night One", Vec::new(), vec![peer]);
+        let slug = save_show_file(&sf).unwrap();
+        let loaded = load_show_file(&slug).unwrap();
+
+        assert_eq!(loaded.static_peers.len(), 1);
+        assert_eq!(loaded.static_peers[0].address, "192.168.1.10");
+        assert_eq!(
+            loaded.static_peers[0].label.as_deref(),
+            Some("Stage Manager")
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn load_corrupt_toml_returns_err_without_panic() {
+        let _guard = test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        set_data_dir(dir.clone());
+
+        let show_dir = dir.join("show_files");
+        std::fs::create_dir_all(&show_dir).unwrap();
+        std::fs::write(show_dir.join("corrupt.toml"), b"not toml ][[[").unwrap();
+
+        assert!(load_show_file("corrupt").is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn list_ignores_non_toml_files() {
+        let _guard = test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        set_data_dir(dir.clone());
+
+        save_show_file(&make_show_file("Real Show")).unwrap();
+        let show_dir = dir.join("show_files");
+        std::fs::write(show_dir.join("readme.txt"), b"ignore me").unwrap();
+        std::fs::write(show_dir.join("backup.json"), b"{}").unwrap();
+
+        let files = list_show_files().unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].name, "Real Show");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn list_skips_corrupt_toml_and_returns_valid_entries() {
+        let _guard = test_data_dir_guard().await;
+        let dir = std::env::temp_dir().join(format!("patch-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        set_data_dir(dir.clone());
+
+        save_show_file(&make_show_file("Good Show")).unwrap();
+        let show_dir = dir.join("show_files");
+        std::fs::write(show_dir.join("corrupt.toml"), b"not toml ][[[").unwrap();
+
+        let files = list_show_files().unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].name, "Good Show");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
     async fn delete_removes_file_and_second_delete_is_noop() {
         let _guard = test_data_dir_guard().await;
         let dir = std::env::temp_dir().join(format!("patch-test-{}", uuid::Uuid::new_v4()));

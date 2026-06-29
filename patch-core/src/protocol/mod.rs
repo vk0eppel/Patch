@@ -187,7 +187,7 @@ async fn handle_direct_flash(
     Vec::new()
 }
 
-async fn handle_ack(
+pub(crate) async fn handle_ack(
     message_id: Uuid,
     peer_id: Uuid,
     state: &AppState,
@@ -218,7 +218,7 @@ async fn handle_ack(
     Vec::new()
 }
 
-async fn handle_presence(
+pub(crate) async fn handle_presence(
     p: PeerPresence,
     from: SocketAddr,
     state: &AppState,
@@ -960,5 +960,99 @@ mod tests {
                 .is_err(),
             "duplicate must be dropped by handle_message directly"
         );
+    }
+
+    // ── per-arm unit tests (#109) ─────────────────────────────────────────────
+
+    /// `handle_presence` called directly — a non-self presence packet records
+    /// the peer sighting without going through the full router.
+    #[tokio::test]
+    async fn handle_presence_records_peer_sighting() {
+        use crate::osc::types::PeerPresence;
+
+        let client_id = Uuid::new_v4();
+        let peer_id = Uuid::new_v4();
+        let state = test_state_with_id(client_id);
+
+        let presence = PeerPresence {
+            peer_id,
+            peer_name: "Stage Manager".into(),
+            channels: Vec::new(),
+            role: None,
+            timestamp: chrono::Utc::now(),
+        };
+
+        let out = handle_presence(presence, addr(5), &state, client_id).await;
+
+        assert!(out.is_empty());
+        let peers = state.get_peers().await;
+        assert!(
+            peers.iter().any(|p| p.peer_id == peer_id),
+            "peer sighting should be recorded"
+        );
+    }
+
+    /// `handle_presence` with self peer_id is a no-op — own heartbeats must
+    /// not create a self-entry in the peer list.
+    #[tokio::test]
+    async fn handle_presence_ignores_own_heartbeat() {
+        use crate::osc::types::PeerPresence;
+
+        let client_id = Uuid::new_v4();
+        let state = test_state_with_id(client_id);
+
+        let presence = PeerPresence {
+            peer_id: client_id, // same as client_id → self
+            peer_name: "Self".into(),
+            channels: Vec::new(),
+            role: None,
+            timestamp: chrono::Utc::now(),
+        };
+
+        handle_presence(presence, addr(1), &state, client_id).await;
+
+        assert!(state.get_peers().await.is_empty());
+    }
+
+    /// `handle_ack` called directly — resolves the correct (message_id, peer_id)
+    /// pair and publishes delivery progress without going through the full router.
+    #[tokio::test]
+    async fn handle_ack_resolves_correct_message_and_peer() {
+        let state = test_state();
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+        let message_id = Uuid::new_v4();
+        let peer_id = Uuid::new_v4();
+
+        // Register the message as expecting 1 ACK from peer_id.
+        let target_addr: SocketAddr = "10.0.0.5:9000".parse().unwrap();
+        reliability.lock().await.track(
+            message_id,
+            b"bytes".to_vec(),
+            vec![(peer_id, vec![target_addr])],
+        );
+
+        let mut events = state.subscribe();
+
+        let out = handle_ack(message_id, peer_id, &state, &reliability).await;
+
+        assert!(out.is_empty());
+        // Delivery progress event should have been published.
+        let evt = tokio::time::timeout(std::time::Duration::from_millis(100), events.recv())
+            .await
+            .expect("timed out waiting for event")
+            .unwrap();
+        match evt {
+            AppEvent::MessageDelivery {
+                message_id: mid,
+                delivered,
+                total,
+                ..
+            } => {
+                assert_eq!(mid, message_id);
+                assert_eq!(delivered, 1);
+                assert_eq!(total, 1);
+            }
+            other => panic!("unexpected event: {:?}", other),
+        }
     }
 }
