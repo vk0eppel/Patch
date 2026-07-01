@@ -246,10 +246,12 @@ impl PeerRegistry {
                     // `Heartbeat`/`Presence` sighting, never from here.
                     if !address.is_empty() && port > 0 {
                         if let Ok(ip) = address.parse::<std::net::IpAddr>() {
-                            // Use existing last_seen as the address timestamp — mDNS
-                            // doesn't prove liveness, so we don't bump last_seen.
-                            let ts = peer.last_seen;
-                            peer.add_address(SocketAddr::new(ip, port), ts);
+                            // Stamp with now — mDNS doesn't prove peer liveness
+                            // (last_seen stays unchanged), but it IS fresh evidence
+                            // this address path is usable. Using peer.last_seen here
+                            // would cause the address to be pruned immediately for
+                            // mDNS-only peers whose last_seen is backdated.
+                            peer.add_address(SocketAddr::new(ip, port), Utc::now());
                         }
                     }
                     peer.discovery_mode = DiscoveryMode::Mdns;
@@ -264,13 +266,14 @@ impl PeerRegistry {
                 None => {
                     let mut new_peer = Peer::from_presence(presence.clone());
                     new_peer.discovery_mode = DiscoveryMode::Mdns;
+                    let now = Utc::now();
                     if !address.is_empty() && port > 0 {
                         if let Ok(ip) = address.parse::<std::net::IpAddr>() {
-                            new_peer.add_address(SocketAddr::new(ip, port), new_peer.last_seen);
+                            new_peer.add_address(SocketAddr::new(ip, port), now);
                         }
                     }
                     // Backdate past the UI's stale threshold so the dot starts grey.
-                    new_peer.last_seen = chrono::Utc::now() - chrono::Duration::seconds(60);
+                    new_peer.last_seen = now - chrono::Duration::seconds(60);
                     peers.insert(presence.peer_id, new_peer);
                     presence
                 }
@@ -566,6 +569,51 @@ mod tests {
         let p = &reg.list().await[0];
         // Backdated 60s — already past a typical (e.g. 7s) 5x-heartbeat window.
         assert!(p.is_stale(35));
+    }
+
+    #[tokio::test]
+    async fn mdns_reresolution_of_offline_peer_keeps_address_fresh() {
+        let reg = PeerRegistry::default();
+        let id = Uuid::new_v4();
+        // First mDNS resolution — creates peer with backdated last_seen.
+        reg.record_sighting(
+            PeerSighting::Mdns(PeerPresence {
+                peer_id: id,
+                peer_name: "p".into(),
+                channels: Vec::new(),
+                role: None,
+                timestamp: Utc::now(),
+            }),
+            "10.0.0.1".into(),
+            9000,
+        )
+        .await;
+        assert!(reg.list().await[0].is_stale(35)); // peer is Offline (backdated)
+
+        // Second mDNS re-resolution — mdns-sd does this periodically.
+        // Must NOT inherit the old backdated last_seen as the address timestamp.
+        reg.record_sighting(
+            PeerSighting::Mdns(PeerPresence {
+                peer_id: id,
+                peer_name: "p".into(),
+                channels: Vec::new(),
+                role: None,
+                timestamp: Utc::now(),
+            }),
+            "10.0.0.1".into(),
+            9000,
+        )
+        .await;
+
+        // Address must survive a 3×7s = 21s prune window (stamped with now).
+        let prune_threshold = Utc::now() - chrono::Duration::seconds(21);
+        let peers = reg.list().await;
+        assert!(
+            peers[0].addresses.values().all(|t| *t >= prune_threshold),
+            "mDNS re-resolution must refresh address timestamp to now, not inherit backdated last_seen"
+        );
+        // Peer is still Offline — mDNS alone doesn't prove liveness.
+        assert!(peers[0].is_stale(35));
     }
 
     #[tokio::test]
