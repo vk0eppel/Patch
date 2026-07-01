@@ -24,6 +24,21 @@ Peers announce themselves every 7 seconds. Wait up to 10 seconds after everyone 
 
 ---
 
+## Peer appears in the list but stays Offline (grey dot)
+
+**1. Windows: firewall is blocking inbound OSC packets**
+This is the most common cause on Windows. Patch is discovered via mDNS (which uses the system resolver, so it bypasses the per-app firewall), but OSC heartbeats — which are what actually move the dot from grey to green — arrive on a UDP socket that Windows blocks until the app is explicitly allowed through.
+
+Fix: **Windows Security → Firewall & network protection → Allow an app through firewall → Allow another app → browse to Patch.exe**. Or, to quickly confirm this is the cause, temporarily disable the firewall profile for your test network, watch the peer go green, then re-enable and add the exception.
+
+**2. The peer is there but not sending heartbeats yet**
+Wait up to 10 seconds (one heartbeat interval). A peer that just joined won't be green until its first broadcast is received.
+
+**3. Network path is one-way**
+Your machine can see the peer's mDNS announcement but OSC packets are dropped in the other direction (different VLAN, AP isolation, firewall on the remote device). Try sending a message to the peer — if it arrives on their side, the issue is inbound-only on yours. Adding a static peer entry for them may also bypass the problem by establishing a direct unicast path.
+
+---
+
 ## Messages not sending / peers not receiving
 
 **1. No peers in the list**
@@ -64,7 +79,7 @@ Peers never auto-expire in Patch — they stay in the panel while the app is ope
 - A Patch restart on that device (the peer re-registers within one heartbeat)
 - A show file load that replaced the channel list (peers are unaffected)
 
-If a peer's dot turns grey, it means no packet (message, flash, or heartbeat) has been received from them in the last 35 seconds — but the peer is still remembered and will turn green again as soon as any packet arrives from them.
+If a peer's dot turns **amber**, they've gone quiet for ~14 s but are still considered reachable. If it turns **grey**, no packet has arrived in the last ~35 s (or they departed cleanly) — but the peer is still remembered and will return to green as soon as any packet arrives from them.
 
 ---
 

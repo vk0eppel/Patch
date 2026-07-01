@@ -28,7 +28,10 @@ The channels start **without** per-channel macros. Instead, a set of generic, cr
 | NO | info | F4 |
 | HOLD | warning | F5 |
 | PROBLEM W/ | critical | F6 |
-| CH1 · CH2 · CH3 · CH4 | info | — |
+| CH1 | info | — |
+| CH2 | info | — |
+| CH3 | info | — |
+| CH4 | info | — |
 
 This keeps a fresh install simple. Add **channel-specific** macros (e.g. RF "LOW BATT", STAGE "MEDICAL") per channel in **Settings → Channels & Macros** when your show needs them, and edit the global set in **Settings → Global Macros**.
 
@@ -182,7 +185,7 @@ created_at = "2026-05-28T09:00:00Z"
 [[channels]]
 id = "rf"
 display_name = "RF"
-color = "#F44336"
+color = "#1E88E5"
 flash_on_critical = true
 flash_on_message = false
 

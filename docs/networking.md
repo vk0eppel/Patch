@@ -15,8 +15,9 @@ Patch uses three discovery methods simultaneously. All three can be active at th
 | **Static IP** | Manually configured address:port entries that are always contacted | 📌 |
 
 Peers appear in the **PEERS panel** with:
-- 🟢 **Green dot** — heard from within the last 35 seconds (any packet: message, flash, or heartbeat)
-- ⚫ **Grey dot** — no recent activity, or manually configured (static IP)
+- 🟢 **Green dot** — heard from recently (within ~2× the heartbeat interval, ≈14 s at defaults)
+- 🟡 **Amber dot** — going quiet (2–5× the interval, ≈14–35 s) — still remembered, just not answering
+- ⚫ **Grey dot** — no recent activity (>35 s), departed cleanly, or manually configured (static IP)
 
 Peers are remembered while the app is open and never auto-expire automatically. If a grey-dot peer sends or receives any message, their dot turns green immediately.
 
@@ -37,8 +38,6 @@ Patch **always listens on every interface**, so on most setups you can leave thi
 > 2. **Add each machine as a static peer** of the other (Settings → Static Peers) — that gives the bootstrap its first contact, and unicast takes over from there.
 
 > The NIC picker filters out loopback, virtual, and link-local-only interfaces automatically. Only real NICs with routable IPv4 addresses are shown.
-
-Changes take effect on the **next app restart** — the UDP socket is bound at startup.
 
 ---
 
@@ -74,7 +73,7 @@ On large touring or broadcast setups, different departments may be on separate V
 
 ## iOS and macOS Local Network permission
 
-On iOS 14+ and macOS 15+, the OS requires explicit permission before an app can send or receive on the local network.
+On iOS 14+ and macOS 12+, the OS requires explicit permission before an app can send or receive on the local network.
 
 On first run, you'll see a prompt: **"Patch would like to find and connect to devices on your local network."** Tap **Allow**.
 
@@ -90,7 +89,7 @@ If Patch is blocked, a red notification banner will appear in the app.
 
 Patch listens on UDP port **9000** by default. All peers must use the same port.
 
-To change the port: edit `patch.toml` directly (see `osc_port`). There is currently no UI for port changes — a restart is required.
+To change the port: go to **Settings → Network → OSC port** and enter the new value — the socket rebinds live, no restart needed. You can also edit `patch.toml` directly:
 
 ```toml
 osc_port = 9000   # Change here if needed

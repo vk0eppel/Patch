@@ -20,7 +20,12 @@ Patch finds other devices automatically using two methods:
 - **mDNS / Bonjour** — works on most local networks with no setup.
 - **OSC beacon** — broadcasts a presence packet every 7 seconds; works as a fallback when mDNS is blocked.
 
-Once a peer is online, they appear in the **PEERS panel** (right side of the screen) with a green dot. A grey dot means no packet has arrived from them in the last 35 seconds — they are still remembered and will turn green as soon as they send any message or heartbeat.
+Once a peer is online, they appear in the **PEERS panel** (right side of the screen). Dot colours:
+- 🟢 **Green** — recently active
+- 🟡 **Amber** — going quiet (no packet in the last ~14 s)
+- ⚫ **Grey** — offline, departed, or manually configured (static IP)
+
+Grey-dot peers are still remembered and turn green as soon as any packet arrives from them.
 
 > **On AP-isolated networks** (common in touring venues), devices on the same Wi-Fi AP can't see each other's broadcasts. Ask your PM or network engineer for the IP addresses of other Patch devices and add them under **Settings → Static Peers**.
 
@@ -32,7 +37,6 @@ Once a peer is online, they appear in the **PEERS panel** (right side of the scr
 
 Channels are your departments: AUDIO, RF, LIGHTING, VIDEO, STAGE, etc. Each channel has its own message feed and colour.
 
-- **Tap** a channel tab to focus it.
 - **Tap** a channel tab to toggle it in or out of the view. Multiple channels can be active at once — their feeds are combined and sorted by time. At least one channel is always selected.
 - **ALL tab** (pinned at the top, 📢) — shows every channel's traffic combined, and anything you send from it is a **crew-wide broadcast**: it reaches everyone in whatever channel they're viewing, even channels you don't have. Use it for all-department calls ("HOLD ALL", "LUNCH", a show stop). Broadcast messages show a 📢 and appear in every channel's feed.
 

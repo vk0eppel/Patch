@@ -40,14 +40,20 @@ directly to Patch — including full messages with priority and payload.
 
 ---
 
-### Option C — MIDI (requires MIDI trigger feature, planned)
+### Option C — MIDI (works today)
 
 Several Stream Deck plugins (e.g. *MIDI for Stream Deck*) let buttons send MIDI
-Note On events. Once MIDI-triggered macros are implemented in Patch, you can
-bind any macro to a MIDI note number and Stream Deck buttons will fire it
-automatically.
+Note On events. Bind any Patch macro to a MIDI note number in **Settings →
+Channels & Macros → [channel] → [macro] → MIDI trigger**, and Stream Deck
+buttons will fire it automatically.
 
-See [TODO.md](../TODO.md) — "MIDI-triggered macros" — for status.
+On **macOS and Linux**, Patch creates a virtual MIDI port named "Patch" — just
+pick it as the MIDI destination in the Stream Deck plugin. On **Windows**, use a
+loopback driver like [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html)
+and route through that port.
+
+See [Channels & Show Files → MIDI triggers](channels-and-show-files.md#midi-triggers)
+for the full setup.
 
 ---
 
