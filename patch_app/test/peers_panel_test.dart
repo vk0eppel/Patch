@@ -77,7 +77,8 @@ void main() {
 
   testWidgets('empty list shows the no-peers hint', (tester) async {
     await tester.pumpWidget(_host(const []));
-    expect(find.text('No peers yet'), findsOneWidget);
+    expect(find.text('Waiting for peers…'), findsOneWidget);
+    expect(find.text('Networking guide'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 

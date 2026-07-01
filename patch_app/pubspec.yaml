@@ -38,6 +38,7 @@ dependencies:
   flutter_rust_bridge: ^2.12.0
   freezed_annotation: ^3.1.0
   uuid: ^4.5.3
+  flutter_markdown_plus: ^1.0.7
   # Reads the bundle's own CFBundleShortVersionString/build number at runtime,
   # so the Settings footer can't drift from whatever Info.plist actually has
   # baked in — same source the OS-native About panel reads.
@@ -94,6 +95,12 @@ flutter:
   assets:
     - assets/icon/icon_master.png
     - assets/sounds/alert.wav
+    - ../docs/quick-start.md
+    - ../docs/networking.md
+    - ../docs/channels-and-show-files.md
+    - ../docs/osc-integration.md
+    - ../docs/integrations.md
+    - ../docs/troubleshooting.md
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

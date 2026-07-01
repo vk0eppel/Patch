@@ -582,6 +582,11 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
                     for (final k in _presenter.unreadDms) k.substring(3),
                   },
                   onRefresh: () => AppStoreScope.read(context).refreshPeers(),
+                  onOpenSettings: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => SettingsScreen(bridge: widget.bridge),
+                    ),
+                  ),
                 ),
               ),
             ),

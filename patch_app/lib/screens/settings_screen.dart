@@ -14,6 +14,7 @@ import '../theme/patch_theme.dart';
 import '../util/run_guarded.dart';
 import '../widgets/bounded_int_field.dart';
 import '../widgets/interface_picker.dart';
+import 'help_screen.dart';
 
 /// Settings screen — identity, channels, shortcuts, and show file management.
 class SettingsScreen extends StatefulWidget {
@@ -87,6 +88,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     'Behavior',
     'Global Macros',
     'Channels & Macros',
+    'Help',
   ];
   final List<GlobalKey> _sectionKeys =
       List.generate(_sectionTitles.length, (_) => GlobalKey());
@@ -795,7 +797,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 32),
 
           // ── Network ──────────────────────────────────────────────────────
-          KeyedSubtree(key: _sectionKeys[1], child: _SectionHeader('Network')),
+          KeyedSubtree(
+            key: _sectionKeys[1],
+            child: Row(children: [
+              const Expanded(child: _SectionHeader('Network')),
+              IconButton(
+                icon: const Icon(Icons.help_outline, size: 16),
+                color: PatchTheme.textMuted,
+                tooltip: 'Networking guide',
+                onPressed: () => openHelp(context, assetPath: '../docs/networking.md', title: 'Networking'),
+              ),
+            ]),
+          ),
           const SizedBox(height: 4),
           const Text(
             'Which network Patch announces discovery on. Patch always listens on every interface; '
@@ -887,6 +900,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onSubmit: (port) =>
                     _applyConfigChange(() => widget.bridge.setOscPort(port)),
               ),
+              IconButton(
+                icon: const Icon(Icons.help_outline, size: 16),
+                color: PatchTheme.textMuted,
+                tooltip: 'OSC integration guide',
+                onPressed: () => openHelp(context, assetPath: '../docs/osc-integration.md', title: 'OSC Integration'),
+              ),
             ],
           ),
 
@@ -898,6 +917,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Row(
               children: [
                 Expanded(child: _SectionHeader('Static Peers')),
+                IconButton(
+                  icon: const Icon(Icons.help_outline, size: 16),
+                  color: PatchTheme.textMuted,
+                  tooltip: 'Networking guide',
+                  onPressed: () => openHelp(context, assetPath: '../docs/networking.md', title: 'Networking'),
+                ),
                 TextButton.icon(
                   icon: const Icon(Icons.add, size: 16),
                   label: const Text('Add peer'),
@@ -1223,6 +1248,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
               )),
 
           const SizedBox(height: 32),
+
+          // ── Help & Documentation ──────────────────────────────────────────
+          KeyedSubtree(
+            key: _sectionKeys[6],
+            child: const _SectionHeader('Help & Documentation'),
+          ),
+          const SizedBox(height: 8),
+          ..._kHelpEntries.map((e) => ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.article_outlined, size: 18, color: PatchTheme.textMuted),
+                title: Text(e.label, style: const TextStyle(fontSize: PatchTheme.fontSizeSmall)),
+                onTap: () => openHelp(context, assetPath: e.assetPath, title: e.label),
+              )),
+
+          const SizedBox(height: 32),
           Center(
             child: Text(
               _versionLabel ?? '',
@@ -1237,6 +1278,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 }
+
+// ── Help entry descriptor ─────────────────────────────────────────────────────
+
+class _HelpEntry {
+  final String label;
+  final String assetPath;
+  const _HelpEntry(this.label, this.assetPath);
+}
+
+const _kHelpEntries = [
+  _HelpEntry('Quick Start',          '../docs/quick-start.md'),
+  _HelpEntry('Networking',           '../docs/networking.md'),
+  _HelpEntry('Channels & Show Files','../docs/channels-and-show-files.md'),
+  _HelpEntry('OSC Integration',      '../docs/osc-integration.md'),
+  _HelpEntry('Integrations',         '../docs/integrations.md'),
+  _HelpEntry('Troubleshooting',      '../docs/troubleshooting.md'),
+];
 
 // ── Settings rail ─────────────────────────────────────────────────────────────
 

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../models/message.dart';
+import '../screens/help_screen.dart';
 import '../theme/patch_theme.dart';
 
 /// Collapsible right panel showing online peers.
@@ -31,6 +32,10 @@ class PeersPanel extends StatefulWidget {
   /// peers and keep status dots current. No-op if omitted (e.g. in tests).
   final VoidCallback? onRefresh;
 
+  /// Opens the settings screen at the static-peers section. Used by the
+  /// empty-state hint when no peers have been discovered yet.
+  final VoidCallback? onOpenSettings;
+
   const PeersPanel({
     super.key,
     required this.peers,
@@ -39,6 +44,7 @@ class PeersPanel extends StatefulWidget {
     this.onDm,
     this.unreadPeerIds = const {},
     this.onRefresh,
+    this.onOpenSettings,
   });
 
   @override
@@ -98,12 +104,7 @@ class _PeersPanelState extends State<PeersPanel> {
           const Divider(color: PatchTheme.border, height: 1),
           Expanded(
             child: widget.peers.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No peers yet',
-                      style: TextStyle(color: PatchTheme.textMuted),
-                    ),
-                  )
+                ? _PeersEmptyState(onOpenSettings: widget.onOpenSettings)
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     itemCount: widget.peers.length,
@@ -141,6 +142,73 @@ class _PeersPanelState extends State<PeersPanel> {
   }
 }
 
+
+// ── Empty state ───────────────────────────────────────────────────────────────
+
+class _PeersEmptyState extends StatelessWidget {
+  final VoidCallback? onOpenSettings;
+  const _PeersEmptyState({this.onOpenSettings});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Waiting for peers…',
+            style: TextStyle(
+              color: PatchTheme.textSecondary,
+              fontSize: PatchTheme.fontSizeSmall,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Make sure Patch is running on other devices on the same network.',
+            style: TextStyle(color: PatchTheme.textMuted, fontSize: 11, height: 1.4),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              GestureDetector(
+                onTap: () => openHelp(context, assetPath: '../docs/networking.md', title: 'Networking'),
+                child: const Text(
+                  'Networking guide',
+                  style: TextStyle(
+                    color: PatchTheme.accent,
+                    fontSize: 11,
+                    decoration: TextDecoration.underline,
+                    decorationColor: PatchTheme.accent,
+                  ),
+                ),
+              ),
+              if (onOpenSettings != null)
+                GestureDetector(
+                  onTap: onOpenSettings,
+                  child: const Text(
+                    'Add a static peer',
+                    style: TextStyle(
+                      color: PatchTheme.accent,
+                      fontSize: 11,
+                      decoration: TextDecoration.underline,
+                      decorationColor: PatchTheme.accent,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 /// Explains the peer status dot at a glance — the thing an Operator actually
 /// reads (liveness), not how the peer was discovered.
