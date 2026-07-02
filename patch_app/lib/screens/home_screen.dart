@@ -12,6 +12,7 @@ import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
 import '../models/config.dart';
 import '../models/dm_thread.dart';
+import '../presenters/home_controller.dart';
 import '../presenters/home_presenter.dart';
 import '../models/message.dart';
 import '../models/selection.dart';
@@ -112,9 +113,6 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   late WorkspaceState _workspace;
   // Debounce timer for window move/resize saves.
   Timer? _windowSaveDebounce;
-  /// First-run name prompt: shown at most once per session. Reset on relaunch,
-  /// so an unnamed operator is nudged again next time but never nagged twice.
-  bool _namePromptShown = false;
   int get _macrosColumns => _config?.macrosColumns ?? 1;
   /// `hideKeyboard` is a mobile-only concept (keeping the software keyboard
   /// hidden until tapped) — gate its effect to iOS/Android so desktop always
@@ -128,8 +126,11 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
 
   late final HomePresenter _presenter;
   StreamSubscription<HomeCommand>? _commandSub;
-  final _configStreamCtrl = StreamController<AppConfig?>.broadcast();
-  final _peersStreamCtrl = StreamController<List<PeerInfo>>.broadcast();
+
+  /// Store→presenter wiring: stream fan-out, the one-shot name-prompt gate,
+  /// the first-load macros-panel default, and channel-set change detection
+  /// all live in [HomeController] so they're testable without this widget.
+  final _homeController = HomeController();
   /// Macros shown on every channel (configured once); fired on the currently-
   /// selected channel(s). Owned by the AppStore config (#56).
   List<MacroMessage> get _globalMacros => _config?.globalMacros ?? const [];
@@ -238,7 +239,6 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   }
 
   AppStore? _store;
-  List<String>? _lastChannelIds;
 
   @override
   void didChangeDependencies() {
@@ -252,8 +252,8 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
       _selectionController = SelectionController(store, widget.bridge);
       _presenter = HomePresenter(
         pushes: widget.bridge.pushes,
-        configStream: _configStreamCtrl.stream,
-        peersStream: _peersStreamCtrl.stream,
+        configStream: _homeController.configStream,
+        peersStream: _homeController.peersStream,
         supportsFlashOverlay: Platform.isMacOS || Platform.isWindows,
         selectionController: _selectionController,
         channelGetter: () => AppStoreScope.read(context).channels,
@@ -272,42 +272,28 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
     }
   }
 
+  /// Reduce a store notification via [HomeController] and apply the returned
+  /// effects — the controller decides, this widget only presents (ADR-0005).
   void _onStoreChanged() {
     final cfg = _store?.config;
-    _configStreamCtrl.add(cfg);
-    _peersStreamCtrl.add(_store?.peers ?? const []);
-    if (cfg != null) {
-      _maybeShowNamePrompt(
-        nameIsDefault: cfg.nameIsDefault,
-        currentName: cfg.clientName,
-      );
-      // First config load: if the Operator has never explicitly toggled the
-      // macros panel, derive the default from whether any macros are configured.
-      if (_workspace.showMacros == null) {
-        final hasMacros = cfg.globalMacros.isNotEmpty ||
-            (_store?.channels.any((c) => c.macros.isNotEmpty) ?? false);
-        setState(() {
-          _showMacros = hasMacros;
-          _workspace = _workspace.copyWith(showMacros: hasMacros);
-        });
-      }
+    final fx = _homeController.onStoreChanged(
+      config: cfg,
+      peers: _store?.peers ?? const [],
+      channelIds: (_store?.channels ?? const []).map((c) => c.id).toList(),
+      macrosPanelPreferenceSet: _workspace.showMacros != null,
+      anyMacrosConfigured: (cfg?.globalMacros.isNotEmpty ?? false) ||
+          (_store?.channels.any((c) => c.macros.isNotEmpty) ?? false),
+    );
+    if (fx.showNamePrompt && cfg != null) {
+      _showNamePromptFor(currentName: cfg.clientName);
     }
-    // Reconcile the selection only when the channel set actually changed (the
-    // listener fires on any store notify, incl. peers/config).
-    final channels = _store?.channels;
-    final ids = channels?.map((c) => c.id).toList();
-    if (ids != null && !_sameIds(ids, _lastChannelIds)) {
-      _lastChannelIds = ids;
-      _reconcileSelectionWithChannels();
+    if (fx.defaultMacrosPanel case final hasMacros?) {
+      setState(() {
+        _showMacros = hasMacros;
+        _workspace = _workspace.copyWith(showMacros: hasMacros);
+      });
     }
-  }
-
-  static bool _sameIds(List<String> a, List<String>? b) {
-    if (b == null || a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
+    if (fx.reconcileSelection) _reconcileSelectionWithChannels();
   }
 
   /// Drop stale ids from a Channel selection (or seed the first channel when
@@ -324,8 +310,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     _store?.removeListener(_onStoreChanged);
     _commandSub?.cancel();
-    _configStreamCtrl.close();
-    _peersStreamCtrl.close();
+    _homeController.dispose();
     _presenter.dispose();
     _alertPlayer.dispose();
     super.dispose();
@@ -386,20 +371,10 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
 
   // ── Event dispatch ──────────────────────────────────────────────────────────
 
-  /// Show the first-run name prompt once per session when the display name is
-  /// still the system default. Deferred to a post-frame callback so there's a
-  /// built, mounted context to push the dialog onto.
-  void _maybeShowNamePrompt({
-    required bool nameIsDefault,
-    required String currentName,
-  }) {
-    if (!shouldShowNamePrompt(
-      nameIsDefault: nameIsDefault,
-      alreadyShown: _namePromptShown,
-    )) {
-      return;
-    }
-    _namePromptShown = true; // once per session, whatever the outcome
+  /// Show the first-run name prompt (gating decided by [HomeController]).
+  /// Deferred to a post-frame callback so there's a built, mounted context to
+  /// push the dialog onto.
+  void _showNamePromptFor({required String currentName}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       showNamePrompt(
