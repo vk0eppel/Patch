@@ -8,9 +8,10 @@ name: Release
 #
 # The release is created as a DRAFT so you can review the artifacts and notes
 # before publishing. Artifacts are unsigned: macOS is ad-hoc signed
-# (CODE_SIGN_IDENTITY = "-"), so first launch shows a Gatekeeper warning
-# (right-click → Open, or `xattr -dr com.apple.quarantine Patch.app`); Windows
-# is unsigned (SmartScreen "More info → Run anyway"). Real codesigning/
+# (CODE_SIGN_IDENTITY = "-"), so first launch after opening the DMG shows a
+# Gatekeeper warning (right-click → Open, or
+# `xattr -dr com.apple.quarantine Patch.app`); Windows is unsigned, so the
+# installer trips SmartScreen ("More info → Run anyway"). Real codesigning/
 # notarization would need certs added as repo secrets — out of scope here.
 #
 # NB the release name comes from the tag. Keep the tag aligned with
@@ -62,6 +63,22 @@ jobs:
         working-directory: patch_app
         run: flutter pub get
 
+      # Single source of truth for the artifact version — the same
+      # pubspec.yaml `version:` that sets the in-app bundle version (per
+      # CONVENTION.md's release process), so the filename and the shipped
+      # app version can never disagree.
+      - name: Read version
+        id: version
+        shell: bash
+        working-directory: patch_app
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: *//' | cut -d'+' -f1)
+          if [ -z "$VERSION" ]; then
+            echo "Failed to parse version from pubspec.yaml" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       # ── macOS ────────────────────────────────────────────────────────────
       - name: Add Rust targets (macOS universal)
         if: matrix.platform == 'macos'
@@ -76,7 +93,15 @@ jobs:
       - name: Package macOS
         if: matrix.platform == 'macos'
         working-directory: patch_app/build/macos/Build/Products/Release
-        run: ditto -c -k --keepParent Patch.app "$GITHUB_WORKSPACE/Patch-macos.zip"
+        # A DMG with Patch.app next to an /Applications symlink gives the
+        # standard "drag to install" UX, instead of a bare zip.
+        run: |
+          mkdir dmg-staging
+          cp -R Patch.app dmg-staging/
+          ln -s /Applications dmg-staging/Applications
+          hdiutil create -volname "Patch ${{ steps.version.outputs.version }}" \
+            -srcfolder dmg-staging -ov -format UDZO \
+            "$GITHUB_WORKSPACE/Patch-${{ steps.version.outputs.version }}-macos.dmg"
 
       # ── Windows ──────────────────────────────────────────────────────────
       - name: Build Windows
@@ -91,14 +116,22 @@ jobs:
       - name: Package Windows
         if: matrix.platform == 'windows'
         shell: pwsh
-        # Zip the whole Release folder — the .exe needs its sibling DLLs + data/.
-        run: Compress-Archive -Path patch_app/build/windows/x64/runner/Release/* -DestinationPath Patch-windows.zip
+        # Compile the Inno Setup installer script. Preinstalled on
+        # windows-latest runners as ISCC.exe.
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
+            /DMyAppVersion=${{ steps.version.outputs.version }} `
+            /DMySourceDir="${{ github.workspace }}\patch_app\build\windows\x64\runner\Release" `
+            /DMyOutputDir="${{ github.workspace }}" `
+            patch_app\windows\installer\patch.iss
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: patch-${{ matrix.platform }}
-          path: Patch-*.zip
+          path: |
+            Patch-*.dmg
+            Patch-*.exe
           if-no-files-found: error
 
   release:
@@ -116,6 +149,8 @@ jobs:
       - name: Create draft release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/*.zip
+          files: |
+            artifacts/*.dmg
+            artifacts/*.exe
           generate_release_notes: true
           draft: true
