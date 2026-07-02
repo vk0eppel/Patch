@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/channel.dart';
+import '../models/config.dart';
 import '../models/events.dart';
 import '../models/flash_model.dart' as fm
     show
@@ -54,28 +55,30 @@ final class PlayAlert extends HomeCommand {
 class HomePresenter extends ChangeNotifier {
   HomePresenter({
     required Stream<PatchEvent> pushes,
+    Stream<AppConfig?>? configStream,
+    this.supportsFlashOverlay = false,
     this._selectionController,
     List<PatchChannel> Function()? channelGetter,
     bool showPeers = false,
-    int flashCount = 4,
-    bool flashOnCritical = true,
-    bool flashOnMessage = false,
     Color broadcastColor = Colors.white,
     Color dmColor = Colors.blue,
   })  : _channelGetter = channelGetter ?? (() => const []),
         _settings = fm.FlashSettings(
-          flashCount: flashCount,
-          flashOnCritical: flashOnCritical,
-          flashOnMessage: flashOnMessage,
           broadcastColor: broadcastColor,
           dmColor: dmColor,
           showPeers: showPeers,
+          flashCount: 4,
+          flashOnCritical: true,
+          flashOnMessage: false,
         ) {
     _pushSub = pushes.listen(_handlePush);
+    _configSub = configStream?.listen(_applyConfig);
   }
 
+  final bool supportsFlashOverlay;
   final SelectionController? _selectionController;
   StreamSubscription<PatchEvent>? _pushSub;
+  StreamSubscription<AppConfig?>? _configSub;
   final _commandCtrl = StreamController<HomeCommand>.broadcast(sync: true);
 
   final List<PatchChannel> Function() _channelGetter;
@@ -86,14 +89,6 @@ class HomePresenter extends ChangeNotifier {
   // ── Settings setters ──────────────────────────────────────────────────────
 
   set showPeers(bool v) => _settings = _settings.copyWith(showPeers: v);
-  set flashCount(int v) => _settings = _settings.copyWith(flashCount: v);
-  set flashOnCritical(bool v) =>
-      _settings = _settings.copyWith(flashOnCritical: v);
-  set flashOnMessage(bool v) =>
-      _settings = _settings.copyWith(flashOnMessage: v);
-  set audibleAlert(bool v) => _settings = _settings.copyWith(audibleAlert: v);
-  set flashWholeScreen(bool v) =>
-      _settings = _settings.copyWith(flashWholeScreen: v);
 
   bool get showPeers => _settings.showPeers;
   int get flashCount => _settings.flashCount;
@@ -144,6 +139,18 @@ class HomePresenter extends ChangeNotifier {
 
   // ── Internal ──────────────────────────────────────────────────────────────
 
+  void _applyConfig(AppConfig? cfg) {
+    if (cfg == null) return;
+    _settings = _settings.copyWith(
+      flashCount: cfg.flashCount,
+      flashOnCritical: cfg.flashOnCritical,
+      flashOnMessage: cfg.flashOnMessage,
+      audibleAlert: cfg.audibleAlert,
+      flashWholeScreen: cfg.flashWholeScreen && supportsFlashOverlay,
+    );
+    notifyListeners();
+  }
+
   void _handlePush(PatchEvent event) {
     switch (event) {
       case DeliveryUpdated(:final messageId, :final status):
@@ -181,6 +188,7 @@ class HomePresenter extends ChangeNotifier {
   @override
   void dispose() {
     _pushSub?.cancel();
+    _configSub?.cancel();
     _commandCtrl.close();
     super.dispose();
   }

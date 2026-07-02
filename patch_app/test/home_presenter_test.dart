@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:patch/bridge/bridge_client.dart';
+import 'package:patch/models/config.dart';
 import 'package:patch/models/events.dart';
 import 'package:patch/models/channel.dart';
 import 'package:patch/models/flash_model.dart' show ChannelFlashEvent;
@@ -31,6 +32,25 @@ SelectionController _sel() => SelectionController(_FakeStore(), _FakeBridge());
 // Push helper — sync controller so events are delivered immediately in tests.
 StreamController<PatchEvent> _pushes() =>
     StreamController<PatchEvent>(sync: true);
+
+// Config helper — sync controller so config is applied immediately in tests.
+StreamController<AppConfig?> _configs() =>
+    StreamController<AppConfig?>(sync: true);
+
+AppConfig _cfg({bool audibleAlert = false, bool flashWholeScreen = false}) =>
+    AppConfig(
+      clientName: 'Test',
+      oscPort: 8000,
+      flashOnCritical: true,
+      flashOnMessage: false,
+      flashCount: 4,
+      macrosColumns: 2,
+      hideKeyboard: false,
+      audibleAlert: audibleAlert,
+      flashWholeScreen: flashWholeScreen,
+      heartbeatIntervalSecs: 5,
+      nameIsDefault: false,
+    );
 
 const _failedStatus = MessageDeliveryStatus(
   delivered: 0,
@@ -251,11 +271,14 @@ void main() {
   group('PlayAlert command', () {
     test('emitted when audibleAlert=true and selected channel is flashed', () {
       final ctrl = _pushes();
+      final cfgCtrl = _configs();
       final sel = _sel()..selectTab('rf');
       final presenter = HomePresenter(
         pushes: ctrl.stream,
+        configStream: cfgCtrl.stream,
         selectionController: sel,
-      )..audibleAlert = true;
+      );
+      cfgCtrl.add(_cfg(audibleAlert: true));
       final commands = <HomeCommand>[];
       presenter.commands.listen(commands.add);
 
@@ -269,11 +292,14 @@ void main() {
 
     test('not emitted when audibleAlert=false', () {
       final ctrl = _pushes();
+      final cfgCtrl = _configs();
       final sel = _sel()..selectTab('rf');
       final presenter = HomePresenter(
         pushes: ctrl.stream,
+        configStream: cfgCtrl.stream,
         selectionController: sel,
-      )..audibleAlert = false;
+      );
+      cfgCtrl.add(_cfg(audibleAlert: false));
       final commands = <HomeCommand>[];
       presenter.commands.listen(commands.add);
 
@@ -289,11 +315,15 @@ void main() {
   group('PulseOverlay command', () {
     test('emitted with color+count when flashWholeScreen=true and selected channel flashes', () {
       final ctrl = _pushes();
+      final cfgCtrl = _configs();
       final sel = _sel()..selectTab('rf');
       final presenter = HomePresenter(
         pushes: ctrl.stream,
+        configStream: cfgCtrl.stream,
+        supportsFlashOverlay: true,
         selectionController: sel,
-      )..flashWholeScreen = true;
+      );
+      cfgCtrl.add(_cfg(flashWholeScreen: true));
       final commands = <HomeCommand>[];
       presenter.commands.listen(commands.add);
 
@@ -310,11 +340,14 @@ void main() {
 
     test('not emitted when flashWholeScreen=false', () {
       final ctrl = _pushes();
+      final cfgCtrl = _configs();
       final sel = _sel()..selectTab('rf');
       final presenter = HomePresenter(
         pushes: ctrl.stream,
+        configStream: cfgCtrl.stream,
         selectionController: sel,
-      )..flashWholeScreen = false;
+      );
+      cfgCtrl.add(_cfg(flashWholeScreen: false));
       final commands = <HomeCommand>[];
       presenter.commands.listen(commands.add);
 

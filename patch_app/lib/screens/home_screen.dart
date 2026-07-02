@@ -107,9 +107,6 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   bool get _showPeers => _showPeersValue;
   set _showPeers(bool v) { _showPeersValue = v; _presenter.showPeers = v; }
   late bool _showMacros;
-  // Guards the one-shot conditional default so _onStoreChanged doesn't
-  // re-apply it every time config or channels update.
-  bool _macrosPanelDefaultApplied = false;
   // Full workspace state — panel flags + geometry kept together so a panel
   // toggle never clobbers previously-saved window geometry.
   late WorkspaceState _workspace;
@@ -131,6 +128,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
 
   late final HomePresenter _presenter;
   StreamSubscription<HomeCommand>? _commandSub;
+  final _configStreamCtrl = StreamController<AppConfig?>.broadcast();
   /// Macros shown on every channel (configured once); fired on the currently-
   /// selected channel(s). Owned by the AppStore config (#56).
   List<MacroMessage> get _globalMacros => _config?.globalMacros ?? const [];
@@ -295,6 +293,8 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
       _selectionController = SelectionController(store, widget.bridge);
       _presenter = HomePresenter(
         pushes: widget.bridge.pushes,
+        configStream: _configStreamCtrl.stream,
+        supportsFlashOverlay: Platform.isMacOS || Platform.isWindows,
         selectionController: _selectionController,
         channelGetter: () => AppStoreScope.read(context).channels,
         showPeers: _workspace.showPeers,
@@ -314,24 +314,21 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
 
   void _onStoreChanged() {
     final cfg = _store?.config;
+    _configStreamCtrl.add(cfg);
     if (cfg != null) {
-      _presenter.audibleAlert = cfg.audibleAlert;
-      _presenter.flashWholeScreen =
-          cfg.flashWholeScreen && (Platform.isMacOS || Platform.isWindows);
-      _presenter.flashCount = cfg.flashCount;
-      _presenter.flashOnCritical = cfg.flashOnCritical;
-      _presenter.flashOnMessage = cfg.flashOnMessage;
       _maybeShowNamePrompt(
         nameIsDefault: cfg.nameIsDefault,
         currentName: cfg.clientName,
       );
       // First config load: if the Operator has never explicitly toggled the
       // macros panel, derive the default from whether any macros are configured.
-      if (!_macrosPanelDefaultApplied && _workspace.showMacros == null) {
-        _macrosPanelDefaultApplied = true;
+      if (_workspace.showMacros == null) {
         final hasMacros = cfg.globalMacros.isNotEmpty ||
             (_store?.channels.any((c) => c.macros.isNotEmpty) ?? false);
-        if (hasMacros) setState(() => _showMacros = true);
+        setState(() {
+          _showMacros = hasMacros;
+          _workspace = _workspace.copyWith(showMacros: hasMacros);
+        });
       }
     }
     // Reconcile the selection only when the channel set actually changed (the
@@ -366,6 +363,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     _store?.removeListener(_onStoreChanged);
     _commandSub?.cancel();
+    _configStreamCtrl.close();
     _presenter.dispose();
     _alertPlayer.dispose();
     super.dispose();

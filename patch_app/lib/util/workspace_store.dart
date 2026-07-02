@@ -26,6 +26,12 @@ class WorkspaceState {
     this.windowHeight,
   });
 
+  /// First-run default: show the macros panel when macros are already configured
+  /// (e.g. from a shared show file), hide it when starting from a clean slate.
+  /// Used to initialise `showMacros` before the operator has explicitly toggled it.
+  factory WorkspaceState.withFirstRunDefaults({required bool hasMacros}) =>
+      WorkspaceState(showMacros: hasMacros);
+
   factory WorkspaceState.fromJson(Map<String, dynamic> json) => WorkspaceState(
         showPeers: json['showPeers'] as bool? ?? true,
         showMacros: json['showMacros'] as bool?,
