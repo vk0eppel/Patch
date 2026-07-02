@@ -89,7 +89,7 @@ pub(crate) async fn originate_for_relay(
             }
             if msg.is_critical() {
                 let peer_targets = state.reachable_peers_with_addrs(config.client_id).await;
-                crate::reliability::track_critical(
+                let tracked = crate::reliability::track_critical(
                     reliability,
                     state,
                     config.heartbeat_interval_secs,
@@ -98,6 +98,12 @@ pub(crate) async fn originate_for_relay(
                     peer_targets,
                 )
                 .await;
+                // Same rule as dispatch_channel_message: a critical that
+                // reaches nobody must say so, not look sent (#132).
+                if tracked == 0 {
+                    crate::reliability::report_delivery_failure(state, msg.message_id, 0, 0, &[])
+                        .await;
+                }
             }
         }
         Err(e) => warn!("Failed to encode OSC-injected message: {}", e),

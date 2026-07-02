@@ -177,6 +177,13 @@ impl PeerRegistry {
         match sighting {
             PeerSighting::Presence(presence) => {
                 let mut new_peer = Peer::from_presence(presence.clone());
+                // Liveness is clocked by local receive time, never the wire
+                // timestamp — a skewed sender clock (show LAN without NTP)
+                // otherwise reads a live peer as Stale/Offline and gets its
+                // address pruned every tick (#129). The wire timestamp is
+                // informational only.
+                let now = Utc::now();
+                new_peer.last_seen = now;
                 // Once a peer has been resolved via mDNS, keep that
                 // classification — a subsequent OSC presence heartbeat
                 // shouldn't downgrade the icon.
@@ -189,7 +196,7 @@ impl PeerRegistry {
                 }
                 if !address.is_empty() && port > 0 {
                     if let Ok(ip) = address.parse::<std::net::IpAddr>() {
-                        new_peer.add_address(SocketAddr::new(ip, port), new_peer.last_seen);
+                        new_peer.add_address(SocketAddr::new(ip, port), now);
                     }
                 }
                 peers.insert(presence.peer_id, new_peer);
@@ -664,6 +671,53 @@ mod tests {
     async fn mark_offline_is_a_noop_for_an_unknown_peer() {
         let reg = PeerRegistry::default();
         assert!(reg.mark_offline(Uuid::new_v4()).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn presence_with_backdated_wire_timestamp_still_reads_online() {
+        // Liveness must be clocked by *local receive time*, not the sender's
+        // wall clock — clock skew on a show LAN without NTP must not make a
+        // live peer read Stale/Offline (#129).
+        let reg = PeerRegistry::default();
+        let id = Uuid::new_v4();
+        reg.record_sighting(
+            PeerSighting::Presence(PeerPresence {
+                peer_id: id,
+                peer_name: "p".into(),
+                channels: Vec::new(),
+                role: None,
+                timestamp: Utc::now() - chrono::Duration::seconds(60), // skewed sender clock
+            }),
+            "10.0.0.1".into(),
+            9000,
+        )
+        .await;
+        assert_eq!(reg.list().await[0].status(7), PeerStatus::Online);
+    }
+
+    #[tokio::test]
+    async fn presence_address_from_skewed_clock_survives_pruning() {
+        // The address was *just received*, so it is fresh by definition —
+        // it must be stamped with local time, not the sender's clock, or
+        // it gets pruned on the very next heartbeat tick (#129).
+        let reg = PeerRegistry::default();
+        let id = Uuid::new_v4();
+        reg.record_sighting(
+            PeerSighting::Presence(PeerPresence {
+                peer_id: id,
+                peer_name: "p".into(),
+                channels: Vec::new(),
+                role: None,
+                timestamp: Utc::now() - chrono::Duration::seconds(60), // skewed sender clock
+            }),
+            "10.0.0.1".into(),
+            9000,
+        )
+        .await;
+        // Prune at the same 3×7s threshold the heartbeat tick uses.
+        reg.prune_addresses(Utc::now() - chrono::Duration::seconds(21))
+            .await;
+        assert!(reg.list().await[0].has_address());
     }
 
     #[tokio::test]

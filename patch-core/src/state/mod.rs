@@ -1007,13 +1007,11 @@ mod tests {
         let old = chrono::Utc::now() - chrono::Duration::seconds(3600);
         let now = chrono::Utc::now();
 
+        // Backdated via the test-only insert — a Presence sighting always
+        // stamps last_seen with local receive time (#129), so a stale peer
+        // can't be produced through record_sighting.
         let stale_dyn = Uuid::new_v4();
-        st.record_sighting(
-            PeerSighting::Presence(presence(stale_dyn, old)),
-            String::new(),
-            0,
-        )
-        .await;
+        insert_peer_for_test(&st, stale_dyn, old, peer::DiscoveryMode::OscBeacon, "", 0).await;
         let fresh_dyn = Uuid::new_v4();
         st.record_sighting(
             PeerSighting::Presence(presence(fresh_dyn, now)),
@@ -1048,17 +1046,18 @@ mod tests {
         .await;
         st.mark_peer_offline(departed).await;
 
-        // Quiet well past 5x the heartbeat — offline. A Presence sighting
-        // honours the presence's own (old) timestamp rather than forcing
-        // `now()`, so the address can be set in the same call without also
-        // refreshing `last_seen` — true to how a peer that's gone quiet would
-        // actually look: heard from, with a resolved address, a long time
-        // ago, and nothing since.
+        // Quiet well past 5x the heartbeat — offline. Backdated via the
+        // test-only insert: a Presence sighting always stamps last_seen with
+        // local receive time (#129), so "heard from, with a resolved address,
+        // a long time ago, and nothing since" can only be staged directly.
         let stale = Uuid::new_v4();
         let old = chrono::Utc::now() - chrono::Duration::seconds(3600);
-        st.record_sighting(
-            PeerSighting::Presence(presence(stale, old)),
-            "10.0.0.2".into(),
+        insert_peer_for_test(
+            &st,
+            stale,
+            old,
+            peer::DiscoveryMode::OscBeacon,
+            "10.0.0.2",
             9000,
         )
         .await;
@@ -1985,8 +1984,9 @@ mod tests {
         let pid = Uuid::new_v4();
         let old = chrono::Utc::now() - chrono::Duration::seconds(120);
         // Known peer, last actually heard (via OSC) 120 s ago — stale.
-        st.record_sighting(PeerSighting::Presence(presence(pid, old)), String::new(), 0)
-            .await;
+        // Backdated via the test-only insert (#129: record_sighting stamps
+        // last_seen with local receive time, never the wire timestamp).
+        insert_peer_for_test(&st, pid, old, peer::DiscoveryMode::OscBeacon, "", 0).await;
         // A cached mDNS record re-resolves it with an address.
         st.record_sighting(
             PeerSighting::Mdns(presence(pid, chrono::Utc::now())),

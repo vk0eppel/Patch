@@ -48,6 +48,14 @@ pub struct Transport {
     socket_rx: watch::Receiver<Arc<UdpSocket>>,
     /// Sender half — clone to send packets from any task.
     send_tx: mpsc::Sender<Outgoing>,
+    /// Serialises direct socket writes (`send_now`) against the macOS
+    /// per-interface broadcast's `IP_BOUND_IF` set→send→clear window. Queue
+    /// sends are already serialised by `send_loop`; `send_now` deliberately
+    /// bypasses the queue (shutdown must not wait for it to drain), so without
+    /// this a `/patch/bye` could egress whatever interface the broadcast had
+    /// pinned at that instant (#133). Held only for the microseconds of a
+    /// send — never across queue waits — so shutdown can't block on it.
+    bind_guard: Arc<Mutex<()>>,
 }
 
 impl Transport {
@@ -75,14 +83,17 @@ impl Transport {
 
         // Send loop
         let tx_socket = socket_rx.clone();
+        let bind_guard = Arc::new(Mutex::new(()));
+        let loop_bind_guard = Arc::clone(&bind_guard);
         tokio::spawn(async move {
-            send_loop(tx_socket, send_rx).await;
+            send_loop(tx_socket, send_rx, loop_bind_guard).await;
         });
 
         Ok(Self {
             socket_tx,
             socket_rx,
             send_tx,
+            bind_guard,
         })
     }
 
@@ -125,6 +136,10 @@ impl Transport {
     /// Used on shutdown so the departure packet actually flushes before the
     /// process exits (a queued send may never be drained in time).
     pub async fn send_now(&self, bytes: &[u8], addr: SocketAddr) -> Result<()> {
+        // Take the bind guard so this direct write can't land inside a
+        // per-interface broadcast's IP_BOUND_IF window (#133). Uncontended
+        // everywhere except that microsecond window on macOS.
+        let _bound = self.bind_guard.lock().await;
         self.socket()
             .send_to(bytes, addr)
             .await
@@ -291,7 +306,13 @@ async fn receive_loop(
     }
 }
 
-async fn send_loop(socket_rx: watch::Receiver<Arc<UdpSocket>>, mut rx: mpsc::Receiver<Outgoing>) {
+async fn send_loop(
+    socket_rx: watch::Receiver<Arc<UdpSocket>>,
+    mut rx: mpsc::Receiver<Outgoing>,
+    bind_guard: Arc<Mutex<()>>,
+) {
+    #[cfg(not(target_os = "macos"))]
+    let _ = &bind_guard; // only the macOS per-iface broadcast takes it here
     while let Some(item) = rx.recv().await {
         // Read the current socket per item so sends follow a live rebind.
         let socket = socket_rx.borrow().clone();
@@ -312,6 +333,10 @@ async fn send_loop(socket_rx: watch::Receiver<Arc<UdpSocket>>, mut rx: mpsc::Rec
             }
             #[cfg(target_os = "macos")]
             Outgoing::PerIfaceBroadcast(bytes, port, iface) => {
+                // Hold the bind guard across the whole set→send→clear sequence
+                // so a concurrent `send_now` (shutdown bye) can't egress a
+                // pinned interface (#133).
+                let _bound = bind_guard.lock().await;
                 send_per_interface_broadcast(&socket, &bytes, port, iface.as_deref()).await;
             }
         }
@@ -626,6 +651,46 @@ mod tests {
 
         // Must not panic or block; packets are best-effort so no error expected.
         transport.broadcast_all_paths(b"ping", 9000, None).await;
+    }
+
+    /// `send_now` must serialise against the per-interface broadcast's
+    /// `IP_BOUND_IF` window (#133) *without* ever blocking shutdown: firing
+    /// both concurrently and repeatedly must always complete. Guards the
+    /// bind-guard mutex against deadlock/regression on every platform (the
+    /// contended window itself only exists on macOS).
+    #[tokio::test]
+    async fn send_now_completes_alongside_per_interface_broadcasts() {
+        use crate::reliability::ReliabilityManager;
+        use std::time::Duration;
+
+        let config = Config {
+            osc_port: 0,
+            ..Config::default()
+        };
+        let state = AppState::new(config.clone());
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+        let transport = Arc::new(Transport::new(&config, state, reliability).await.unwrap());
+
+        let dest: SocketAddr = "127.0.0.1:9".parse().unwrap(); // discard port
+        let t2 = Arc::clone(&transport);
+        let broadcasts = tokio::spawn(async move {
+            for _ in 0..20 {
+                t2.broadcast_per_interface(b"beat".to_vec(), 9000, None)
+                    .await;
+            }
+        });
+        let sends = tokio::spawn(async move {
+            for _ in 0..20 {
+                let _ = transport.send_now(b"bye", dest).await;
+            }
+        });
+        // Both must finish promptly — a deadlock here would hang shutdown.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            broadcasts.await.unwrap();
+            sends.await.unwrap();
+        })
+        .await
+        .expect("send_now and per-interface broadcasts deadlocked");
     }
 
     /// The live OSC-port rebind moves the socket **and** the receive loop follows

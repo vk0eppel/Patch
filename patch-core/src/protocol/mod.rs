@@ -75,7 +75,7 @@ pub(crate) async fn handle(
         } => handle_ack(message_id, peer_id, state, reliability).await,
         PatchEvent::Presence(p) => handle_presence(p, from, state, client_id).await,
         PatchEvent::Bye { peer_id } => handle_bye(peer_id, state, client_id).await,
-        PatchEvent::Flash(f) => handle_flash(f, from, state).await,
+        PatchEvent::Flash(f) => handle_flash(f, from, state, client_id).await,
         PatchEvent::Say {
             channel_id,
             payload,
@@ -111,7 +111,19 @@ async fn handle_message(
     client_id: Uuid,
 ) -> Vec<Outgoing> {
     let mut out = Vec::new();
-    // Drop duplicates that arrive on multiple paths (multi-VLAN send).
+    // ACK critical messages so the sender can stop retransmitting. This must
+    // happen *before* the duplicate check: if our first ACK is lost, the
+    // sender retransmits the same message_id — which we see as a duplicate —
+    // and dropping it without re-ACKing would burn every retry into a false
+    // "failed to deliver" (#130).
+    if msg.is_critical() {
+        match encode_ack(msg.message_id, client_id) {
+            Ok(ack_bytes) => out.push(Outgoing::To(ack_bytes, from)),
+            Err(e) => warn!("Failed to encode ACK: {}", e),
+        }
+    }
+    // Drop duplicates that arrive on multiple paths (multi-VLAN send,
+    // retransmit after a lost ACK) — ACKed above, but not re-stored.
     if state.is_message_duplicate(msg.message_id).await {
         return out;
     }
@@ -123,13 +135,6 @@ async fn handle_message(
     // guard costs nothing and matches every other sender-recording arm.
     if !is_self(msg.sender_id, client_id) {
         record_sender_sighting(state, msg.sender_id, msg.sender_name.clone(), from).await;
-    }
-    // ACK critical messages so the sender can stop retransmitting.
-    if msg.is_critical() {
-        match encode_ack(msg.message_id, client_id) {
-            Ok(ack_bytes) => out.push(Outgoing::To(ack_bytes, from)),
-            Err(e) => warn!("Failed to encode ACK: {}", e),
-        }
     }
     state.store_message(msg).await;
     out
@@ -247,7 +252,18 @@ async fn handle_bye(peer_id: Uuid, state: &AppState, client_id: Uuid) -> Vec<Out
     Vec::new()
 }
 
-async fn handle_flash(f: ChannelFlash, from: SocketAddr, state: &AppState) -> Vec<Outgoing> {
+async fn handle_flash(
+    f: ChannelFlash,
+    from: SocketAddr,
+    state: &AppState,
+    client_id: Uuid,
+) -> Vec<Outgoing> {
+    // Our own flash echoed back (e.g. a static peer misconfigured to our own
+    // address) — registering it would put us in our own peers panel and
+    // double-log the flash. Same is_self rule as every sender-registering arm.
+    if is_self(f.sender_id, client_id) {
+        return Vec::new();
+    }
     // Same sighting as for Message.
     record_sender_sighting(state, f.sender_id, f.sender_name.clone(), from).await;
     // Log a Flash entry in the channel's message thread so operators
@@ -503,6 +519,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn duplicate_critical_message_is_reacked_but_not_restored() {
+        // A lost ACK must cost one retransmit round-trip, not a false
+        // "failed to deliver": the sender retransmits, and the receiver must
+        // re-ACK the duplicate even though it drops it from storage (#130).
+        let state = test_state();
+        let client_id = Uuid::new_v4();
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+        let msg = PatchMessage::new(Uuid::new_v4(), "Sender", "rf", Priority::Critical, "fire");
+
+        let first = handle(
+            PatchEvent::Message(msg.clone()),
+            addr(1),
+            &state,
+            client_id,
+            &reliability,
+        )
+        .await;
+        // Simulate the ACK being lost — the sender retransmits the same packet.
+        let second = handle(
+            PatchEvent::Message(msg),
+            addr(1),
+            &state,
+            client_id,
+            &reliability,
+        )
+        .await;
+
+        // Both deliveries ACK.
+        for out in [&first, &second] {
+            assert_eq!(out.len(), 1);
+            let Outgoing::To(bytes, to) = &out[0] else {
+                panic!("expected an ACK To packet")
+            };
+            assert_eq!(*to, addr(1));
+            assert!(matches!(
+                decode_packet(bytes).unwrap(),
+                PatchEvent::Ack { .. }
+            ));
+        }
+        // But the message is stored only once.
+        assert_eq!(state.get_messages("rf", 10).await.len(), 1);
+    }
+
+    #[tokio::test]
     async fn say_originates_relays_and_tracks_critical() {
         let client_id = Uuid::new_v4();
         let state = test_state_with_id(client_id);
@@ -545,6 +605,80 @@ mod tests {
         let drained = reliability.lock().await.drain_retransmits();
         assert_eq!(drained.retransmits.len(), 1);
         assert_eq!(drained.retransmits[0].2, vec![addr(2)]);
+    }
+
+    #[tokio::test]
+    async fn flash_from_self_is_ignored_entirely() {
+        // Reachable when a static peer is misconfigured to our own address —
+        // the echoed flash must not register us as a peer, log a duplicate
+        // flash entry, or re-fire the flash event (#131; ERRORS.md invariant:
+        // every sender-registering arm checks is_self).
+        let client_id = Uuid::new_v4();
+        let state = test_state_with_id(client_id);
+        let mut events = state.subscribe();
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+
+        let out = handle(
+            PatchEvent::Flash(ChannelFlash {
+                channel_id: "rf".into(),
+                sender_id: client_id, // our own flash echoed back
+                sender_name: "us".into(),
+            }),
+            addr(1),
+            &state,
+            client_id,
+            &reliability,
+        )
+        .await;
+
+        assert!(out.is_empty());
+        assert!(state.get_peers().await.is_empty()); // no self-sighting
+        assert!(state.get_messages("rf", 10).await.is_empty()); // no flash log
+                                                                // No ChannelFlash published — a sentinel is the first event observed.
+        state.publish(AppEvent::ChannelListUpdated).await;
+        assert!(matches!(
+            events.recv().await.unwrap(),
+            AppEvent::ChannelListUpdated
+        ));
+    }
+
+    #[tokio::test]
+    async fn critical_say_with_no_reachable_peers_reports_delivery_failure() {
+        // The normal send path reports an immediate failure when a critical
+        // tracks zero targets; the /patch/say injection path must too, or the
+        // message looks sent with no feedback (#132).
+        let client_id = Uuid::new_v4();
+        let state = test_state_with_id(client_id);
+        let mut events = state.subscribe();
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+
+        let out = handle(
+            PatchEvent::Say {
+                channel_id: "rf".into(),
+                payload: "go".into(),
+                priority: Priority::Critical,
+            },
+            addr(9),
+            &state,
+            client_id,
+            &reliability,
+        )
+        .await;
+
+        assert!(out.is_empty()); // nobody to relay to
+                                 // A failed MessageDelivery must be published (skip the
+                                 // MessageReceived from the local store). Bounded wait so a missing
+                                 // event fails the test instead of hanging it.
+        let wait = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                match events.recv().await.unwrap() {
+                    AppEvent::MessageDelivery { failed, .. } => break failed,
+                    _ => continue,
+                }
+            }
+        })
+        .await;
+        assert!(matches!(wait, Ok(true)), "no failed MessageDelivery event");
     }
 
     #[tokio::test]
