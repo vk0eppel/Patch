@@ -47,6 +47,21 @@ Future<void> sendOscMacro({
   argType: argType,
 );
 
+/// Fire a Macro from the UI (tap or F-key): `channel_id` names the Channel a
+/// Channel Macro lives on, `None` means a Global Macro. Routing — DM-open
+/// precedence, own-channel vs current selection, OSC dual-action exactly once
+/// — is owned by `macro_router`, the same brain every other trigger source
+/// (MIDI, key binding) goes through. See ADR-0009.
+Future<void> fireMacro({String? channelId, required String label}) =>
+    RustLib.instance.api.crateApiFireMacro(channelId: channelId, label: label);
+
+/// Fire whatever Macro is bound to key `label`. Precedence is engine-owned:
+/// a Channel Macro on a currently-selected Channel beats a Global Macro on
+/// the same key; unselected Channels' bindings never fire. Returns whether a
+/// macro was bound (the UI consumes the key event only if so).
+Future<bool> fireKeyBinding({required String label}) =>
+    RustLib.instance.api.crateApiFireKeyBinding(label: label);
+
 /// Sends a message on a channel. Returns the message_id.
 Future<String> sendMessage({
   required String channelId,

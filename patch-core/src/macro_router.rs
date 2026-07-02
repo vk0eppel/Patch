@@ -84,6 +84,75 @@ pub(crate) fn resolve_osc(
     out
 }
 
+/// The first macro bound to key `label`, with the Dart panel's precedence:
+/// a per-channel macro on a currently-selected Channel beats a Global Macro
+/// on the same key, and unselected Channels' bindings never fire. Returns the
+/// owning channel id (`None` for a global) alongside the macro.
+pub(crate) fn resolve_key_macro<'a>(
+    channels: &'a [Channel],
+    globals: &'a [MacroMessage],
+    selected: &[String],
+    label: &str,
+) -> Option<(Option<&'a str>, &'a MacroMessage)> {
+    let bound = |m: &MacroMessage| m.key_binding.as_deref() == Some(label);
+    for ch in channels.iter().filter(|c| selected.contains(&c.id)) {
+        if let Some(m) = ch.macros.iter().find(|m| bound(m)) {
+            return Some((Some(ch.id.as_str()), m));
+        }
+    }
+    globals.iter().find(|m| bound(m)).map(|m| (None, m))
+}
+
+/// Matches exactly one macro by label — used to funnel a UI tap (which already
+/// knows *which* macro fired) through the same routing as every other trigger.
+struct LabelTrigger<'a>(&'a str);
+impl MacroTrigger for LabelTrigger<'_> {
+    fn matches(&self, m: &MacroMessage) -> bool {
+        m.label == self.0
+    }
+}
+
+/// Fire one macro identified by its home (`Some(channel_id)` for a Channel
+/// Macro, `None` for a Global Macro) and label — the UI tap/F-key entry point.
+/// Routing is `fire_matching` over a universe narrowed to just that macro, so
+/// the policy (DM-open precedence, own-channel vs selection, OSC-once) has a
+/// single owner for every trigger source.
+pub(crate) async fn fire_identified(
+    state: &AppState,
+    transport: &Arc<Transport>,
+    reliability: &Arc<Mutex<ReliabilityManager>>,
+    channel_id: Option<&str>,
+    label: &str,
+) -> anyhow::Result<()> {
+    let channels = state.get_channels().await;
+    let globals = state.config().await.global_macros;
+    let (channels, globals): (Vec<Channel>, Vec<MacroMessage>) = match channel_id {
+        Some(id) => {
+            let ch = channels
+                .into_iter()
+                .find(|c| c.id == id && c.macros.iter().any(|m| m.label == label))
+                .ok_or_else(|| anyhow::anyhow!("macro not found: {}/{}", id, label))?;
+            (vec![ch], Vec::new())
+        }
+        None => {
+            if !globals.iter().any(|m| m.label == label) {
+                anyhow::bail!("macro not found: global/{}", label);
+            }
+            (Vec::new(), globals)
+        }
+    };
+    fire_matching(
+        state,
+        transport,
+        reliability,
+        &channels,
+        &globals,
+        &LabelTrigger(label),
+    )
+    .await;
+    Ok(())
+}
+
 /// Fire every macro bound to `trigger`: Patch message(s) routed to the open
 /// DM thread if one exists, otherwise to channels, plus any OSC dual-action.
 pub(crate) async fn fire_trigger(
@@ -92,12 +161,26 @@ pub(crate) async fn fire_trigger(
     reliability: &Arc<Mutex<ReliabilityManager>>,
     trigger: &impl MacroTrigger,
 ) {
-    use crate::osc::types::Priority;
     let channels = state.get_channels().await;
     let globals = state.config().await.global_macros;
+    fire_matching(state, transport, reliability, &channels, &globals, trigger).await;
+}
+
+/// The routing core shared by every trigger source: DM-open beats channels;
+/// per-channel macros fire absolute; globals fire on the current selection;
+/// each matched macro's OSC dual-action fires exactly once.
+async fn fire_matching(
+    state: &AppState,
+    transport: &Arc<Transport>,
+    reliability: &Arc<Mutex<ReliabilityManager>>,
+    channels: &[Channel],
+    globals: &[MacroMessage],
+    trigger: &impl MacroTrigger,
+) {
+    use crate::osc::types::Priority;
 
     if let Some(peer_id) = state.dm_target().await {
-        for (payload, priority) in resolve_dm_payloads(&channels, &globals, trigger) {
+        for (payload, priority) in resolve_dm_payloads(channels, globals, trigger) {
             let prio = Priority::try_from(priority).unwrap_or(Priority::Info);
             if let Err(e) =
                 crate::messaging::dispatch_dm(state, transport, peer_id, payload, prio).await
@@ -107,7 +190,7 @@ pub(crate) async fn fire_trigger(
         }
     } else {
         let selected = state.selected_channels().await;
-        for (ch_id, payload, priority) in resolve_targets(&channels, &globals, &selected, trigger) {
+        for (ch_id, payload, priority) in resolve_targets(channels, globals, &selected, trigger) {
             let prio = Priority::try_from(priority).unwrap_or(Priority::Info);
             if let Err(e) = crate::api::dispatch_message(
                 state,
@@ -123,7 +206,7 @@ pub(crate) async fn fire_trigger(
             }
         }
     }
-    for target in resolve_osc(&channels, &globals, trigger) {
+    for target in resolve_osc(channels, globals, trigger) {
         if let Err(e) = crate::api::dispatch_osc(transport, &target).await {
             tracing::warn!("macro OSC to {} failed: {}", target.address, e);
         }
@@ -242,5 +325,163 @@ mod tests {
     fn dm_payloads_empty_when_trigger_matches_nothing() {
         let globals = vec![mac("G", Some(60), None)];
         assert!(resolve_dm_payloads(&[], &globals, &NoteTrigger(61)).is_empty());
+    }
+
+    // ── Key-binding resolution (engine-side F-key precedence, #138) ──────────
+
+    fn mac_key(label: &str, key: &str) -> MacroMessage {
+        MacroMessage {
+            key_binding: Some(key.into()),
+            ..mac(label, None, None)
+        }
+    }
+
+    #[test]
+    fn key_binding_per_channel_beats_global_on_a_shared_key() {
+        let mut rf = Channel::new("rf", "RF", "#fff").unwrap();
+        rf.macros = vec![mac_key("A", "F1")];
+        let globals = vec![mac_key("G", "F1")];
+        let selected = vec!["rf".to_string()];
+        let chans = [rf];
+
+        let (ch, m) = resolve_key_macro(&chans, &globals, &selected, "F1").unwrap();
+        assert_eq!(ch, Some("rf"));
+        assert_eq!(m.label, "A");
+    }
+
+    #[test]
+    fn key_binding_ignores_unselected_channels_and_falls_back_to_global() {
+        let mut rf = Channel::new("rf", "RF", "#fff").unwrap();
+        rf.macros = vec![mac_key("A", "F1")];
+        let globals = vec![mac_key("G", "F1")];
+        let chans = [rf];
+        // rf not selected — its binding must not fire; the global wins.
+        let (ch, m) = resolve_key_macro(&chans, &globals, &[], "F1").unwrap();
+        assert_eq!(ch, None);
+        assert_eq!(m.label, "G");
+    }
+
+    #[test]
+    fn key_binding_with_no_match_resolves_nothing() {
+        let globals = vec![mac_key("G", "F1")];
+        assert!(resolve_key_macro(&[], &globals, &[], "F2").is_none());
+    }
+
+    // ── fire_identified (UI tap → engine routing, #138) ──────────────────────
+
+    use crate::state::{AppState, Config};
+
+    fn test_state() -> AppState {
+        AppState::new(Config {
+            osc_port: 0,
+            default_channels: Vec::new(),
+            ..Config::default()
+        })
+    }
+
+    async fn deps(state: &AppState) -> (Arc<Transport>, Arc<Mutex<ReliabilityManager>>) {
+        let config = state.config().await;
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+        let transport = Arc::new(
+            Transport::new(&config, state.clone(), Arc::clone(&reliability))
+                .await
+                .unwrap(),
+        );
+        (transport, reliability)
+    }
+
+    #[tokio::test]
+    async fn fire_identified_channel_macro_fires_on_its_own_channel() {
+        let state = test_state();
+        let (transport, reliability) = deps(&state).await;
+        let mut rf = Channel::new("rf", "RF", "#fff").unwrap();
+        rf.macros = vec![mac("A", None, None)];
+        state.upsert_channel(rf).await;
+
+        fire_identified(&state, &transport, &reliability, Some("rf"), "A")
+            .await
+            .unwrap();
+
+        let stored = state.get_messages("rf", 10).await;
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].payload, "p-A");
+    }
+
+    #[tokio::test]
+    async fn fire_identified_global_with_nothing_selected_sends_nothing() {
+        // CONTEXT.md, Global Macro: "If nothing is selected, the macro sends
+        // nothing."
+        let state = test_state();
+        let (transport, reliability) = deps(&state).await;
+        state
+            .upsert_global_macro(None, mac("G", None, None))
+            .await
+            .unwrap();
+
+        fire_identified(&state, &transport, &reliability, None, "G")
+            .await
+            .unwrap();
+
+        assert!(state.get_messages("rf", 10).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn fire_identified_global_fires_on_each_selected_channel() {
+        let state = test_state();
+        let (transport, reliability) = deps(&state).await;
+        state
+            .upsert_global_macro(None, mac("G", None, None))
+            .await
+            .unwrap();
+        state
+            .set_selected_channels(vec!["rf".into(), "audio".into()])
+            .await;
+
+        fire_identified(&state, &transport, &reliability, None, "G")
+            .await
+            .unwrap();
+
+        assert_eq!(state.get_messages("rf", 10).await.len(), 1);
+        assert_eq!(state.get_messages("audio", 10).await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn fire_identified_routes_to_the_open_dm_thread() {
+        let state = test_state();
+        let (transport, reliability) = deps(&state).await;
+        let peer_id = uuid::Uuid::new_v4();
+        state
+            .record_sighting(
+                crate::state::PeerSighting::Heartbeat {
+                    peer_id,
+                    peer_name: "rigger".into(),
+                },
+                "127.0.0.1".into(),
+                9909,
+            )
+            .await;
+        let mut rf = Channel::new("rf", "RF", "#fff").unwrap();
+        rf.macros = vec![mac("A", None, None)];
+        state.upsert_channel(rf).await;
+        state.set_dm_target(Some(peer_id)).await;
+
+        fire_identified(&state, &transport, &reliability, Some("rf"), "A")
+            .await
+            .unwrap();
+
+        // Routed to the DM thread, not the macro's own channel.
+        assert!(state.get_messages("rf", 10).await.is_empty());
+        let dm_key = crate::dm::DmThreadKey::for_peer(peer_id).local_key();
+        assert_eq!(state.get_messages(&dm_key, 10).await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn fire_identified_unknown_macro_is_a_clean_error() {
+        let state = test_state();
+        let (transport, reliability) = deps(&state).await;
+        let err = fire_identified(&state, &transport, &reliability, None, "ghost")
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("macro not found"));
     }
 }

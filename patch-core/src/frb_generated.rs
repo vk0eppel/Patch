@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 448943198;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1892693962;
 
 // Section: executor
 
@@ -441,6 +441,79 @@ fn wire__crate__api__export_messages_impl(
                     (move || async move {
                         let output_ok =
                             crate::api::export_messages(api_channel_id, api_path).await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__fire_key_binding_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "fire_key_binding",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_label = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || async move {
+                        let output_ok = crate::api::fire_key_binding(api_label).await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__fire_macro_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "fire_macro",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_channel_id = <Option<String>>::sse_decode(&mut deserializer);
+            let api_label = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || async move {
+                        let output_ok = crate::api::fire_macro(api_channel_id, api_label).await?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -2832,50 +2905,52 @@ fn pde_ffi_dispatcher_primary_impl(
         9 => wire__crate__api__delete_show_file_impl(port, ptr, rust_vec_len, data_len),
         10 => wire__crate__api__export_layout_impl(port, ptr, rust_vec_len, data_len),
         11 => wire__crate__api__export_messages_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__get_channels_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__get_config_impl(port, ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__get_interfaces_impl(port, ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__get_messages_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__get_midi_ports_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__get_peers_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__import_layout_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__init_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__list_show_files_impl(port, ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__load_show_file_impl(port, ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__preview_global_macros_impl(port, ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__remove_static_peer_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__reorder_global_macros_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__reorder_macros_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__request_channels_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__request_global_macros_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__reset_channels_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__reset_global_macros_impl(port, ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__save_show_file_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__send_direct_message_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__send_dm_flash_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__send_flash_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__send_message_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__send_osc_macro_impl(port, ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__set_audible_alert_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__set_channel_flash_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__set_client_name_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__set_dm_target_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__set_flash_count_impl(port, ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__set_flash_on_critical_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__set_flash_on_message_impl(port, ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__set_flash_whole_screen_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__set_heartbeat_interval_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__set_hide_keyboard_impl(port, ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__set_interface_impl(port, ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__set_macros_columns_impl(port, ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__set_osc_port_impl(port, ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__set_role_impl(port, ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__set_selected_channels_impl(port, ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__shutdown_impl(port, ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__upsert_channel_impl(port, ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__upsert_global_macro_impl(port, ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__upsert_macro_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__fire_key_binding_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__fire_macro_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__get_channels_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__get_config_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__get_interfaces_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__get_messages_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__get_midi_ports_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__get_peers_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__import_layout_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__init_impl(port, ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__list_show_files_impl(port, ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__load_show_file_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__preview_global_macros_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__remove_static_peer_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__reorder_global_macros_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__reorder_macros_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__request_channels_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__request_global_macros_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__reset_channels_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__reset_global_macros_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__save_show_file_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__send_direct_message_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__send_dm_flash_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__send_flash_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__send_message_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__send_osc_macro_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__set_audible_alert_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__set_channel_flash_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__set_client_name_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__set_dm_target_impl(port, ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__set_flash_count_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__set_flash_on_critical_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__set_flash_on_message_impl(port, ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__set_flash_whole_screen_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__set_heartbeat_interval_impl(port, ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__set_hide_keyboard_impl(port, ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__set_interface_impl(port, ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__set_macros_columns_impl(port, ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__set_osc_port_impl(port, ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__set_role_impl(port, ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__set_selected_channels_impl(port, ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__shutdown_impl(port, ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__upsert_channel_impl(port, ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__upsert_global_macro_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__upsert_macro_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

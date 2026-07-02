@@ -213,6 +213,49 @@ pub async fn send_osc_macro(
     dispatch_osc(&engine().transport, &target).await
 }
 
+/// Fire a Macro from the UI (tap or F-key): `channel_id` names the Channel a
+/// Channel Macro lives on, `None` means a Global Macro. Routing — DM-open
+/// precedence, own-channel vs current selection, OSC dual-action exactly once
+/// — is owned by `macro_router`, the same brain every other trigger source
+/// (MIDI, key binding) goes through. See ADR-0009.
+pub async fn fire_macro(channel_id: Option<String>, label: String) -> Result<()> {
+    let h = engine();
+    crate::macro_router::fire_identified(
+        &h.state,
+        &h.transport,
+        &h.reliability,
+        channel_id.as_deref(),
+        &label,
+    )
+    .await
+}
+
+/// Fire whatever Macro is bound to key `label`. Precedence is engine-owned:
+/// a Channel Macro on a currently-selected Channel beats a Global Macro on
+/// the same key; unselected Channels' bindings never fire. Returns whether a
+/// macro was bound (the UI consumes the key event only if so).
+pub async fn fire_key_binding(label: String) -> Result<bool> {
+    let h = engine();
+    let channels = h.state.get_channels().await;
+    let globals = h.state.config().await.global_macros;
+    let selected = h.state.selected_channels().await;
+    let Some((ch, m)) =
+        crate::macro_router::resolve_key_macro(&channels, &globals, &selected, &label)
+    else {
+        return Ok(false);
+    };
+    let (ch, label) = (ch.map(str::to_owned), m.label.clone());
+    crate::macro_router::fire_identified(
+        &h.state,
+        &h.transport,
+        &h.reliability,
+        ch.as_deref(),
+        &label,
+    )
+    .await?;
+    Ok(true)
+}
+
 /// Sends a message on a channel. Returns the message_id.
 pub async fn send_message(channel_id: String, payload: String, priority: i32) -> Result<String> {
     let h = engine();

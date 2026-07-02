@@ -19,7 +19,6 @@ import '../models/selection_controller.dart';
 import '../store/app_store.dart';
 import '../theme/patch_theme.dart';
 import '../util/flash_overlay_gateway.dart';
-import '../util/macro_dispatch.dart';
 import '../util/message_filter.dart';
 import '../util/message_view.dart';
 import '../util/run_guarded.dart';
@@ -195,32 +194,18 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
           ChannelMacro(channelId: '', channelColor: PatchTheme.accent, macro: gm),
       ];
 
-  /// Send a macro. Routing is determined by [resolveMacroTarget]; bridge calls
-  /// and OSC dual-action stay here so they can use BuildContext.
+  /// Fire a macro. The UI only expresses intent — routing (DM-open precedence,
+  /// own-channel vs selection, OSC dual-action once) is engine-owned via
+  /// `fire_macro` (ADR-0009).
   void _fireMacro(ChannelMacro cm) {
-    switch (resolveMacroTarget(cm, _selection)) {
-      case DmTarget(:final peerId):
-        runGuarded(context, () => widget.bridge.sendDirectMessage(
-          peerId: peerId,
-          payload: cm.macro.payload,
-          priority: cm.macro.priority,
-        ));
-        _warnIfDmPeerOffline();
-      case ChannelTarget(:final channelIds):
-        for (final id in channelIds) {
-          runGuarded(context, () => widget.bridge.sendMessage(
-            channelId: id,
-            payload: cm.macro.payload,
-            priority: cm.macro.priority,
-          ));
-        }
-    }
-    // Dual action: also fire the macro's OSC packet to external gear (once).
-    final osc = cm.macro.osc;
-    if (osc != null) {
-      runGuarded(context, () => widget.bridge
-          .sendOscMacro(osc.address, osc.port, osc.path, osc.arg, osc.argType));
-    }
+    runGuarded(
+        context,
+        () => widget.bridge.fireMacro(
+              channelId: cm.channelId.isEmpty ? null : cm.channelId,
+              label: cm.macro.label,
+            ));
+    // Screen-local reaction (ADR-0005): warn when firing into a dead DM.
+    if (_selection.isDmMode) _warnIfDmPeerOffline();
   }
 
   // ── Lifecycle ───────────────────────────────────────────────────────────────
@@ -382,30 +367,21 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   @override
   void onWindowResized() => _scheduleWindowSave();
 
-  /// Global F-key handler — fires the first shortcut whose keyBinding matches.
-  /// Returns true to consume the event (prevents the key reaching other widgets).
+  /// Global F-key handler. Which macro fires (per-channel beats global) is
+  /// engine-owned via `fire_key_binding` (ADR-0009); this handler only decides
+  /// synchronously whether to consume the event, using the same "any binding
+  /// on a selected channel or a global" predicate — an existence check, not
+  /// routing.
   bool _handleHardwareKey(KeyEvent event) {
     if (event is! KeyDownEvent) return false;
     final label = _fKeyLabels[event.logicalKey];
     if (label == null) return false;
-    // Per-channel macros take precedence over a global macro on the same key.
-    for (final cs in _aggregatedMacros) {
-      if (cs.macro.keyBinding == label) {
-        _fireMacro(cs);
-        return true; // consumed
-      }
-    }
-    for (final gm in _globalMacros) {
-      if (gm.keyBinding == label) {
-        _fireMacro(ChannelMacro(
-          channelId: '',
-          channelColor: PatchTheme.accent,
-          macro: gm,
-        ));
-        return true; // consumed
-      }
-    }
-    return false;
+    final bound = _aggregatedMacros.any((cs) => cs.macro.keyBinding == label) ||
+        _globalMacros.any((gm) => gm.keyBinding == label);
+    if (!bound) return false;
+    runGuarded(context, () => widget.bridge.fireKeyBinding(label));
+    if (_selection.isDmMode) _warnIfDmPeerOffline();
+    return true; // consumed
   }
 
   // ── Event dispatch ──────────────────────────────────────────────────────────

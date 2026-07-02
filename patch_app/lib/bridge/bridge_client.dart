@@ -88,6 +88,17 @@ class BridgeClient {
         priority: priority,
       );
 
+  /// Fire a Macro. `channelId` is null for a Global Macro. Routing (DM-open
+  /// precedence, own-channel vs selection, OSC dual-action once) is
+  /// engine-owned — see ADR-0009. Throws on failure.
+  Future<void> fireMacro({String? channelId, required String label}) =>
+      rust.fireMacro(channelId: channelId, label: label);
+
+  /// Fire whatever Macro is bound to key [label]; precedence is engine-owned
+  /// (ADR-0009). Returns whether a macro was bound. Throws on failure.
+  Future<bool> fireKeyBinding(String label) =>
+      rust.fireKeyBinding(label: label);
+
   /// Flash a channel. Throws on failure.
   Future<void> sendFlash(String channelId) =>
       rust.sendFlash(channelId: channelId);
