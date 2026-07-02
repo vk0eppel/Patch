@@ -5,7 +5,8 @@
 ```
 patch/
 ├── patch-core/src/
-│   ├── api.rs              # Public FFI surface — scanned by FRB codegen
+│   ├── api.rs              # Public FFI surface — thin facade, delegates to messaging.rs
+│   ├── messaging.rs        # Message origination logic shared by api.rs, protocol, macro_router
 │   ├── osc/codec.rs        # All OSC encode/decode → PatchEvent enum
 │   ├── osc/addresses.rs    # Canonical /patch/* OSC address constants
 │   ├── transport/mod.rs    # UDP socket, unicast send_to_peers, broadcast
@@ -13,12 +14,13 @@ patch/
 │   ├── discovery/mod.rs    # mDNS + heartbeat loop
 │   ├── midi/mod.rs         # MIDI input (desktop only)
 │   ├── reliability/mod.rs  # ACK tracking, exponential-backoff retransmit
-│   └── state/              # AppState, Config, Channel, Peer, ShowFile
+│   └── state/              # AppState, Config, Channel, ChannelStore, Peer, ShowFile
 └── patch_app/lib/
     ├── bridge/bridge_client.dart  # Façade over FRB bindings
     ├── models/                    # channel, message, config, selection —
     │                              # fromJson model classes for every domain
     │                              # shape the bridge emits (see CONVENTION.md)
+    ├── presenters/home_presenter.dart  # Flash state, config subscription, peer lookup
     ├── screens/home_screen.dart   # Main UI
     ├── screens/settings_screen.dart
     └── widgets/                   # channel_tab, flash_button, message_list,
@@ -30,6 +32,8 @@ Generated Dart bindings live in `patch_app/lib/src/rust/` — excluded from anal
 ## FFI Bridge
 
 `api.rs` is the public Rust surface. `flutter_rust_bridge_codegen generate` (from repo root) rewrites `frb_generated.rs` and `patch_app/lib/src/rust/*`. After regenerating, run `dart run build_runner build` in `patch_app/` if any `freezed` type changed.
+
+**`messaging.rs`** is the shared origination layer. `dispatch_channel_message` (typed/macro sends via FFI), `originate_for_relay` (external OSC `/patch/say` injection via `protocol`), and `dispatch_dm` (direct message sends via FFI and `macro_router`) all live here, eliminating the duplication that previously existed between `api.rs` and `protocol/mod.rs`. `api.rs` is now a thin FFI facade: each `pub` function parses its string/int arguments, calls the appropriate `messaging::*` function, and returns. `macro_router`'s DM branch calls `messaging::dispatch_dm` directly using the injected `state`/`transport` — it never re-enters `engine()`.
 
 `BridgeClient` (`bridge/bridge_client.dart`) wraps the generated bindings:
 1. Calls `RustLib.init()` then `api.init()` once on startup.
@@ -62,6 +66,8 @@ The shared **`AppStore`** (`store/app_store.dart`) — a `ChangeNotifier` provid
 ## Flash
 
 A flash pulses the message area's border in the target channel/DM/broadcast color, `flash_count` times (`_FlashLayer` in `home_screen.dart`: 200ms lit / 150ms dark per pulse, a `_pulseGen` counter cancels and restarts a pulse sequence in flight so rapid repeated flashes don't overlap). `_applyFlash` resolves the color/count once per `FlashEvent` and is the single decision point all flash side-effects key off: bumping the relevant tab's flash count, the in-app pulse if that target is currently selected, the audible alert (`audible_alert` config), and — on macOS/Windows, when `flash_whole_screen` is enabled — a native whole-screen overlay pulse with the same resolved color/count.
+
+**`HomePresenter`** (`presenters/home_presenter.dart`) owns the flash state machine and all config-derived flash settings. It self-subscribes to a `Stream<AppConfig?>` passed at construction (`configStream` — fed from `_configStreamCtrl` in `home_screen.dart`) and applies settings changes via `_applyConfig`; `home_screen.dart` never calls imperative setters on the presenter for config. `HomePresenter` also owns DM peer lookup: it subscribes to a `Stream<List<PeerInfo>>` (`peersStream`) and exposes `dmPeerName(peerId)` and `isDmPeerOffline(peerId)` — `home_screen.dart` delegates both lookups to the presenter rather than maintaining its own peer-list copy.
 
 The whole-screen overlay exists because the in-app pulse is invisible if Patch isn't the focused/visible app — exactly when a flash matters most (an Operator working in another app, or a fullscreen show-control window on another display). It's a pure OS/UI concern with no engine state, so it rides a plain Flutter `MethodChannel` (`com.patch.app/flash_overlay`, single `pulse(argb, pulseCount)` method) rather than the Rust FFI bridge — `lib/util/flash_overlay_gateway.dart` is the Dart-side gateway, called from the same three `_applyFlash` branches that drive the in-app pulse, never as an independent dispatch. Each platform implements its own borderless, click-through, always-on-top overlay window that mirrors `_FlashLayer`'s timing and pulse-restart-on-repeat behavior, re-resolving which display to cover on every pulse rather than caching one: macOS in `macos/Runner/MainFlutterWindow.swift` (`FlashOverlayWindow`/`FlashOverlayView`); Windows in `windows/runner/flash_overlay_window.cpp` (`FlashOverlayWindow`).
 
@@ -128,6 +134,8 @@ Critical (`priority=3`) messages are tracked by `ReliabilityManager`. Receivers 
 Resolving a peer's address for single-target sends (DM, DM flash, channels-request) goes through `Peer::best_addr() -> Option<SocketAddr>` (`state/peer.rs`) — returns the most-recently-seen address from the peer's `addresses` map, `None` if the map is empty. For multi-path sends (channel messages, shutdown's `/patch/bye`), use `all_addrs()` to reach every known address. Don't access `peer.addresses` inline; call `best_addr()` or `all_addrs()`.
 
 ## Config I/O
+
+**`ChannelStore`** (`state/channel_store.rs`) wraps `ChannelRegistry` with an `Arc<ConfigStore>` so every write method (`upsert`, `delete`, `replace_all`, `merge`, `set_flash`, `upsert_macro`, `delete_macro`, `reorder_macros`) auto-persists after mutating — callers never call `persist_channels()` manually. The exception is `replace_all_silent`, used by `apply_show_file_full` which must batch channels + peers into a single `mutate_and_persist`; using `replace_all` there would cause a double write. See ADR-0003 for the rationale behind giving `ChannelStore` a cross-domain `Arc<ConfigStore>` reference.
 
 `ConfigStore` (`state/config.rs`) owns `Config` and persistence together — see ADR-0003. The single entry point for callers is `mutate_and_persist`: it applies a closure under the write lock immediately (in-memory change is visible at once) and schedules a debounced 500ms disk write. Rapid sequential calls coalesce — only the last write fires within the window, preventing bursts of Setting saves from pounding the disk. The write itself is offloaded via `spawn_blocking` so async workers are never blocked on file I/O. A `save_lock` (`Mutex<()>`, `Arc`-wrapped so the spawned task can hold it) serialises concurrent writes — acquired after cloning the config, so the config read lock is not held during I/O. There is no public `save` or `mutate` — callers always go through `mutate_and_persist`. In tests, `SAVE_DEBOUNCE_MS` is 0 and `flush()` lets a test confirm disk state synchronously after a mutation.
 
