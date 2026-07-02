@@ -629,21 +629,8 @@ pub async fn reset_channels() -> Result<()> {
 /// it is **not** auto-applied; the UI previews and calls `adopt_channels`.
 pub async fn request_channels(peer_id: String) -> Result<()> {
     let h = engine();
-    let pid = Uuid::parse_str(&peer_id).map_err(|_| anyhow::anyhow!("invalid peer id"))?;
-    let peer = h
-        .state
-        .get_peers()
+    crate::messaging::send_to_peer_by_id(&h.state, &h.transport, &peer_id, encode_channels_request)
         .await
-        .into_iter()
-        .find(|p| p.peer_id == pid)
-        .ok_or_else(|| anyhow::anyhow!("peer not found"))?;
-    let addr = peer.best_addr().ok_or_else(|| {
-        anyhow::anyhow!("peer has no resolved address yet — try again once it's online")
-    })?;
-    let config = h.state.config().await;
-    let bytes = encode_channels_request(config.client_id)?;
-    h.transport.send_to(bytes, addr).await?;
-    Ok(())
 }
 
 /// Adopt channels offered by a peer — **merge** (adds only ids we don't already
@@ -660,21 +647,8 @@ pub async fn adopt_channels(channels: Vec<Channel>) -> Result<u32> {
 /// and calls `adopt_global_macros`.
 pub async fn request_global_macros(peer_id: String) -> Result<()> {
     let h = engine();
-    let pid = Uuid::parse_str(&peer_id).map_err(|_| anyhow::anyhow!("invalid peer id"))?;
-    let peer = h
-        .state
-        .get_peers()
+    crate::messaging::send_to_peer_by_id(&h.state, &h.transport, &peer_id, encode_macros_request)
         .await
-        .into_iter()
-        .find(|p| p.peer_id == pid)
-        .ok_or_else(|| anyhow::anyhow!("peer not found"))?;
-    let addr = peer.best_addr().ok_or_else(|| {
-        anyhow::anyhow!("peer has no resolved address yet — try again once it's online")
-    })?;
-    let config = h.state.config().await;
-    let bytes = encode_macros_request(config.client_id)?;
-    h.transport.send_to(bytes, addr).await?;
-    Ok(())
 }
 
 /// Classify offered global macros against what this machine already has —

@@ -226,6 +226,35 @@ pub(crate) async fn dispatch_dm_flash(
     Ok(())
 }
 
+/// Unicast one encoded packet to a single Peer identified by its id string.
+/// Owns the lookup → best-address → send orchestration (and the operator-facing
+/// error text) shared by every single-target request — the level above
+/// `Peer::best_addr()`'s single-address resolution. The encoder is handed our
+/// own client id, the one field every request packet signs itself with.
+pub(crate) async fn send_to_peer_by_id<F>(
+    state: &AppState,
+    transport: &Arc<Transport>,
+    peer_id: &str,
+    encode: F,
+) -> Result<()>
+where
+    F: FnOnce(Uuid) -> Result<Vec<u8>>,
+{
+    let pid = Uuid::parse_str(peer_id).map_err(|_| anyhow::anyhow!("invalid peer id"))?;
+    let peer = state
+        .get_peers()
+        .await
+        .into_iter()
+        .find(|p| p.peer_id == pid)
+        .ok_or_else(|| anyhow::anyhow!("peer not found"))?;
+    let addr = peer.best_addr().ok_or_else(|| {
+        anyhow::anyhow!("peer has no resolved address yet — try again once it's online")
+    })?;
+    let client_id = state.config().await.client_id;
+    let bytes = encode(client_id)?;
+    transport.send_to(bytes, addr).await
+}
+
 /// Send an arbitrary OSC packet to an external target. Validates the target
 /// before touching the socket so callers get a clean error, not a panic.
 pub(crate) async fn dispatch_osc(transport: &Arc<Transport>, target: &OscTarget) -> Result<()> {
@@ -404,5 +433,77 @@ mod tests {
             expect_flash(&mut events).await,
             DmThreadKey::for_peer(peer_id).local_key()
         );
+    }
+
+    // ── send_to_peer_by_id ────────────────────────────────────────────────────
+
+    fn encode_probe(client_id: Uuid) -> Result<Vec<u8>> {
+        crate::osc::codec::encode_channels_request(client_id)
+    }
+
+    #[tokio::test]
+    async fn send_to_peer_by_id_rejects_a_malformed_id() {
+        let state = test_state();
+        let transport = transport(&state).await;
+        let err = send_to_peer_by_id(&state, &transport, "not-a-uuid", encode_probe)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("invalid peer id"));
+    }
+
+    #[tokio::test]
+    async fn send_to_peer_by_id_reports_an_unknown_peer() {
+        let state = test_state();
+        let transport = transport(&state).await;
+        let err = send_to_peer_by_id(&state, &transport, &Uuid::new_v4().to_string(), encode_probe)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("peer not found"));
+    }
+
+    #[tokio::test]
+    async fn send_to_peer_by_id_is_a_clean_error_for_an_addressless_peer() {
+        // A Peer known via mDNS but with no resolved address must produce the
+        // operator-facing "try again" error, not a panic or a silent drop.
+        let state = test_state();
+        let transport = transport(&state).await;
+        let peer_id = Uuid::new_v4();
+        state
+            .record_sighting(
+                crate::state::PeerSighting::Mdns(crate::osc::types::PeerPresence {
+                    peer_id,
+                    peer_name: "rigger".into(),
+                    channels: Vec::new(),
+                    role: None,
+                    timestamp: chrono::Utc::now(),
+                }),
+                String::new(),
+                0,
+            )
+            .await;
+        let err = send_to_peer_by_id(&state, &transport, &peer_id.to_string(), encode_probe)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("no resolved address yet"));
+    }
+
+    #[tokio::test]
+    async fn send_to_peer_by_id_sends_to_a_reachable_peer() {
+        let state = test_state();
+        let transport = transport(&state).await;
+        let peer_id = Uuid::new_v4();
+        state
+            .record_sighting(
+                crate::state::PeerSighting::Heartbeat {
+                    peer_id,
+                    peer_name: "rigger".into(),
+                },
+                "127.0.0.1".into(),
+                9909,
+            )
+            .await;
+        send_to_peer_by_id(&state, &transport, &peer_id.to_string(), encode_probe)
+            .await
+            .unwrap();
     }
 }
