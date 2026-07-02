@@ -11,6 +11,7 @@ import 'package:window_manager/window_manager.dart';
 import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
 import '../models/config.dart';
+import '../models/dm_thread.dart';
 import '../presenters/home_presenter.dart';
 import '../models/message.dart';
 import '../models/selection.dart';
@@ -507,7 +508,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   /// this screen keeps only the screen-local unread-clear (ADR-0005).
   void _toggleChannel(String id) {
     setState(() => _selectionController.selectTab(id));
-    if (id.startsWith('dm:')) _presenter.clearUnread(id);
+    if (DmThread.isKey(id)) _presenter.clearUnread(id);
     if (_hideKeyboard) FocusScope.of(context).unfocus();
   }
 
@@ -564,7 +565,9 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
                   },
                   onDm: _openDm,
                   unreadPeerIds: {
-                    for (final k in _presenter.unreadDms) k.substring(3),
+                    for (final k in _presenter.unreadDms)
+                      if (DmThread.tryParse(k) case final DmThread dm)
+                        dm.peerId,
                   },
                   onRefresh: () => AppStoreScope.read(context).refreshPeers(),
                   onOpenSettings: () => Navigator.of(context).push(
@@ -964,7 +967,7 @@ class _ChannelViewState extends State<_ChannelView> {
     if (path == null || !mounted) return;
     // DM → that thread; ALL / multi-channel → everything (null); single → that one.
     final channelId = widget.isDmMode
-        ? 'dm:${widget.dmPeerId}'
+        ? DmThread(widget.dmPeerId!).key
         : (!widget.isAllMode && widget.selectedChannels.length == 1)
             ? widget.selectedChannels.first.id
             : null;
@@ -1001,7 +1004,7 @@ class _ChannelViewState extends State<_ChannelView> {
             style: ElevatedButton.styleFrom(backgroundColor: PatchTheme.critical),
             onPressed: () {
               if (widget.isDmMode) {
-                _clear('dm:${widget.dmPeerId}');
+                _clear(DmThread(widget.dmPeerId!).key);
               } else if (widget.isAllMode) {
                 _clear(null); // clear everything
               } else {

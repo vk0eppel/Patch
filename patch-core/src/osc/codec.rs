@@ -437,7 +437,7 @@ fn decode_dm(msg: OscMessage) -> Result<PatchEvent> {
         sender_id,
         sender_name,
         // The receiver keys the conversation by the *other* peer (the sender).
-        channel_id: format!("dm:{}", sender_id),
+        channel_id: crate::dm::DmThreadKey::for_peer(sender_id).local_key(),
         timestamp: Utc
             .timestamp_millis_opt(ts_ms)
             .single()
@@ -789,7 +789,10 @@ mod tests {
                 assert_eq!(msg.payload, m.payload);
                 assert_eq!(msg.priority, Priority::Warning);
                 // Receiver keys it by the sender.
-                assert_eq!(msg.channel_id, format!("dm:{}", m.sender_id));
+                assert_eq!(
+            msg.channel_id,
+            crate::dm::DmThreadKey::for_peer(m.sender_id).local_key()
+        );
             }
             other => panic!("expected DirectMessage, got {:?}", other),
         }

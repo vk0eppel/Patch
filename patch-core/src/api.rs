@@ -18,6 +18,7 @@ use tokio::sync::{Mutex, OnceCell};
 use uuid::Uuid;
 
 use crate::discovery::Discovery;
+use crate::dm::DmThreadKey;
 use crate::osc::codec::{
     encode_bye, encode_channels_request, encode_dm_flash, encode_flash, encode_macros_request,
 };
@@ -274,7 +275,7 @@ pub async fn send_dm_flash(peer_id: String) -> Result<()> {
     let config = h.state.config().await;
     let flash = ChannelFlash {
         // Local key: our thread with the target peer.
-        channel_id: format!("dm:{}", target),
+        channel_id: DmThreadKey::for_peer(target).local_key(),
         sender_id: config.client_id,
         sender_name: config.client_name.clone(),
     };

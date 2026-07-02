@@ -1,6 +1,7 @@
 import '../bridge/bridge_client.dart';
 import '../store/app_store.dart';
 import 'channel.dart';
+import 'dm_thread.dart';
 import 'message.dart' show kAllChannelId;
 import 'selection.dart';
 
@@ -25,7 +26,7 @@ class SelectionController {
   Selection get selection => _selection;
 
   Set<String> get _idsToEnsure => _selection.dmPeerId != null
-      ? {'dm:${_selection.dmPeerId}'}
+      ? {DmThread(_selection.dmPeerId!).key}
       : _selection.tabIds;
 
   /// Calls `ensureMessages` for all relevant ids and pushes the current
@@ -46,8 +47,8 @@ class SelectionController {
     final sel = _selection;
     if (id == kAllChannelId) {
       _selection = AllSelection(sel is ChannelSelection ? sel.ids : {});
-    } else if (id.startsWith('dm:')) {
-      _selection = DmSelection(id.substring(3));
+    } else if (DmThread.tryParse(id) case final DmThread dm) {
+      _selection = DmSelection(dm.peerId);
     } else if (sel is AllSelection || sel is DmSelection) {
       _selection = ChannelSelection({id});
     } else if (sel is ChannelSelection && sel.ids.contains(id)) {

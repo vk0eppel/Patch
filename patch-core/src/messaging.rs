@@ -10,6 +10,7 @@ use tokio::sync::Mutex;
 use tracing::warn;
 use uuid::Uuid;
 
+use crate::dm::DmThreadKey;
 use crate::osc::codec::{encode_dm, encode_message, encode_osc};
 use crate::osc::types::{PatchMessage, Priority};
 use crate::reliability::ReliabilityManager;
@@ -127,7 +128,7 @@ pub(crate) async fn dispatch_dm(
     let msg = PatchMessage::new(
         config.client_id,
         &config.client_name,
-        format!("dm:{}", peer_id),
+        DmThreadKey::for_peer(peer_id).local_key(),
         prio,
         payload,
     );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/channel.dart';
+import '../models/dm_thread.dart';
 import '../models/message.dart';
 import '../models/selection.dart';
 
@@ -12,10 +13,10 @@ List<PatchMessage> combinedMessages(
   final all = <PatchMessage>[];
   switch (selection) {
     case DmSelection(peerId: final p):
-      all.addAll(messages['dm:$p'] ?? []);
+      all.addAll(messages[DmThread(p).key] ?? []);
     case AllSelection():
       for (final entry in messages.entries) {
-        if (entry.key.startsWith('dm:')) continue;
+        if (DmThread.isKey(entry.key)) continue;
         all.addAll(entry.value);
       }
     case ChannelSelection(ids: final ids):

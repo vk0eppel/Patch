@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'channel.dart';
+import 'dm_thread.dart';
 import 'events.dart';
 import 'flash_state.dart';
 export 'flash_state.dart';
@@ -44,9 +45,9 @@ FlashEvent? decideMessageFlash({
   required bool globalOnMessage,
   required int globalPulseCount,
 }) {
-  if (msg.channelId.startsWith('dm:')) {
+  if (DmThread.tryParse(msg.channelId) case final DmThread dm) {
     if (globalOnCritical && msg.isCritical) {
-      return DmFlashEvent(peerId: msg.channelId.substring(3));
+      return DmFlashEvent(peerId: dm.peerId);
     }
     return null;
   }
@@ -93,7 +94,7 @@ FlashState reduceEvent(
       if (flash != null) {
         return applyFlashEvent(state, flash, selection, settings);
       }
-      if (message.channelId.startsWith('dm:') &&
+      if (DmThread.isKey(message.channelId) &&
           !selection.containsRawId(message.channelId)) {
         return markDmUnread(state, message.channelId, settings.showPeers);
       }
@@ -103,8 +104,8 @@ FlashState reduceEvent(
       final FlashEvent flash;
       if (channelId == kAllChannelId) {
         flash = BroadcastFlashEvent(pulseCount: settings.flashCount);
-      } else if (channelId.startsWith('dm:')) {
-        flash = DmFlashEvent(peerId: channelId.substring(3));
+      } else if (DmThread.tryParse(channelId) case final DmThread dm) {
+        flash = DmFlashEvent(peerId: dm.peerId);
       } else {
         final ch = channels
             .cast<PatchChannel?>()
@@ -150,7 +151,7 @@ FlashState applyFlashEvent(
       );
 
     case DmFlashEvent(:final peerId):
-      final dmKey = 'dm:$peerId';
+      final dmKey = DmThread(peerId).key;
       final openDms = {...state.openDms, peerId};
       if (selection.containsRawId(dmKey)) {
         return state.copyWith(
@@ -179,11 +180,11 @@ FlashState clearUnread(FlashState state, String id) =>
 
 FlashState openDmThread(FlashState state, String peerId) => state.copyWith(
       openDms: {...state.openDms, peerId},
-      unreadDms: {...state.unreadDms}..remove('dm:$peerId'),
+      unreadDms: {...state.unreadDms}..remove(DmThread(peerId).key),
     );
 
 FlashState clearDmThread(FlashState state, String peerId) =>
-    state.copyWith(unreadDms: {...state.unreadDms}..remove('dm:$peerId'));
+    state.copyWith(unreadDms: {...state.unreadDms}..remove(DmThread(peerId).key));
 
 /// Derives the side-effect commands from a flash state transition. Pure.
 ({bool playAlert, ({Color color, int count})? pulse}) flashOutput(

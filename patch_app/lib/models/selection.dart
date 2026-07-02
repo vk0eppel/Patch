@@ -1,3 +1,4 @@
+import 'dm_thread.dart';
 import 'message.dart' show kAllChannelId;
 
 /// What the main message area is currently showing/targeting: one or more
@@ -39,7 +40,7 @@ sealed class Selection {
   bool containsRawId(String id) => switch (this) {
         ChannelSelection(ids: final ids) => ids.contains(id),
         AllSelection() => id == kAllChannelId,
-        DmSelection(peerId: final p) => id == 'dm:$p',
+        DmSelection(peerId: final p) => id == DmThread(p).key,
       };
 }
 

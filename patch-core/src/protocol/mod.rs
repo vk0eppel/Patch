@@ -15,6 +15,7 @@ use tokio::sync::Mutex;
 use tracing::{debug, warn};
 use uuid::Uuid;
 
+use crate::dm::DmThreadKey;
 use crate::osc::codec::{encode_ack, encode_channels_announce, encode_macros_announce, PatchEvent};
 use crate::osc::types::{ChannelFlash, PatchMessage, PeerPresence, Priority};
 use crate::reliability::ReliabilityManager;
@@ -182,7 +183,7 @@ async fn handle_direct_flash(
     // passes through valid_channel_id (which rejects `dm:` keys).
     state
         .publish(AppEvent::ChannelFlash(ChannelFlash {
-            channel_id: format!("dm:{}", sender_id),
+            channel_id: DmThreadKey::for_peer(sender_id).local_key(),
             sender_id,
             sender_name,
         }))

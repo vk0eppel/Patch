@@ -6,6 +6,7 @@
 //! `crate::api`; the rest of the crate is internal.
 
 pub mod discovery;
+pub(crate) mod dm;
 pub(crate) mod macro_router;
 pub(crate) mod messaging;
 pub mod midi;
