@@ -359,6 +359,31 @@ impl PeerRegistry {
         })
     }
 
+    /// Like [`Self::mark_offline`], but a no-op if the peer is still within
+    /// the `Online` window (per `Peer::status`). Used for evidence that
+    /// merely *suggests* departure (mDNS `ServiceRemoved`, which `mdns-sd`
+    /// can fire spuriously — see #126) rather than proving it, so it
+    /// shouldn't override a peer we just heard real traffic from.
+    pub(crate) async fn mark_offline_unless_recent(
+        &self,
+        peer_id: Uuid,
+        heartbeat_secs: u64,
+    ) -> Option<PeerPresence> {
+        let mut peers = self.peers.write().await;
+        let peer = peers.get_mut(&peer_id)?;
+        if peer.status(heartbeat_secs) == PeerStatus::Online {
+            return None;
+        }
+        peer.departed = true;
+        Some(PeerPresence {
+            peer_id: peer.peer_id,
+            peer_name: peer.peer_name.clone(),
+            channels: peer.channels.clone(),
+            role: peer.role.clone(),
+            timestamp: peer.last_seen,
+        })
+    }
+
     /// Test-only: insert a `Peer` directly, bypassing `record_sighting`'s
     /// rules — for fixtures that need a peer in a state `record_sighting`
     /// can't produce (e.g. a `ManualIp` peer, which in production only ever
@@ -639,6 +664,56 @@ mod tests {
     async fn mark_offline_is_a_noop_for_an_unknown_peer() {
         let reg = PeerRegistry::default();
         assert!(reg.mark_offline(Uuid::new_v4()).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn mark_offline_unless_recent_leaves_an_online_peer_alone() {
+        // A spurious mDNS ServiceRemoved shouldn't override a peer we just
+        // heard a real heartbeat from — see #126.
+        let reg = PeerRegistry::default();
+        let id = Uuid::new_v4();
+        reg.record_sighting(
+            PeerSighting::Heartbeat {
+                peer_id: id,
+                peer_name: "p".into(),
+            },
+            "10.0.0.1".into(),
+            9000,
+        )
+        .await;
+        assert!(reg.mark_offline_unless_recent(id, 7).await.is_none());
+        assert!(!reg.list().await[0].departed);
+    }
+
+    #[tokio::test]
+    async fn mark_offline_unless_recent_still_marks_a_stale_peer_departed() {
+        let reg = PeerRegistry::default();
+        let id = Uuid::new_v4();
+        reg.insert_for_test(
+            id,
+            Peer {
+                peer_id: id,
+                peer_name: "p".into(),
+                channels: Vec::new(),
+                role: None,
+                discovery_mode: DiscoveryMode::OscBeacon,
+                addresses: HashMap::new(),
+                last_seen: Utc::now() - chrono::Duration::seconds(36), // past 5x-heartbeat (35s)
+                departed: false,
+            },
+        )
+        .await;
+        assert!(reg.mark_offline_unless_recent(id, 7).await.is_some());
+        assert!(reg.list().await[0].departed);
+    }
+
+    #[tokio::test]
+    async fn mark_offline_unless_recent_is_a_noop_for_an_unknown_peer() {
+        let reg = PeerRegistry::default();
+        assert!(reg
+            .mark_offline_unless_recent(Uuid::new_v4(), 7)
+            .await
+            .is_none());
     }
 
     #[tokio::test]

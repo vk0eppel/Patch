@@ -169,8 +169,20 @@ impl Discovery {
                             // heartbeat timeout, but keep it in the list. If it was
                             // a transient mDNS blip and the peer is still up, its
                             // next OSC presence greens it again.
+                            //
+                            // `mdns-sd` fires spurious ServiceRemoved events far
+                            // more readily on Windows than macOS/Linux, which
+                            // otherwise flapped a still-live peer offline every
+                            // time one arrived — see #126. So this only marks
+                            // offline if the peer isn't still within its Online
+                            // window; a peer we've genuinely stopped hearing
+                            // from still gets marked offline promptly.
                             if let Some(peer_id) = resolved_ids.remove(&fullname) {
-                                browse_state.mark_peer_offline(peer_id).await;
+                                let heartbeat_secs =
+                                    browse_state.config().await.heartbeat_interval_secs;
+                                browse_state
+                                    .mark_peer_offline_unless_recent(peer_id, heartbeat_secs)
+                                    .await;
                             }
                         }
                         _ => {}

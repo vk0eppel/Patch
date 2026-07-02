@@ -425,6 +425,21 @@ impl AppState {
         }
     }
 
+    /// Like [`Self::mark_peer_offline`], but a no-op if the peer is still
+    /// within the `Online` window. For evidence that only *suggests*
+    /// departure (mDNS `ServiceRemoved`, which `mdns-sd` can fire spuriously
+    /// — see #126) rather than proving it.
+    pub async fn mark_peer_offline_unless_recent(&self, peer_id: Uuid, heartbeat_secs: u64) {
+        if let Some(presence) = self
+            .0
+            .peers
+            .mark_offline_unless_recent(peer_id, heartbeat_secs)
+            .await
+        {
+            self.publish(AppEvent::PeerUpdated(presence)).await;
+        }
+    }
+
     /// Returns the production role string for a peer by their UUID, if known.
     /// Used when synthesizing Flash log entries.
     pub async fn peer_role(&self, peer_id: Uuid) -> Option<String> {
@@ -2059,6 +2074,26 @@ mod tests {
         assert!(p.departed); // flagged as departed → UI shows "left"
         assert!(!p.is_stale(35)); // last_seen NOT backdated — real timestamp kept
         assert!(p.has_address()); // address retained for a possible reconnect
+    }
+
+    #[tokio::test]
+    async fn mark_peer_offline_unless_recent_ignores_a_spurious_removal_of_a_live_peer() {
+        // Regression for #126: a spurious mDNS ServiceRemoved (mdns-sd flaps
+        // these on Windows) shouldn't flip a peer we just heard from offline.
+        let st = test_state();
+        let pid = Uuid::new_v4();
+        st.record_sighting(
+            PeerSighting::Presence(presence(pid, chrono::Utc::now())),
+            "10.0.0.4".into(),
+            9000,
+        )
+        .await;
+
+        st.mark_peer_offline_unless_recent(pid, 7).await;
+
+        let peers = st.get_peers().await;
+        let p = peers.iter().find(|p| p.peer_id == pid).unwrap();
+        assert!(!p.departed);
     }
 
     #[tokio::test]
