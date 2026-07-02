@@ -2,6 +2,7 @@
 //! All access is through `Arc<AppState>`; interior mutation via `tokio::sync::RwLock`.
 
 pub mod channel;
+mod channel_store;
 pub mod config;
 mod message;
 pub mod peer;
@@ -13,7 +14,7 @@ use std::time::Instant;
 use tokio::sync::{broadcast, Mutex, RwLock};
 use uuid::Uuid;
 
-use channel::ChannelRegistry;
+use channel_store::ChannelStore;
 use config::ConfigStore;
 use message::MessageBuffer;
 use peer::PeerRegistry;
@@ -72,9 +73,9 @@ pub struct AppState(Arc<Inner>);
 #[derive(Debug)]
 struct Inner {
     /// Config store — owns its own lock(s) internally.
-    pub config: ConfigStore,
-    /// Channel/macro registry — owns its own lock internally.
-    pub channels: ChannelRegistry,
+    pub config: Arc<ConfigStore>,
+    /// Channel/macro registry with auto-persist — owns its own lock internally.
+    pub channels: ChannelStore,
     /// Peer registry — owns its own lock internally.
     pub peers: PeerRegistry,
     /// Recent messages (ring buffer with dedup) — owns its own lock internally.
@@ -110,10 +111,12 @@ pub fn is_self(id: Uuid, client_id: Uuid) -> bool {
 impl AppState {
     pub fn new(config: Config) -> Self {
         let (tx, _) = broadcast::channel(256);
-        let channels = ChannelRegistry::seeded(config.default_channels.clone());
+        let channel_data = config.default_channels.clone();
+        let config_arc = Arc::new(ConfigStore::new(config));
+        let channels = ChannelStore::seeded(channel_data, Arc::clone(&config_arc));
 
         Self(Arc::new(Inner {
-            config: ConfigStore::new(config),
+            config: config_arc,
             channels,
             peers: PeerRegistry::default(),
             messages: MessageBuffer::default(),
@@ -310,7 +313,6 @@ impl AppState {
             .channels
             .set_flash(channel_id, flash_on_critical, flash_on_message, flash_count)
             .await?;
-        self.persist_channels().await?;
         self.publish(AppEvent::ChannelListUpdated).await;
         Ok(())
     }
@@ -560,14 +562,12 @@ impl AppState {
 
     pub async fn upsert_channel(&self, ch: channel::Channel) {
         self.0.channels.upsert(ch).await;
-        self.persist_channels().await.ok();
         self.publish(AppEvent::ChannelListUpdated).await;
     }
 
     /// Delete a channel by ID.
     pub async fn delete_channel(&self, channel_id: &str) -> anyhow::Result<()> {
         self.0.channels.delete(channel_id).await;
-        self.persist_channels().await?;
         self.publish(AppEvent::ChannelListUpdated).await;
         Ok(())
     }
@@ -618,7 +618,7 @@ impl AppState {
             }
         }
 
-        self.0.channels.replace_all(channels).await;
+        self.0.channels.replace_all_silent(channels).await;
         // Replace static peers and sync default_channels into the config, then
         // persist once (rather than a write for channels + a write for peers).
         let channels_snapshot = self.0.channels.list().await;
@@ -659,7 +659,6 @@ impl AppState {
             .merge(channels, flash_on_critical, flash_on_message)
             .await;
         if added > 0 {
-            self.persist_channels().await?;
             self.publish(AppEvent::ChannelListUpdated).await;
         }
         Ok(added)
@@ -727,7 +726,6 @@ impl AppState {
         let mut global_macros = self.0.config.read(|c| c.global_macros.clone()).await;
         channel::sanitize_binding_collisions(&mut global_macros, &mut channels);
         self.0.channels.replace_all(channels).await;
-        self.persist_channels().await?;
         self.publish(AppEvent::ChannelListUpdated).await;
         Ok(())
     }
@@ -747,7 +745,6 @@ impl AppState {
             .channels
             .upsert_macro(channel_id, original_label, macro_msg, &global_macros)
             .await?;
-        self.persist_channels().await?;
         self.publish(AppEvent::ChannelListUpdated).await;
         Ok(())
     }
@@ -766,7 +763,6 @@ impl AppState {
             .channels
             .reorder_macros(channel_id, ordered_labels)
             .await?;
-        self.persist_channels().await?;
         self.publish(AppEvent::ChannelListUpdated).await;
         Ok(())
     }
@@ -864,18 +860,7 @@ impl AppState {
     /// Remove a macro from a channel by label.
     pub async fn delete_macro(&self, channel_id: &str, label: &str) -> anyhow::Result<()> {
         self.0.channels.delete_macro(channel_id, label).await?;
-        self.persist_channels().await?;
         self.publish(AppEvent::ChannelListUpdated).await;
-        Ok(())
-    }
-
-    /// Write current channel macros back to patch.toml.
-    async fn persist_channels(&self) -> anyhow::Result<()> {
-        let channels = self.0.channels.list().await;
-        self.0
-            .config
-            .mutate_and_persist(|cfg| cfg.default_channels = channels)
-            .await;
         Ok(())
     }
 
