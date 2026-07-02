@@ -9,15 +9,17 @@ import 'package:flutter/foundation.dart';
 /// state files live in one directory.
 class WorkspaceState {
   final bool showPeers;
-  final bool showMacros;
+  // null = never explicitly toggled; home_screen derives the default from
+  // whether any macros are configured (Global or Channel).
+  final bool? showMacros;
   final double? windowX;
   final double? windowY;
   final double? windowWidth;
   final double? windowHeight;
 
   const WorkspaceState({
-    this.showPeers = false,
-    this.showMacros = false,
+    this.showPeers = true,
+    this.showMacros,
     this.windowX,
     this.windowY,
     this.windowWidth,
@@ -25,8 +27,8 @@ class WorkspaceState {
   });
 
   factory WorkspaceState.fromJson(Map<String, dynamic> json) => WorkspaceState(
-        showPeers: json['showPeers'] as bool? ?? false,
-        showMacros: json['showMacros'] as bool? ?? false,
+        showPeers: json['showPeers'] as bool? ?? true,
+        showMacros: json['showMacros'] as bool?,
         windowX: (json['windowX'] as num?)?.toDouble(),
         windowY: (json['windowY'] as num?)?.toDouble(),
         windowWidth: (json['windowWidth'] as num?)?.toDouble(),
@@ -35,7 +37,7 @@ class WorkspaceState {
 
   Map<String, dynamic> toJson() => {
         'showPeers': showPeers,
-        'showMacros': showMacros,
+        if (showMacros != null) 'showMacros': showMacros,
         if (windowX != null) 'windowX': windowX,
         if (windowY != null) 'windowY': windowY,
         if (windowWidth != null) 'windowWidth': windowWidth,

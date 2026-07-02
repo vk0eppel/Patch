@@ -33,8 +33,16 @@ A message at Critical priority — delivery must be confirmed via ACK/retransmit
 _Avoid_: Priority message, urgent message, confirmed message
 
 **Macro**:
-A one-touch callout with its content, channel, priority, and action type (text message, OSC message, etc.) preset. Fired instantly during a production without composing or deciding.
+A one-touch callout with its label, payload, and priority preset. Fired instantly during a production without composing or deciding. May optionally also fire an OSC command alongside the Patch message — this is additive, not an alternative action type.
 _Avoid_: Shortcut, template, preset, button
+
+**Channel Macro**:
+A Macro permanently bound to a specific Channel. Fires on that Channel regardless of what the Operator currently has selected. Stored inside the Channel definition.
+_Avoid_: Local macro, per-channel macro
+
+**Global Macro**:
+A Macro with no preset Channel. Fires on whichever Channel(s) the Operator currently has selected at the moment of firing. If nothing is selected, the macro sends nothing. Stored separately from Channels in config.
+_Avoid_: Universal macro, floating macro
 
 **Production**:
 The live event being executed — a theatre show, broadcast, corporate AV event, touring date, etc. The bounded context within which all Patch communication takes place.

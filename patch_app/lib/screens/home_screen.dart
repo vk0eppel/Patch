@@ -107,6 +107,9 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   bool get _showPeers => _showPeersValue;
   set _showPeers(bool v) { _showPeersValue = v; _presenter.showPeers = v; }
   late bool _showMacros;
+  // Guards the one-shot conditional default so _onStoreChanged doesn't
+  // re-apply it every time config or channels update.
+  bool _macrosPanelDefaultApplied = false;
   // Full workspace state — panel flags + geometry kept together so a panel
   // toggle never clobbers previously-saved window geometry.
   late WorkspaceState _workspace;
@@ -256,7 +259,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   void initState() {
     super.initState();
     _workspace = widget.initialWorkspace;
-    _showMacros = _workspace.showMacros;
+    _showMacros = _workspace.showMacros ?? false;
     if (_isDesktop) windowManager.addListener(this);
     _showPeersValue = _workspace.showPeers;
     // Peers, config, and channels are all loaded by the AppStore (see main).
@@ -322,6 +325,14 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
         nameIsDefault: cfg.nameIsDefault,
         currentName: cfg.clientName,
       );
+      // First config load: if the Operator has never explicitly toggled the
+      // macros panel, derive the default from whether any macros are configured.
+      if (!_macrosPanelDefaultApplied && _workspace.showMacros == null) {
+        _macrosPanelDefaultApplied = true;
+        final hasMacros = cfg.globalMacros.isNotEmpty ||
+            (_store?.channels.any((c) => c.macros.isNotEmpty) ?? false);
+        if (hasMacros) setState(() => _showMacros = true);
+      }
     }
     // Reconcile the selection only when the channel set actually changed (the
     // listener fires on any store notify, incl. peers/config).
