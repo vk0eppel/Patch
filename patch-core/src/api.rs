@@ -19,8 +19,7 @@ use uuid::Uuid;
 
 use crate::discovery::Discovery;
 use crate::osc::codec::{
-    encode_bye, encode_channels_request, encode_dm, encode_dm_flash, encode_flash,
-    encode_macros_request,
+    encode_bye, encode_channels_request, encode_dm_flash, encode_flash, encode_macros_request,
 };
 use crate::osc::types::{ChannelFlash, OscArgKind, PatchMessage, Priority};
 use crate::reliability::ReliabilityManager;
@@ -243,33 +242,11 @@ pub async fn send_direct_message(
     let h = engine();
     let target = Uuid::parse_str(&peer_id).map_err(|_| anyhow::anyhow!("invalid peer id"))?;
     let prio = Priority::try_from(priority).unwrap_or(Priority::Info);
-    let config = h.state.config().await;
-    let msg = PatchMessage::new(
-        config.client_id,
-        &config.client_name,
-        format!("dm:{}", target),
-        prio,
-        payload,
-    );
-    let peer = h
-        .state
-        .get_peers()
-        .await
-        .into_iter()
-        .find(|p| p.peer_id == target)
-        .ok_or_else(|| anyhow::anyhow!("peer not found"))?;
-    if let Some(addr) = peer.best_addr() {
-        let bytes = encode_dm(&msg, target)?;
-        h.transport.send_to(bytes, addr).await?;
-    } else {
-        tracing::warn!(
-            "DM target {} has no address yet — stored locally only",
-            target
-        );
-    }
-    let id = msg.message_id.to_string();
-    h.state.store_message(msg).await;
-    Ok(id)
+    Ok(
+        crate::messaging::dispatch_dm(&h.state, &h.transport, target, payload, prio)
+            .await?
+            .to_string(),
+    )
 }
 
 /// Flashes a channel (sends to peers + fires local event).

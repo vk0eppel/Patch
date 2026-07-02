@@ -10,7 +10,7 @@ use tokio::sync::Mutex;
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::osc::codec::{encode_message, encode_osc};
+use crate::osc::codec::{encode_dm, encode_message, encode_osc};
 use crate::osc::types::{PatchMessage, Priority};
 use crate::reliability::ReliabilityManager;
 use crate::state::channel::{self, OscTarget};
@@ -104,6 +104,45 @@ pub(crate) async fn originate_for_relay(
     }
     state.store_message(msg).await;
     out
+}
+
+/// Send a direct (peer-to-peer) message to one peer. Best-effort (no ACK/retransmit).
+/// Shared by the FFI `send_direct_message` and `macro_router::fire_trigger`'s DM
+/// branch — the latter already holds injected handles, so going through `engine()`
+/// would be a redundant singleton re-entry.
+pub(crate) async fn dispatch_dm(
+    state: &AppState,
+    transport: &Arc<Transport>,
+    peer_id: Uuid,
+    payload: String,
+    prio: Priority,
+) -> Result<Uuid> {
+    let config = state.config().await;
+    let msg = PatchMessage::new(
+        config.client_id,
+        &config.client_name,
+        format!("dm:{}", peer_id),
+        prio,
+        payload,
+    );
+    let peer = state
+        .get_peers()
+        .await
+        .into_iter()
+        .find(|p| p.peer_id == peer_id)
+        .ok_or_else(|| anyhow::anyhow!("peer not found"))?;
+    if let Some(addr) = peer.best_addr() {
+        let bytes = encode_dm(&msg, peer_id)?;
+        transport.send_to(bytes, addr).await?;
+    } else {
+        warn!(
+            "DM target {} has no address yet — stored locally only",
+            peer_id
+        );
+    }
+    let id = msg.message_id;
+    state.store_message(msg).await;
+    Ok(id)
 }
 
 /// Send an arbitrary OSC packet to an external target. Validates the target

@@ -98,8 +98,9 @@ pub(crate) async fn fire_trigger(
 
     if let Some(peer_id) = state.dm_target().await {
         for (payload, priority) in resolve_dm_payloads(&channels, &globals, trigger) {
+            let prio = Priority::try_from(priority).unwrap_or(Priority::Info);
             if let Err(e) =
-                crate::api::send_direct_message(peer_id.to_string(), payload, priority).await
+                crate::messaging::dispatch_dm(state, transport, peer_id, payload, prio).await
             {
                 tracing::warn!("macro trigger DM send to {} failed: {}", peer_id, e);
             }
