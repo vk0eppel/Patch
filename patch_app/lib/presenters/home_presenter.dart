@@ -17,7 +17,7 @@ import '../models/flash_model.dart' as fm
         clearDmThread,
         openDmThread,
         flashOutput;
-import '../models/message.dart';
+import '../models/message.dart' show MessageDeliveryStatus, PeerInfo, PeerStatus;
 import '../models/selection.dart';
 import '../models/selection_controller.dart';
 
@@ -56,6 +56,7 @@ class HomePresenter extends ChangeNotifier {
   HomePresenter({
     required Stream<PatchEvent> pushes,
     Stream<AppConfig?>? configStream,
+    Stream<List<PeerInfo>>? peersStream,
     this.supportsFlashOverlay = false,
     this._selectionController,
     List<PatchChannel> Function()? channelGetter,
@@ -73,12 +74,15 @@ class HomePresenter extends ChangeNotifier {
         ) {
     _pushSub = pushes.listen(_handlePush);
     _configSub = configStream?.listen(_applyConfig);
+    _peersSub = peersStream?.listen((peers) => _peers = peers);
   }
 
   final bool supportsFlashOverlay;
   final SelectionController? _selectionController;
   StreamSubscription<PatchEvent>? _pushSub;
   StreamSubscription<AppConfig?>? _configSub;
+  StreamSubscription<List<PeerInfo>>? _peersSub;
+  List<PeerInfo> _peers = [];
   final _commandCtrl = StreamController<HomeCommand>.broadcast(sync: true);
 
   final List<PatchChannel> Function() _channelGetter;
@@ -104,6 +108,24 @@ class HomePresenter extends ChangeNotifier {
   Set<String> get openDms => _state.openDms;
   Set<String> get unreadDms => _state.unreadDms;
   int get dmPulseNotify => _state.dmPulseNotify;
+
+  // ── Peer lookup ──────────────────────────────────────────────────────────
+
+  String dmPeerName(String peerId) {
+    for (final p in _peers) {
+      if (p.peerId == peerId) return p.peerName;
+    }
+    return 'Unknown';
+  }
+
+  bool isDmPeerOffline(String peerId) {
+    final peer = _peers.cast<PeerInfo?>().firstWhere(
+          (p) => p?.peerId == peerId,
+          orElse: () => null,
+        );
+    if (peer == null || peer.address.isEmpty) return true;
+    return peer.status == PeerStatus.offline;
+  }
 
   // ── Public API ────────────────────────────────────────────────────────────
 
@@ -189,6 +211,7 @@ class HomePresenter extends ChangeNotifier {
   void dispose() {
     _pushSub?.cancel();
     _configSub?.cancel();
+    _peersSub?.cancel();
     _commandCtrl.close();
     super.dispose();
   }

@@ -129,6 +129,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   late final HomePresenter _presenter;
   StreamSubscription<HomeCommand>? _commandSub;
   final _configStreamCtrl = StreamController<AppConfig?>.broadcast();
+  final _peersStreamCtrl = StreamController<List<PeerInfo>>.broadcast();
   /// Macros shown on every channel (configured once); fired on the currently-
   /// selected channel(s). Owned by the AppStore config (#56).
   List<MacroMessage> get _globalMacros => _config?.globalMacros ?? const [];
@@ -153,41 +154,13 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   /// The peer id of the open DM thread, or null when not in DM mode.
   String? get _dmPeerId => _selection.dmPeerId;
 
-  /// Display name for a DM peer — from the live peer list, else the last message
-  /// they sent in the thread, else a short fallback.
-  String _dmPeerName(String peerId) {
-    for (final p in _peers) {
-      if (p.peerId == peerId) return p.peerName;
-    }
-    final thread = _messages['dm:$peerId'];
-    if (thread != null) {
-      for (final m in thread.reversed) {
-        if (m.senderId == peerId) return m.senderName;
-      }
-    }
-    return 'Unknown';
-  }
-
-  /// Whether the open DM peer looks offline — no resolved address, or its
-  /// engine-classified status (`PeerInfo.status`, same source as the peers
-  /// panel's grey dot) has reached `offline`. DMs are best-effort with no
-  /// delivery receipt, so we warn before one that probably won't arrive.
-  bool get _isDmPeerOffline {
-    final id = _dmPeerId;
-    if (id == null) return false;
-    final peer = _peers
-        .cast<PeerInfo?>()
-        .firstWhere((p) => p?.peerId == id, orElse: () => null);
-    if (peer == null || peer.address.isEmpty) return true;
-    return peer.status == PeerStatus.offline;
-  }
-
   /// Warn (once) when a DM has just been sent to a peer that appears offline.
   /// The message is still stored locally and sent best-effort, but the recipient
   /// may never receive it. Called after every DM send — typed, macro, or flash.
   void _warnIfDmPeerOffline() {
-    if (!_isDmMode || !_isDmPeerOffline || !mounted) return;
-    final name = _dmPeerName(_dmPeerId!);
+    final id = _dmPeerId;
+    if (!_isDmMode || id == null || !_presenter.isDmPeerOffline(id) || !mounted) return;
+    final name = _presenter.dmPeerName(id);
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
@@ -294,6 +267,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
       _presenter = HomePresenter(
         pushes: widget.bridge.pushes,
         configStream: _configStreamCtrl.stream,
+        peersStream: _peersStreamCtrl.stream,
         supportsFlashOverlay: Platform.isMacOS || Platform.isWindows,
         selectionController: _selectionController,
         channelGetter: () => AppStoreScope.read(context).channels,
@@ -315,6 +289,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   void _onStoreChanged() {
     final cfg = _store?.config;
     _configStreamCtrl.add(cfg);
+    _peersStreamCtrl.add(_store?.peers ?? const []);
     if (cfg != null) {
       _maybeShowNamePrompt(
         nameIsDefault: cfg.nameIsDefault,
@@ -364,6 +339,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
     _store?.removeListener(_onStoreChanged);
     _commandSub?.cancel();
     _configStreamCtrl.close();
+    _peersStreamCtrl.close();
     _presenter.dispose();
     _alertPlayer.dispose();
     super.dispose();
@@ -615,7 +591,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
                       selection: _selection,
                       channels: _channels,
                       dmPeerName:
-                          _dmPeerId == null ? null : _dmPeerName(_dmPeerId!),
+                          _dmPeerId == null ? null : _presenter.dmPeerName(_dmPeerId!),
                       onDmSent: _warnIfDmPeerOffline,
                       onMessagesCleared: _onMessagesCleared,
                       messages: _combinedMessages,
