@@ -115,6 +115,11 @@ impl Peer {
         if self.departed || matches!(self.discovery_mode, DiscoveryMode::ManualIp) {
             return PeerStatus::Offline;
         }
+        // A peer with no resolved address can't be reached no matter how
+        // recently it was heard — don't let it read as healthy (#137).
+        if !self.has_address() {
+            return PeerStatus::Offline;
+        }
         if self.is_stale(heartbeat_secs.saturating_mul(5) as i64) {
             PeerStatus::Offline
         } else if self.is_stale(heartbeat_secs.saturating_mul(2) as i64) {
@@ -414,6 +419,12 @@ mod tests {
     use crate::osc::types::PeerPresence;
 
     fn peer_at(last_seen: DateTime<Utc>, mode: DiscoveryMode) -> Peer {
+        let mut p = peer_at_addressless(last_seen, mode);
+        p.add_address("10.0.0.1:9000".parse().unwrap(), last_seen);
+        p
+    }
+
+    fn peer_at_addressless(last_seen: DateTime<Utc>, mode: DiscoveryMode) -> Peer {
         let mut p = Peer::from_presence(PeerPresence {
             peer_id: Uuid::new_v4(),
             peer_name: "p".into(),
@@ -423,6 +434,15 @@ mod tests {
         });
         p.discovery_mode = mode;
         p
+    }
+
+    #[test]
+    fn status_addressless_peer_is_offline_even_when_recently_seen() {
+        // A Peer we can hear but not reach (e.g. an mDNS record that resolved
+        // without an address) must not read as healthy — the DM-offline
+        // warning and the peers panel read this one field (#137).
+        let p = peer_at_addressless(Utc::now(), DiscoveryMode::OscBeacon);
+        assert_eq!(p.status(7), PeerStatus::Offline);
     }
 
     #[test]

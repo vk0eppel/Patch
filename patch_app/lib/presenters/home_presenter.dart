@@ -119,12 +119,13 @@ class HomePresenter extends ChangeNotifier {
   }
 
   bool isDmPeerOffline(String peerId) {
+    // Reachability is classified engine-side (PeerStatus) — including the
+    // no-resolved-address case (#137). No Dart-side re-derivation.
     final peer = _peers.cast<PeerInfo?>().firstWhere(
           (p) => p?.peerId == peerId,
           orElse: () => null,
         );
-    if (peer == null || peer.address.isEmpty) return true;
-    return peer.status == PeerStatus.offline;
+    return peer == null || peer.status == PeerStatus.offline;
   }
 
   // ── Public API ────────────────────────────────────────────────────────────
