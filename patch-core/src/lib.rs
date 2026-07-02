@@ -7,6 +7,7 @@
 
 pub mod discovery;
 pub(crate) mod macro_router;
+pub(crate) mod messaging;
 pub mod midi;
 pub mod osc;
 pub(crate) mod protocol;

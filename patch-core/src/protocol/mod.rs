@@ -15,9 +15,7 @@ use tokio::sync::Mutex;
 use tracing::{debug, warn};
 use uuid::Uuid;
 
-use crate::osc::codec::{
-    encode_ack, encode_channels_announce, encode_macros_announce, encode_message, PatchEvent,
-};
+use crate::osc::codec::{encode_ack, encode_channels_announce, encode_macros_announce, PatchEvent};
 use crate::osc::types::{ChannelFlash, PatchMessage, PeerPresence, Priority};
 use crate::reliability::ReliabilityManager;
 use crate::state::channel::{Channel, MacroMessage};
@@ -274,48 +272,7 @@ async fn handle_say(
     state: &AppState,
     reliability: &Arc<Mutex<ReliabilityManager>>,
 ) -> Vec<Outgoing> {
-    let mut out = Vec::new();
-    // External OSC injection (e.g. QLab). This node *originates* the
-    // message — its identity, a fresh id + timestamp — then relays it to
-    // every known peer and stores it locally, so an OSC source can post to
-    // the whole crew through this node (exactly as if typed here).
-    let config = state.config().await;
-    let msg = PatchMessage::new(
-        config.client_id,
-        &config.client_name,
-        channel_id,
-        priority,
-        payload,
-    );
-    match encode_message(&msg) {
-        Ok(bytes) => {
-            // Same target resolution as `Transport::send_to_peers` — this
-            // path just returns the packets instead of sending directly.
-            let targets = state.reachable_peer_addrs(config.client_id).await;
-            for addr in &targets {
-                out.push(Outgoing::To(bytes.clone(), *addr));
-            }
-            // Track criticals for retransmit, like a hand-sent message —
-            // same offline-peer filter `dispatch_message` applies, so an
-            // injected critical doesn't retransmit against peers already
-            // known to be gone. Use peer-keyed targets for ACK matching.
-            if msg.is_critical() {
-                let peer_targets = state.reachable_peers_with_addrs(config.client_id).await;
-                crate::reliability::track_critical(
-                    reliability,
-                    state,
-                    config.heartbeat_interval_secs,
-                    msg.message_id,
-                    bytes,
-                    peer_targets,
-                )
-                .await;
-            }
-        }
-        Err(e) => warn!("Failed to encode OSC-injected message: {}", e),
-    }
-    state.store_message(msg).await;
-    out
+    crate::messaging::originate_for_relay(channel_id, payload, priority, state, reliability).await
 }
 
 async fn handle_channels_request(

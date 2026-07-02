@@ -9,7 +9,6 @@
 //! Lifecycle: call `init()` once at app start. All other functions assume
 //! the engine is up and will panic if called first.
 
-use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -21,7 +20,7 @@ use uuid::Uuid;
 use crate::discovery::Discovery;
 use crate::osc::codec::{
     encode_bye, encode_channels_request, encode_dm, encode_dm_flash, encode_flash,
-    encode_macros_request, encode_message, encode_osc,
+    encode_macros_request,
 };
 use crate::osc::types::{ChannelFlash, OscArgKind, PatchMessage, Priority};
 use crate::reliability::ReliabilityManager;
@@ -164,9 +163,7 @@ pub fn engine() -> &'static EngineHandle {
 // ── Messaging ────────────────────────────────────────────────────────────────
 
 /// Core send path, shared by the FFI `send_message` and the engine-internal MIDI
-/// trigger (`crate::midi`). Encodes the message, unicasts to peers, tracks
-/// criticals for ACK/retransmit, stores it locally, and reports an immediate
-/// failure for a critical sent with no peers online. Returns the message_id.
+/// trigger (`crate::midi`). Delegates to `messaging::dispatch_channel_message`.
 #[frb(ignore)]
 pub(crate) async fn dispatch_message(
     state: &AppState,
@@ -176,62 +173,23 @@ pub(crate) async fn dispatch_message(
     payload: String,
     prio: Priority,
 ) -> Result<uuid::Uuid> {
-    let config = state.config().await;
-    let msg = PatchMessage::new(
-        config.client_id,
-        &config.client_name,
+    crate::messaging::dispatch_channel_message(
+        state,
+        transport,
+        reliability,
         channel_id,
-        prio,
         payload,
-    );
-    let bytes = encode_message(&msg)?;
-    let _targets = transport
-        .send_to_peers(bytes.clone(), state, &config)
-        .await?;
-    let message_id = msg.message_id;
-    let is_critical = msg.is_critical();
-    // Critical messages require ACKs — register for retransmit until every
-    // contacted peer acknowledges (or MAX_RETRIES is exceeded).
-    // Use peer-keyed targets for ACK matching (separate from the flat address
-    // list used for the actual send above).
-    let target_count = if is_critical {
-        let peer_targets = state.reachable_peers_with_addrs(config.client_id).await;
-        crate::reliability::track_critical(
-            reliability,
-            state,
-            config.heartbeat_interval_secs,
-            message_id,
-            bytes,
-            peer_targets,
-        )
-        .await
-    } else {
-        0
-    };
-    state.store_message(msg).await;
-    // A critical with no peers to send to can never be delivered — surface that
-    // immediately (the retransmit poller only knows about *tracked* messages).
-    if is_critical && target_count == 0 {
-        crate::reliability::report_delivery_failure(state, message_id, 0, 0, &[]).await;
-    }
-    Ok(message_id)
+        prio,
+    )
+    .await
 }
 
 /// Send an arbitrary outbound OSC message to external gear (the "OSC macro"
 /// action). Shared by the FFI `send_osc_macro` and the engine-side MIDI fire path.
-/// Validates via `channel::validate_osc_target` — the single source of truth for
-/// "is this OSC target legal" (ADR-0002) — applying the same "reject immediately"
-/// policy as a live UI edit, since this fire path is always Operator/MIDI-triggered
-/// in the moment. The packet goes out on the OSC socket via the normal send queue.
+/// Delegates to `messaging::dispatch_osc`.
 #[frb(ignore)]
 pub(crate) async fn dispatch_osc(transport: &Arc<Transport>, target: &OscTarget) -> Result<()> {
-    channel::validate_osc_target(target)?;
-    let ip: IpAddr = target.address.parse().expect("validated above");
-    let bytes = encode_osc(&target.path, target.arg_type, target.arg.as_deref())?;
-    transport
-        .send_to(bytes, SocketAddr::new(ip, target.port))
-        .await?;
-    Ok(())
+    crate::messaging::dispatch_osc(transport, target).await
 }
 
 /// Fire an OSC message to an external target (e.g. QLab). Used by the UI's
