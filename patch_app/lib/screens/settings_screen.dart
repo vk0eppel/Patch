@@ -12,7 +12,9 @@ import '../store/app_store.dart';
 import '../theme/patch_theme.dart';
 import '../util/run_guarded.dart';
 import '../presenters/settings/behavior_presenter.dart';
+import '../presenters/settings/channels_import_presenter.dart';
 import '../presenters/settings/identity_presenter.dart';
+import '../presenters/settings/macros_import_presenter.dart';
 import '../presenters/settings/network_presenter.dart';
 import '../presenters/settings/static_peers_presenter.dart';
 import '../widgets/settings/behavior_section.dart';
@@ -69,6 +71,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     refreshConfig: () => AppStoreScope.read(context).refreshConfig(),
     getInterfaces: widget.bridge.getInterfaces,
   );
+  late final _channelsImportPresenter = ChannelsImportPresenter(
+    requestChannels: widget.bridge.requestChannels,
+  );
+  late final _macrosImportPresenter = MacrosImportPresenter(
+    requestGlobalMacros: widget.bridge.requestGlobalMacros,
+    previewGlobalMacros: widget.bridge.previewGlobalMacros,
+  );
 
   // Channels are owned by the AppStore (#57).
   List<PatchChannel> get _channels => AppStoreScope.of(context).channels;
@@ -89,16 +98,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // Live peers (for "import channels from a peer") — owned by the AppStore.
   List<PeerInfo> get _peers => AppStoreScope.of(context).peers;
-
-  /// True between sending a channels request and receiving the offer, so an
-  /// unsolicited `channels_offered` (a peer announcing without us asking) is
-  /// ignored rather than popping a dialog.
-  bool _awaitingOffer = false;
-
-  /// Same purpose as [_awaitingOffer], but for global-macro import — kept
-  /// separate so the two request/offer flows can't cross-trigger each other's
-  /// dialog if both are in flight at once.
-  bool _awaitingMacrosOffer = false;
 
   // ── Section nav (#73) ──────────────────────────────────────────────────
   // A left rail (or, below _kNarrowBreakpoint, an app-bar jump menu) lets a
@@ -220,12 +219,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case ChannelsChanged():
         break;
       case ChannelsOffered(:final fromName, :final channels):
-        if (!_awaitingOffer) break; // ignore unsolicited announces
-        _awaitingOffer = false;
-        if (mounted) _showOfferDialog(fromName, channels);
+        final fresh = _channelsImportPresenter.handleOffer(
+          offered: channels,
+          existing: _channels,
+        );
+        if (fresh != null && mounted) {
+          _showOfferDialog(fromName, channels, fresh);
+        }
       case GlobalMacrosOffered(:final fromName, :final globalMacros):
-        if (!_awaitingMacrosOffer) break; // ignore unsolicited announces
-        _awaitingMacrosOffer = false;
+        if (!_macrosImportPresenter.handleOffer()) break;
         if (mounted) _showMacrosOfferDialog(fromName, globalMacros);
       // Not consumed by settings — handled on the home screen.
       case MessageReceived():
@@ -306,8 +308,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _requestFromPeer(String peerId, String name) {
-    setState(() => _awaitingOffer = true);
-    runGuarded(context, () => widget.bridge.requestChannels(peerId));
+    runGuarded(context, () => _channelsImportPresenter.request(peerId));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Requesting channels from $name…'),
@@ -316,15 +317,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     // Clear the flag if no offer arrives (peer offline / not a Patch node), so a
     // later unsolicited announce can't pop a stale dialog.
-    Future.delayed(const Duration(seconds: 6), () {
-      if (mounted && _awaitingOffer) setState(() => _awaitingOffer = false);
-    });
+    Future.delayed(const Duration(seconds: 6), _channelsImportPresenter.timeout);
   }
 
-  /// Preview a peer's offered channels and merge-adopt the ones we're missing.
-  void _showOfferDialog(String fromName, List<PatchChannel> channels) {
+  /// Preview a peer's offered channels ([fresh] — the ones we're missing,
+  /// computed by [ChannelsImportPresenter]) and merge-adopt them.
+  void _showOfferDialog(
+    String fromName,
+    List<PatchChannel> channels,
+    List<PatchChannel> fresh,
+  ) {
     final existing = _channels.map((c) => c.id).toSet();
-    final fresh = channels.where((c) => !existing.contains(c.id)).toList();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -470,8 +473,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _requestMacrosFromPeer(String peerId, String name) {
-    setState(() => _awaitingMacrosOffer = true);
-    runGuarded(context, () => widget.bridge.requestGlobalMacros(peerId));
+    runGuarded(context, () => _macrosImportPresenter.request(peerId));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Requesting macros from $name…'),
@@ -482,8 +484,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // doesn't speak the macros-import protocol), so a later unsolicited
     // announce can't pop a stale dialog.
     Future.delayed(const Duration(seconds: 6), () {
-      if (mounted && _awaitingMacrosOffer) {
-        setState(() => _awaitingMacrosOffer = false);
+      if (mounted && _macrosImportPresenter.timeout()) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -505,7 +506,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       builder: (ctx) => FutureBuilder<List<MacroImportOutcome>>(
-        future: widget.bridge.previewGlobalMacros(offered),
+        future: _macrosImportPresenter.preview(offered),
         builder: (ctx, snapshot) {
           if (!snapshot.hasData) {
             return const AlertDialog(
