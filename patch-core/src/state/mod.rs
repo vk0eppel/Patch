@@ -4,6 +4,7 @@
 pub mod channel;
 mod channel_store;
 pub mod config;
+pub(crate) mod export;
 mod message;
 pub mod peer;
 pub mod show_file;

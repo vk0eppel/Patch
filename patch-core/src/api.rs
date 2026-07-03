@@ -591,73 +591,13 @@ pub async fn clear_messages(channel_id: Option<String>) -> Result<()> {
     Ok(())
 }
 
-/// Escape a value for a quoted CSV field, neutralising spreadsheet formula
-/// injection. Excel/Sheets treat a cell starting with `=`, `+`, `-`, `@`, tab,
-/// or CR as a formula; since these values come from arbitrary LAN OSC sources,
-/// such cells are prefixed with `'`. Double-quotes are doubled per RFC 4180.
-fn csv_escape(s: &str) -> String {
-    let needs_guard = s
-        .chars()
-        .next()
-        .is_some_and(|c| matches!(c, '=' | '+' | '-' | '@' | '\t' | '\r'));
-    let mut out = String::with_capacity(s.len() + 2);
-    if needs_guard {
-        out.push('\'');
-    }
-    out.push_str(&s.replace('"', "\"\""));
-    out
-}
-
 /// Export messages to a CSV file at `path`.
 /// When `channel_id` is `Some`, only that channel's messages are exported.
 /// When `None`, all channels are exported (a `channel` column is included).
 pub async fn export_messages(channel_id: Option<String>, path: String) -> Result<()> {
     let msgs = engine().state.get_all_messages().await;
-    let filtered: Vec<_> = match channel_id.as_deref() {
-        Some(id) => msgs.into_iter().filter(|m| m.channel_id == id).collect(),
-        None => msgs,
-    };
-
-    let include_channel = channel_id.is_none();
-    let mut out = String::new();
-
-    // Header
-    if include_channel {
-        out.push_str("timestamp,channel,sender,priority,message\n");
-    } else {
-        out.push_str("timestamp,sender,priority,message\n");
-    }
-
-    for m in &filtered {
-        let ts = m.timestamp.format("%Y-%m-%dT%H:%M:%S").to_string();
-        let priority = match m.priority {
-            crate::osc::types::Priority::Debug => "debug",
-            crate::osc::types::Priority::Info => "info",
-            crate::osc::types::Priority::Warning => "warning",
-            crate::osc::types::Priority::Critical => "critical",
-        };
-        // Payload/sender/channel are network-sourced — neutralise spreadsheet
-        // formula injection in addition to RFC 4180 quote-escaping.
-        let payload = csv_escape(&m.payload);
-        let sender = csv_escape(&m.sender_name);
-        if include_channel {
-            out.push_str(&format!(
-                "{},\"{}\",\"{}\",{},\"{}\"\n",
-                ts,
-                csv_escape(&m.channel_id),
-                sender,
-                priority,
-                payload
-            ));
-        } else {
-            out.push_str(&format!(
-                "{},\"{}\",{},\"{}\"\n",
-                ts, sender, priority, payload
-            ));
-        }
-    }
-
-    tokio::task::spawn_blocking(move || std::fs::write(&path, out)).await??;
+    let csv = crate::state::export::messages_to_csv(&msgs, channel_id.as_deref());
+    tokio::task::spawn_blocking(move || std::fs::write(&path, csv)).await??;
     Ok(())
 }
 
@@ -1061,8 +1001,6 @@ impl From<AppEvent> for PatchAppEvent {
 
 #[cfg(test)]
 mod tests {
-    use super::csv_escape;
-
     /// `upsert_channel` must reject the reserved broadcast id. The validation
     /// runs before `engine()`, so this returns Err without a running engine.
     #[tokio::test]
@@ -1190,27 +1128,6 @@ mod tests {
         )
         .await
         .is_err());
-    }
-
-    #[test]
-    fn csv_escape_neutralises_formulas() {
-        assert_eq!(csv_escape("=1+1"), "'=1+1");
-        assert_eq!(csv_escape("-2"), "'-2");
-        assert_eq!(csv_escape("+x"), "'+x");
-        assert_eq!(csv_escape("@cmd"), "'@cmd");
-        assert_eq!(csv_escape("\tlead"), "'\tlead");
-    }
-
-    #[test]
-    fn csv_escape_passes_through_safe_text() {
-        assert_eq!(csv_escape("hello"), "hello");
-        assert_eq!(csv_escape("Channel clear"), "Channel clear");
-    }
-
-    #[test]
-    fn csv_escape_doubles_quotes_and_combines_with_guard() {
-        assert_eq!(csv_escape("a\"b"), "a\"\"b");
-        assert_eq!(csv_escape("=a\"b"), "'=a\"\"b");
     }
 
     /// `ConfigSnapshot` has no FFI-generated map — `bridge_client.dart::getConfig()`
