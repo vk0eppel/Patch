@@ -12,8 +12,10 @@ import '../models/message.dart';
 import '../store/app_store.dart';
 import '../theme/patch_theme.dart';
 import '../util/run_guarded.dart';
-import '../widgets/bounded_int_field.dart';
-import '../widgets/interface_picker.dart';
+import '../presenters/settings/identity_presenter.dart';
+import '../presenters/settings/network_presenter.dart';
+import '../widgets/settings/identity_section.dart';
+import '../widgets/settings/network_section.dart';
 import 'help_screen.dart';
 
 /// Settings screen — identity, channels, shortcuts, and show file management.
@@ -30,11 +32,23 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final _nameCtrl = TextEditingController();
-  final _roleCtrl = TextEditingController();
   StreamSubscription<PatchEvent>? _pushSub;
-  bool _nameSaved = false;
-  bool _roleSaved = false;
+
+  // Section presenters (#140): each owns its validate→save→refetch loops;
+  // the section widgets own presentation only (ADR-0005).
+  late final _identityPresenter = IdentityPresenter(
+    setClientName: widget.bridge.setClientName,
+    setRole: widget.bridge.setRole,
+    refreshConfig: () => AppStoreScope.read(context).refreshConfig(),
+  );
+  late final _networkPresenter = NetworkPresenter(
+    setInterface: widget.bridge.setInterface,
+    setHeartbeatInterval: widget.bridge.setHeartbeatInterval,
+    setOscPort: widget.bridge.setOscPort,
+    refreshConfig: () => AppStoreScope.read(context).refreshConfig(),
+    getInterfaces: widget.bridge.getInterfaces,
+  );
+
   // Channels are owned by the AppStore (#57).
   List<PatchChannel> get _channels => AppStoreScope.of(context).channels;
 
@@ -53,15 +67,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool get _flashWholeScreen => _config?.flashWholeScreen ?? false;
   int get _macrosColumns => _config?.macrosColumns ?? 1;
   List<MacroMessage> get _globalMacros => _config?.globalMacros ?? const [];
-  String? get _selectedInterface => _config?.networkInterface; // null = auto
-  int get _heartbeatInterval => _config?.heartbeatIntervalSecs ?? 7;
-  int get _oscPort => _config?.oscPort ?? 9000;
   List<StaticPeerInfo> get _staticPeers => _config?.staticPeers ?? const [];
 
-  // Available network interfaces (from getInterfaces — not config) + the
-  // transient "applied" tick.
+  // Available network interfaces (from getInterfaces — not config), shown in
+  // the Static Peers section.
   List<Map<String, String>> _interfaces = [];
-  bool _interfaceApplied = false;
 
   // Live peers (for "import channels from a peer") — owned by the AppStore.
   List<PeerInfo> get _peers => AppStoreScope.of(context).peers;
@@ -172,53 +182,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
-    _store?.removeListener(_seedControllersFromConfig);
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
-    _nameCtrl.dispose();
-    _roleCtrl.dispose();
     _pushSub?.cancel();
     super.dispose();
   }
 
-  AppStore? _store;
-  bool _controllersSeeded = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // Seed the name/role text controllers from config once it's loaded (the
-    // config arm used to do this on every event). Seed-once so the user's edits
-    // aren't clobbered by a later config notify (#56).
-    final store = AppStoreScope.of(context);
-    if (!identical(_store, store)) {
-      _store?.removeListener(_seedControllersFromConfig);
-      _store = store;
-      _store!.addListener(_seedControllersFromConfig);
-    }
-    _seedControllersFromConfig();
-  }
-
-  void _seedControllersFromConfig() {
-    if (_controllersSeeded) return;
-    final cfg = _store?.config;
-    if (cfg == null) return;
-    _controllersSeeded = true;
-    _nameCtrl.text = cfg.clientName;
-    _roleCtrl.text = cfg.role ?? '';
-  }
-
+  /// The interface list shown in the Static Peers section ("This device: …").
+  /// Fetched via [NetworkPresenter] — moves with that section in #141.
   Future<void> _loadInterfaces() async {
-    try {
-      final ifaces = await widget.bridge.getInterfaces();
-      if (!mounted) return;
-      setState(() {
-        _interfaces =
-            ifaces.map((i) => {'name': i.name, 'ip': i.ip}).toList();
-      });
-    } catch (e) {
-      debugPrint('getInterfaces failed: $e'); // non-critical — picker stays empty
-    }
+    final ifaces = await _networkPresenter.loadInterfaces();
+    if (mounted) setState(() => _interfaces = ifaces);
   }
 
   /// Typed engine pushes (slice 1.3, ADR-0004). Exhaustive over [PatchEvent];
@@ -226,13 +200,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// can't be silently dropped.
   void _handlePush(PatchEvent event) {
     switch (event) {
+      // Consumed inside IdentitySection (saved tick); channels are owned by
+      // the AppStore now — it reduces ChannelsChanged.
       case ClientNameChanged():
-        // The local name was saved — flash the "saved" tick (payload unused).
-        setState(() => _nameSaved = true);
-        Future.delayed(const Duration(seconds: 2), () {
-          if (mounted) setState(() => _nameSaved = false);
-        });
-      // Channels are owned by the AppStore now — it reduces ChannelsChanged.
       case ChannelsChanged():
         break;
       case ChannelsOffered(:final fromName, :final channels):
@@ -262,22 +232,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     runGuarded(context, () async {
       await action();
       await store.refreshConfig();
-    });
-  }
-
-  void _saveName() {
-    final name = _nameCtrl.text.trim();
-    if (name.isEmpty) return;
-    runGuarded(context, () => widget.bridge.setClientName(name));
-  }
-
-  /// Save the role (empty string clears it). No engine event echoes back, so
-  /// show the "saved" tick optimistically for a moment.
-  void _saveRole() {
-    _applyConfigChange(() => widget.bridge.setRole(_roleCtrl.text));
-    setState(() => _roleSaved = true);
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) setState(() => _roleSaved = false);
     });
   }
 
@@ -750,163 +704,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // ── Identity ────────────────────────────────────────────────────
+          // ── Identity (#140: section widget + presenter) ─────────────────
           KeyedSubtree(
             key: _sectionKeys[0],
-            child: Row(children: [
-              Expanded(child: _SectionHeader('Identity')),
-              _resetButton('Identity', () {
-                final name = Platform.environment['USER'] ??
-                    Platform.environment['USERNAME'] ??
-                    'crew';
-                _nameCtrl.text = name;
-                // setClientName is push-driven (ClientNameChanged → store);
-                // setRole has no push, so refetch config via _applyConfigChange.
-                runGuarded(context, () => widget.bridge.setClientName(name));
-                _roleCtrl.clear();
-                _applyConfigChange(() => widget.bridge.setRole(null));
-              }),
-            ]),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Your display name as seen by other Patch users on the network.',
-            style: TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeSmall),
-          ),
-          const SizedBox(height: 10),
-          _UsernameField(
-            controller: _nameCtrl,
-            saved: _nameSaved,
-            onSave: _saveName,
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Optional role (e.g. "FOH", "Monitors", "PM") — shown next to your name '
-            'in other crew\'s peers panel. Leave blank for none.',
-            style: TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeSmall),
-          ),
-          const SizedBox(height: 10),
-          _UsernameField(
-            controller: _roleCtrl,
-            saved: _roleSaved,
-            onSave: _saveRole,
-            hintText: 'Your role (optional)',
-            icon: Icons.badge_outlined,
+            child: IdentitySection(
+              presenter: _identityPresenter,
+              pushes: widget.bridge.pushes,
+            ),
           ),
 
           const SizedBox(height: 32),
 
-          // ── Network ──────────────────────────────────────────────────────
+          // ── Network (#140: section widget + presenter) ───────────────────
           KeyedSubtree(
             key: _sectionKeys[1],
-            child: Row(children: [
-              const Expanded(child: _SectionHeader('Network')),
-              IconButton(
-                icon: const Icon(Icons.help_outline, size: 16),
-                color: PatchTheme.textMuted,
-                tooltip: 'Networking guide',
-                onPressed: () => openHelp(context, assetPath: '../docs/networking.md', title: 'Networking'),
-              ),
-            ]),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Which network Patch announces discovery on. Patch always listens on every interface; '
-            'this just scopes the beacon. Applies within a few seconds — no restart.',
-            style: TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeSmall),
-          ),
-          const SizedBox(height: 12),
-          InterfacePicker(
-            interfaces: _interfaces,
-            selected: _selectedInterface,
-            applied: _interfaceApplied,
-            onSelect: (name) {
-              final store = AppStoreScope.read(context);
-              runGuarded(context, () async {
-                await widget.bridge.setInterface(name ?? 'auto');
-                await store.refreshConfig(); // picker reflects the new NIC
-                if (!mounted) return;
-                // Flash the "applied" tick (was the interface_changed event).
-                setState(() => _interfaceApplied = true);
-                Future.delayed(const Duration(seconds: 3), () {
-                  if (mounted) setState(() => _interfaceApplied = false);
-                });
-              });
-            },
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Heartbeat interval',
-                      style: TextStyle(
-                        color: PatchTheme.textPrimary,
-                        fontSize: PatchTheme.fontSizeSmall,
-                      ),
-                    ),
-                    Text(
-                      'How often (seconds) Patch announces itself. Lower = faster peer '
-                      'detection but more traffic. Applies live, 1–60.',
-                      style: TextStyle(color: PatchTheme.textSecondary, fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              BoundedIntField(
-                // Key by value so an external config refresh reseeds the field.
-                key: ValueKey(_heartbeatInterval),
-                value: _heartbeatInterval,
-                min: 1,
-                max: 60,
-                suffix: 's',
-                onSubmit: (secs) =>
-                    _applyConfigChange(() => widget.bridge.setHeartbeatInterval(secs)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'OSC port',
-                      style: TextStyle(
-                        color: PatchTheme.textPrimary,
-                        fontSize: PatchTheme.fontSizeSmall,
-                      ),
-                    ),
-                    Text(
-                      'UDP port for OSC discovery + messaging. All peers must share '
-                      'it. Applies live (socket rebinds), 1024–65535.',
-                      style: TextStyle(color: PatchTheme.textSecondary, fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              BoundedIntField(
-                key: ValueKey(_oscPort),
-                value: _oscPort,
-                min: 1024,
-                max: 65535,
-                onSubmit: (port) =>
-                    _applyConfigChange(() => widget.bridge.setOscPort(port)),
-              ),
-              IconButton(
-                icon: const Icon(Icons.help_outline, size: 16),
-                color: PatchTheme.textMuted,
-                tooltip: 'OSC integration guide',
-                onPressed: () => openHelp(context, assetPath: '../docs/osc-integration.md', title: 'OSC Integration'),
-              ),
-            ],
+            child: NetworkSection(presenter: _networkPresenter),
           ),
 
           const SizedBox(height: 32),
@@ -1366,58 +1178,6 @@ class _SectionHeader extends StatelessWidget {
         fontWeight: FontWeight.w700,
         letterSpacing: 1.5,
       ),
-    );
-  }
-}
-
-// ── Username field ────────────────────────────────────────────────────────────
-
-class _UsernameField extends StatelessWidget {
-  final TextEditingController controller;
-  final bool saved;
-  final VoidCallback onSave;
-  final String hintText;
-  final IconData icon;
-
-  const _UsernameField({
-    required this.controller,
-    required this.saved,
-    required this.onSave,
-    this.hintText = 'Your name (shown to other crew)',
-    this.icon = Icons.person_outline,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: TextField(
-            controller: controller,
-            style: const TextStyle(
-              color: PatchTheme.textPrimary,
-              fontSize: PatchTheme.fontSizeMedium,
-            ),
-            decoration: InputDecoration(
-              hintText: hintText,
-              prefixIcon: Icon(icon, color: PatchTheme.textSecondary, size: 18),
-            ),
-            onSubmitted: (_) => onSave(),
-            textInputAction: TextInputAction.done,
-          ),
-        ),
-        const SizedBox(width: 10),
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
-          child: saved
-              ? const Icon(Icons.check_circle, color: PatchTheme.success, key: ValueKey('saved'))
-              : ElevatedButton(
-                  key: const ValueKey('save'),
-                  onPressed: onSave,
-                  child: const Text('Save'),
-                ),
-        ),
-      ],
     );
   }
 }
