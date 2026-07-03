@@ -790,9 +790,9 @@ mod tests {
                 assert_eq!(msg.priority, Priority::Warning);
                 // Receiver keys it by the sender.
                 assert_eq!(
-            msg.channel_id,
-            crate::dm::DmThreadKey::for_peer(m.sender_id).local_key()
-        );
+                    msg.channel_id,
+                    crate::dm::DmThreadKey::for_peer(m.sender_id).local_key()
+                );
             }
             other => panic!("expected DirectMessage, got {:?}", other),
         }

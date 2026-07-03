@@ -50,7 +50,9 @@ pub(crate) async fn originate_channel_message(
     let bytes = encode_message(&msg)?;
     let out = match delivery {
         Delivery::Direct(transport) => {
-            transport.send_to_peers(bytes.clone(), state, &config).await?;
+            transport
+                .send_to_peers(bytes.clone(), state, &config)
+                .await?;
             Vec::new()
         }
         Delivery::Relay => state
@@ -283,7 +285,11 @@ mod tests {
     async fn transport(state: &AppState) -> Arc<Transport> {
         let config = state.config().await;
         let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
-        Arc::new(Transport::new(&config, state.clone(), reliability).await.unwrap())
+        Arc::new(
+            Transport::new(&config, state.clone(), reliability)
+                .await
+                .unwrap(),
+        )
     }
 
     /// Bounded wait for a failed MessageDelivery — a missing event fails the
@@ -387,7 +393,9 @@ mod tests {
         let transport = transport(&state).await;
         let mut events = state.subscribe();
 
-        dispatch_flash(&state, &transport, "rf".into()).await.unwrap();
+        dispatch_flash(&state, &transport, "rf".into())
+            .await
+            .unwrap();
 
         assert_eq!(expect_flash(&mut events).await, "rf");
     }
@@ -427,7 +435,9 @@ mod tests {
             .await;
         let mut events = state.subscribe();
 
-        dispatch_dm_flash(&state, &transport, peer_id).await.unwrap();
+        dispatch_dm_flash(&state, &transport, peer_id)
+            .await
+            .unwrap();
 
         assert_eq!(
             expect_flash(&mut events).await,
@@ -455,9 +465,14 @@ mod tests {
     async fn send_to_peer_by_id_reports_an_unknown_peer() {
         let state = test_state();
         let transport = transport(&state).await;
-        let err = send_to_peer_by_id(&state, &transport, &Uuid::new_v4().to_string(), encode_probe)
-            .await
-            .unwrap_err();
+        let err = send_to_peer_by_id(
+            &state,
+            &transport,
+            &Uuid::new_v4().to_string(),
+            encode_probe,
+        )
+        .await
+        .unwrap_err();
         assert!(err.to_string().contains("peer not found"));
     }
 
