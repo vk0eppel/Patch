@@ -91,7 +91,7 @@ class _HelpScreenState extends State<HelpScreen> {
 /// Navigate to [HelpScreen] displaying [assetPath].
 ///
 /// [assetPath] must match an entry declared in pubspec.yaml assets (e.g.
-/// `'../docs/networking.md'`).
+/// `'assets/docs/networking.md'`).
 void openHelp(BuildContext context, {required String assetPath, required String title}) {
   Navigator.push(
     context,

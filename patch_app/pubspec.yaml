@@ -95,12 +95,12 @@ flutter:
   assets:
     - assets/icon/icon_master.png
     - assets/sounds/alert.wav
-    - ../docs/quick-start.md
-    - ../docs/networking.md
-    - ../docs/channels-and-show-files.md
-    - ../docs/osc-integration.md
-    - ../docs/integrations.md
-    - ../docs/troubleshooting.md
+    - assets/docs/quick-start.md
+    - assets/docs/networking.md
+    - assets/docs/channels-and-show-files.md
+    - assets/docs/osc-integration.md
+    - assets/docs/integrations.md
+    - assets/docs/troubleshooting.md
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

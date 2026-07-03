@@ -176,7 +176,7 @@ class _PeersEmptyState extends StatelessWidget {
             runSpacing: 4,
             children: [
               GestureDetector(
-                onTap: () => openHelp(context, assetPath: '../docs/networking.md', title: 'Networking'),
+                onTap: () => openHelp(context, assetPath: 'assets/docs/networking.md', title: 'Networking'),
                 child: const Text(
                   'Networking guide',
                   style: TextStyle(

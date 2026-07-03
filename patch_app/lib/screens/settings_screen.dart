@@ -787,12 +787,12 @@ class _HelpEntry {
 }
 
 const _kHelpEntries = [
-  _HelpEntry('Quick Start',          '../docs/quick-start.md'),
-  _HelpEntry('Networking',           '../docs/networking.md'),
-  _HelpEntry('Channels & Show Files','../docs/channels-and-show-files.md'),
-  _HelpEntry('OSC Integration',      '../docs/osc-integration.md'),
-  _HelpEntry('Integrations',         '../docs/integrations.md'),
-  _HelpEntry('Troubleshooting',      '../docs/troubleshooting.md'),
+  _HelpEntry('Quick Start',          'assets/docs/quick-start.md'),
+  _HelpEntry('Networking',           'assets/docs/networking.md'),
+  _HelpEntry('Channels & Show Files','assets/docs/channels-and-show-files.md'),
+  _HelpEntry('OSC Integration',      'assets/docs/osc-integration.md'),
+  _HelpEntry('Integrations',         'assets/docs/integrations.md'),
+  _HelpEntry('Troubleshooting',      'assets/docs/troubleshooting.md'),
 ];
 
 // ── Settings rail ─────────────────────────────────────────────────────────────

@@ -38,7 +38,7 @@ class StaticPeersSection extends StatelessWidget {
               color: PatchTheme.textMuted,
               tooltip: 'Networking guide',
               onPressed: () => openHelp(context,
-                  assetPath: '../docs/networking.md', title: 'Networking'),
+                  assetPath: 'assets/docs/networking.md', title: 'Networking'),
             ),
             TextButton.icon(
               icon: const Icon(Icons.add, size: 16),

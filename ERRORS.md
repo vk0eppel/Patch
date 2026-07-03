@@ -60,6 +60,8 @@ Proven mistakes — these have caused real bugs. Read before touching the releva
 
 **Material's `TextField` reserves vertical space for a floating label even when none is set**, pushing text toward the top of the box instead of centering it — set `isDense: true` on the `InputDecoration` and `textAlignVertical: TextAlignVertical.center` on the field to actually center single-line input bars.
 
+**`pubspec.yaml` assets must live inside the package root — a `../` escape (e.g. `../docs/networking.md`) is not a supported Flutter pattern.** The in-app Help screens declared assets pointing at the repo's top-level `docs/` folder outside `patch_app/`. It happened to work on macOS (the asset bundler physically copies the files one directory above `flutter_assets/` in the build output) but silently failed to resolve at runtime on Windows, surfacing as "Could not load documentation" with no platform-specific code anywhere near the failure. Fix: bundle a committed copy under `patch_app/assets/docs/` (mirrors `frb_generated.rs`'s "checked-in generated artifact" convention) with a `flutter test` (`test/help_docs_sync_test.dart`) that diffs it against `docs/` so the copy can't silently drift from the source of truth.
+
 ## Build / Release
 
 **Always run `cargo fmt` with the pinned 1.95.0 toolchain — bare `cargo fmt` uses your local toolchain and will silently produce a diff that fails CI.** CI pins Rust 1.95.0 (see `.github/workflows/ci.yml`); different rustfmt versions have slightly different line-wrapping decisions. Use `rustup run 1.95.0 cargo fmt -p patch_core` before committing Rust changes. If 1.95.0 isn't installed: `rustup toolchain install 1.95.0 --component rustfmt`.
