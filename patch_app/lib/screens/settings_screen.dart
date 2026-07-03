@@ -15,6 +15,7 @@ import '../presenters/settings/behavior_presenter.dart';
 import '../presenters/settings/channels_import_presenter.dart';
 import '../presenters/settings/identity_presenter.dart';
 import '../presenters/settings/macros_import_presenter.dart';
+import '../presenters/settings/macros_section_presenter.dart';
 import '../presenters/settings/network_presenter.dart';
 import '../presenters/settings/static_peers_presenter.dart';
 import '../widgets/settings/behavior_section.dart';
@@ -77,6 +78,58 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final _macrosImportPresenter = MacrosImportPresenter(
     requestGlobalMacros: widget.bridge.requestGlobalMacros,
     previewGlobalMacros: widget.bridge.previewGlobalMacros,
+  );
+  late final _macrosSectionPresenter = MacrosSectionPresenter(
+    upsertChannelMacro: ({
+      required channelId,
+      originalLabel,
+      required label,
+      required payload,
+      keyBinding,
+      priority = 1,
+      midiNote,
+      midiCc,
+      osc,
+    }) =>
+        widget.bridge.upsertMacro(
+          channelId: channelId,
+          originalLabel: originalLabel,
+          label: label,
+          payload: payload,
+          keyBinding: keyBinding,
+          priority: priority,
+          midiNote: midiNote,
+          midiCc: midiCc,
+          oscAddress: osc?.address,
+          oscPort: osc?.port,
+          oscPath: osc?.path,
+          oscArg: osc?.arg,
+          oscArgType: osc?.argType ?? MacroOscArgType.string,
+        ),
+    upsertGlobalMacro: ({
+      originalLabel,
+      required label,
+      required payload,
+      keyBinding,
+      priority = 1,
+      midiNote,
+      midiCc,
+      osc,
+    }) =>
+        widget.bridge.upsertGlobalMacro(
+          originalLabel: originalLabel,
+          label: label,
+          payload: payload,
+          keyBinding: keyBinding,
+          priority: priority,
+          midiNote: midiNote,
+          midiCc: midiCc,
+          oscAddress: osc?.address,
+          oscPort: osc?.port,
+          oscPath: osc?.path,
+          oscArg: osc?.arg,
+          oscArgType: osc?.argType ?? MacroOscArgType.string,
+        ),
   );
 
   // Channels are owned by the AppStore (#57).
@@ -727,6 +780,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             key: _sectionKeys[4],
             child: GlobalMacrosSection(
               bridge: widget.bridge,
+              presenter: _macrosSectionPresenter,
               globalMacros: _globalMacros,
               onImportFromPeer: _showImportMacrosFromPeer,
               onReset: () => _applyConfigChange(
@@ -741,6 +795,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             key: _sectionKeys[5],
             child: ChannelsMacrosSection(
               bridge: widget.bridge,
+              presenter: _macrosSectionPresenter,
               channels: _channels,
               onImportFromPeer: _showImportFromPeer,
               onDeleteChannel: _confirmDeleteChannel,

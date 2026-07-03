@@ -2,27 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../../bridge/bridge_client.dart';
 import '../../models/channel.dart';
-import '../../presenters/settings/macro_osc_validator.dart';
+import '../../presenters/settings/macros_section_presenter.dart';
 import '../../store/app_store.dart';
 import '../../theme/patch_theme.dart';
 import '../../util/run_guarded.dart';
 import 'flash_count_picker.dart';
 import 'section_scaffold.dart';
-
-/// ADR-0002: a live UI edit rejects an invalid OSC target immediately —
-/// before any bridge call (#141). Thrown as [FormatException] so
-/// `runGuarded` surfaces the message to the Operator.
-void _guardOsc(MacroOsc? osc) {
-  if (osc == null) return;
-  final err = validateMacroOscTarget(
-    address: osc.address,
-    port: osc.port,
-    path: osc.path,
-    arg: osc.arg,
-    argType: osc.argType,
-  );
-  if (err != null) throw FormatException(err);
-}
 
 /// The Global Macros section (#141): one-touch callouts shown on every
 /// Channel's panel. Macro CRUD refetches config via the store; the OSC
@@ -31,12 +16,14 @@ class GlobalMacrosSection extends StatelessWidget {
   const GlobalMacrosSection({
     super.key,
     required this.bridge,
+    required this.presenter,
     required this.globalMacros,
     required this.onImportFromPeer,
     required this.onReset,
   });
 
   final BridgeClient bridge;
+  final MacrosSectionPresenter presenter;
   final List<MacroMessage> globalMacros;
   final VoidCallback onImportFromPeer;
   final VoidCallback onReset;
@@ -67,7 +54,7 @@ class GlobalMacrosSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        _GlobalMacrosEditor(macros: globalMacros, bridge: bridge),
+        _GlobalMacrosEditor(macros: globalMacros, bridge: bridge, presenter: presenter),
       ],
     );
   }
@@ -80,12 +67,14 @@ class ChannelsMacrosSection extends StatelessWidget {
   const ChannelsMacrosSection({
     super.key,
     required this.bridge,
+    required this.presenter,
     required this.channels,
     required this.onImportFromPeer,
     required this.onDeleteChannel,
   });
 
   final BridgeClient bridge;
+  final MacrosSectionPresenter presenter;
   final List<PatchChannel> channels;
   final VoidCallback onImportFromPeer;
   final void Function(PatchChannel) onDeleteChannel;
@@ -132,6 +121,7 @@ class ChannelsMacrosSection extends StatelessWidget {
         ...channels.map((ch) => _ChannelMacroEditor(
               channel: ch,
               bridge: bridge,
+              presenter: presenter,
               onDelete: () => onDeleteChannel(ch),
               onEdit: () => _showChannelDialog(
                 context,
@@ -161,12 +151,14 @@ String _capitalizeFirst(String s) {
 class _ChannelMacroEditor extends StatelessWidget {
   final PatchChannel channel;
   final BridgeClient bridge;
+  final MacrosSectionPresenter presenter;
   final VoidCallback onDelete;
   final VoidCallback onEdit;
 
   const _ChannelMacroEditor({
     required this.channel,
     required this.bridge,
+    required this.presenter,
     required this.onDelete,
     required this.onEdit,
   });
@@ -181,24 +173,20 @@ class _ChannelMacroEditor extends StatelessWidget {
       emptyText: 'No macros yet',
       // Channel-macro CRUD refreshes the screens via the ChannelsChanged push
       // (no config refetch needed); runGuarded surfaces failures (ADR-0004).
-      onUpsert: (ol, l, p, k, pr, mn, mc, osc) => runGuarded(context, () {
-        _guardOsc(osc);
-        return bridge.upsertMacro(
-                channelId: channel.id,
-                originalLabel: ol,
-                label: l,
-                payload: p,
-                keyBinding: k,
-                priority: pr,
-                midiNote: mn,
-                midiCc: mc,
-                oscAddress: osc?.address,
-                oscPort: osc?.port,
-                oscPath: osc?.path,
-                oscArg: osc?.arg,
-                oscArgType: osc?.argType ?? MacroOscArgType.string,
-              );
-      }),
+      onUpsert: (ol, l, p, k, pr, mn, mc, osc) => runGuarded(
+        context,
+        () => presenter.saveChannelMacro(
+          channelId: channel.id,
+          originalLabel: ol,
+          label: l,
+          payload: p,
+          keyBinding: k,
+          priority: pr,
+          midiNote: mn,
+          midiCc: mc,
+          osc: osc,
+        ),
+      ),
       onDelete: (m) => runGuarded(
           context, () => bridge.deleteMacro(channelId: channel.id, label: m.label)),
       onReorder: (labels) =>
@@ -718,8 +706,13 @@ class _MacroListCard extends StatelessWidget {
 class _GlobalMacrosEditor extends StatelessWidget {
   final List<MacroMessage> macros;
   final BridgeClient bridge;
+  final MacrosSectionPresenter presenter;
 
-  const _GlobalMacrosEditor({required this.macros, required this.bridge});
+  const _GlobalMacrosEditor({
+    required this.macros,
+    required this.bridge,
+    required this.presenter,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -732,9 +725,8 @@ class _GlobalMacrosEditor extends StatelessWidget {
       // Global macros live on the config — refetch it through the store after
       // each mutation so both screens reflect the change (#56).
       onUpsert: (ol, l, p, k, pr, mn, mc, osc) => runGuarded(context, () async {
-        _guardOsc(osc);
         final store = AppStoreScope.read(context);
-        await bridge.upsertGlobalMacro(
+        await presenter.saveGlobalMacro(
           originalLabel: ol,
           label: l,
           payload: p,
@@ -742,11 +734,7 @@ class _GlobalMacrosEditor extends StatelessWidget {
           priority: pr,
           midiNote: mn,
           midiCc: mc,
-          oscAddress: osc?.address,
-          oscPort: osc?.port,
-          oscPath: osc?.path,
-          oscArg: osc?.arg,
-          oscArgType: osc?.argType ?? MacroOscArgType.string,
+          osc: osc,
         );
         await store.refreshConfig();
       }),
