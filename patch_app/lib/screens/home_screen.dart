@@ -17,6 +17,7 @@ import '../presenters/home_presenter.dart';
 import '../models/message.dart';
 import '../models/selection.dart';
 import '../models/selection_controller.dart';
+import '../models/send_target.dart';
 import '../store/app_store.dart';
 import '../theme/patch_theme.dart';
 import '../util/flash_overlay_gateway.dart';
@@ -864,33 +865,45 @@ class _ChannelViewState extends State<_ChannelView> {
     });
   }
 
+  /// The one place "where does this action go" is derived (#146) — every
+  /// send/flash/clear/export below consumes this typed target instead of
+  /// re-branching on DM/ALL/channel state itself.
+  SendTarget get _target => SendTarget.of(
+        widget.selection,
+        selectedChannels: widget.selectedChannels,
+        dmPeerName: widget.dmPeerName,
+      );
+
   void _sendMessage(String text) {
-    if (widget.isDmMode) {
-      runGuarded(context,
-          () => widget.bridge.sendDirectMessage(peerId: widget.dmPeerId!, payload: text));
-      widget.onDmSent();
-    } else if (widget.isAllMode) {
-      runGuarded(
-          context, () => widget.bridge.sendMessage(channelId: kAllChannelId, payload: text));
-      widget.onOneShotSent?.call();
-    } else {
-      for (final ch in widget.selectedChannels) {
-        runGuarded(context, () => widget.bridge.sendMessage(channelId: ch.id, payload: text));
-      }
+    switch (_target) {
+      case DmTarget(:final peerId):
+        runGuarded(context,
+            () => widget.bridge.sendDirectMessage(peerId: peerId, payload: text));
+        widget.onDmSent();
+      case AllTarget():
+        runGuarded(context,
+            () => widget.bridge.sendMessage(channelId: kAllChannelId, payload: text));
+        widget.onOneShotSent?.call();
+      case ChannelsTarget(:final channels):
+        for (final ch in channels) {
+          runGuarded(context,
+              () => widget.bridge.sendMessage(channelId: ch.id, payload: text));
+        }
     }
   }
 
   void _sendFlash() {
-    if (widget.isDmMode) {
-      runGuarded(context, () => widget.bridge.sendDmFlash(widget.dmPeerId!));
-      widget.onDmSent();
-    } else if (widget.isAllMode) {
-      runGuarded(context, () => widget.bridge.sendFlash(kAllChannelId));
-      widget.onOneShotSent?.call();
-    } else {
-      for (final ch in widget.selectedChannels) {
-        runGuarded(context, () => widget.bridge.sendFlash(ch.id));
-      }
+    switch (_target) {
+      case DmTarget(:final peerId):
+        runGuarded(context, () => widget.bridge.sendDmFlash(peerId));
+        widget.onDmSent();
+      case AllTarget():
+        runGuarded(context, () => widget.bridge.sendFlash(kAllChannelId));
+        widget.onOneShotSent?.call();
+      case ChannelsTarget(:final channels):
+        for (final ch in channels) {
+          runGuarded(context, () => widget.bridge.sendFlash(ch.id));
+        }
     }
   }
 
@@ -902,38 +915,21 @@ class _ChannelViewState extends State<_ChannelView> {
   }
 
   Future<void> _exportMessages() async {
-    final label = widget.isDmMode
-        ? 'dm_${widget.dmPeerName ?? ''}'.toLowerCase()
-        : widget.isAllMode
-            ? 'all_channels'
-            : widget.selectedChannels.length == 1
-                ? widget.selectedChannels.first.displayName.toLowerCase()
-                : 'all_channels';
+    final target = _target;
     final path = await FilePicker.platform.saveFile(
       dialogTitle: 'Export Messages',
-      fileName: 'patch_$label.csv',
+      fileName: 'patch_${target.exportFileLabel}.csv',
       allowedExtensions: ['csv'],
       type: FileType.custom,
     );
     if (path == null || !mounted) return;
-    // DM → that thread; ALL / multi-channel → everything (null); single → that one.
-    final channelId = widget.isDmMode
-        ? DmThread(widget.dmPeerId!).key
-        : (!widget.isAllMode && widget.selectedChannels.length == 1)
-            ? widget.selectedChannels.first.id
-            : null;
-    runGuarded(
-        context, () => widget.bridge.exportMessages(channelId: channelId, path: path));
+    runGuarded(context,
+        () => widget.bridge.exportMessages(channelId: target.exportKey, path: path));
   }
 
   void _confirmClear(BuildContext context) {
-    final label = widget.isDmMode
-        ? 'this conversation'
-        : widget.isAllMode
-            ? 'all channels'
-            : widget.selectedChannels.length == 1
-                ? widget.selectedChannels.first.displayName
-                : '${widget.selectedChannels.length} channels';
+    final target = _target;
+    final label = target.clearDescription;
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -954,14 +950,8 @@ class _ChannelViewState extends State<_ChannelView> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: PatchTheme.critical),
             onPressed: () {
-              if (widget.isDmMode) {
-                _clear(DmThread(widget.dmPeerId!).key);
-              } else if (widget.isAllMode) {
-                _clear(null); // clear everything
-              } else {
-                for (final ch in widget.selectedChannels) {
-                  _clear(ch.id);
-                }
+              for (final key in target.clearKeys) {
+                _clear(key);
               }
               Navigator.pop(context);
             },
