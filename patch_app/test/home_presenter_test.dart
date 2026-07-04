@@ -66,6 +66,42 @@ const _successStatus = MessageDeliveryStatus(
 );
 
 void main() {
+  PeerInfo peer(String id, String name, PeerStatus status) => PeerInfo(
+        peerId: id,
+        peerName: name,
+        channels: const [],
+        address: '10.0.0.2',
+        oscPort: 9000,
+        lastSeen: DateTime.parse('2026-07-04T12:00:00Z'),
+        discoveryMode: 'mdns',
+        status: status,
+      );
+
+  group('dmOfflineWarning', () {
+    test('phrases the warning for an offline Peer, null for a live one', () {
+      final pushes = _pushes();
+      final peers = StreamController<List<PeerInfo>>(sync: true);
+      final presenter =
+          HomePresenter(pushes: pushes.stream, peersStream: peers.stream);
+      peers.add([
+        peer('p-off', 'Stage Manager', PeerStatus.offline),
+        peer('p-on', 'FOH', PeerStatus.online),
+        peer('p-stale', 'MON', PeerStatus.stale),
+      ]);
+
+      expect(presenter.dmOfflineWarning('p-off'),
+          'Stage Manager appears offline — they may not receive this DM');
+      expect(presenter.dmOfflineWarning('p-on'), isNull);
+      // Stale = still remembered, best-effort delivery plausible: no warning.
+      expect(presenter.dmOfflineWarning('p-stale'), isNull);
+      // Unknown peer can't receive anything.
+      expect(presenter.dmOfflineWarning('ghost'),
+          'Unknown appears offline — they may not receive this DM');
+
+      presenter.dispose();
+    });
+  });
+
   // ── #106 — imperative commands ────────────────────────────────────────────
 
   group('ShowDeliveryFailure', () {
@@ -84,6 +120,25 @@ void main() {
       expect(cmd.status.failedPeers, ['Stage Manager']);
 
       presenter.dispose();
+    });
+
+    test('summary phrases the failure by (total, failedPeers)', () {
+      ShowDeliveryFailure cmd(int total, List<String> peers) =>
+          ShowDeliveryFailure(
+            messageId: 'm',
+            status: MessageDeliveryStatus(
+              delivered: 0,
+              total: total,
+              failed: true,
+              failedPeers: peers,
+            ),
+          );
+      expect(cmd(0, const []).summary,
+          'Critical message no peers were online');
+      expect(cmd(2, const ['Stage Manager', 'FOH']).summary,
+          'Critical message not received by Stage Manager, FOH');
+      expect(cmd(2, const []).summary,
+          'Critical message not received by all peers');
     });
 
     test('not emitted when DeliveryUpdated arrives with failed=false', () async {

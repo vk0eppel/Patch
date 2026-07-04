@@ -33,6 +33,17 @@ final class ShowDeliveryFailure extends HomeCommand {
   final String messageId;
   final MessageDeliveryStatus status;
   const ShowDeliveryFailure({required this.messageId, required this.status});
+
+  /// The operator-facing summary of a Critical Message delivery failure —
+  /// phrased here, behind the tested seam, so the widget only displays it.
+  String get summary {
+    final who = status.total == 0
+        ? 'no peers were online'
+        : status.failedPeers.isNotEmpty
+            ? 'not received by ${status.failedPeers.join(', ')}'
+            : 'not received by all peers';
+    return 'Critical message $who';
+  }
 }
 
 final class ShowPermissionDenied extends HomeCommand {
@@ -126,6 +137,15 @@ class HomePresenter extends ChangeNotifier {
           orElse: () => null,
         );
     return peer == null || peer.status == PeerStatus.offline;
+  }
+
+  /// The operator-facing warning to show after sending a Direct Message to
+  /// [peerId], or null when the Peer looks reachable — decided and phrased
+  /// here so the widget only displays it (#149).
+  String? dmOfflineWarning(String peerId) {
+    if (!isDmPeerOffline(peerId)) return null;
+    return '${dmPeerName(peerId)} appears offline — '
+        'they may not receive this DM';
   }
 
   // ── Public API ────────────────────────────────────────────────────────────

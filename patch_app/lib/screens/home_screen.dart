@@ -161,13 +161,14 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   /// may never receive it. Called after every DM send — typed, macro, or flash.
   void _warnIfDmPeerOffline() {
     final id = _dmPeerId;
-    if (!_isDmMode || id == null || !_presenter.isDmPeerOffline(id) || !mounted) return;
-    final name = _presenter.dmPeerName(id);
+    if (!_isDmMode || id == null || !mounted) return;
+    final warning = _presenter.dmOfflineWarning(id);
+    if (warning == null) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: Text('$name appears offline — they may not receive this DM'),
+          content: Text(warning),
           backgroundColor: PatchTheme.warning,
           duration: const Duration(seconds: 4),
         ),
@@ -401,15 +402,10 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   void _handleCommand(HomeCommand cmd) {
     if (!mounted) return;
     switch (cmd) {
-      case ShowDeliveryFailure(:final status):
-        final who = status.total == 0
-            ? 'no peers were online'
-            : status.failedPeers.isNotEmpty
-                ? 'not received by ${status.failedPeers.join(', ')}'
-                : 'not received by all peers';
+      case ShowDeliveryFailure():
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Critical message $who'),
+            content: Text(cmd.summary),
             backgroundColor: PatchTheme.critical,
             duration: const Duration(seconds: 6),
           ),
