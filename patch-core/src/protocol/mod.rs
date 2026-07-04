@@ -60,6 +60,12 @@ pub(crate) async fn handle(
     client_id: Uuid,
     reliability: &Arc<Mutex<ReliabilityManager>>,
 ) -> Vec<Outgoing> {
+    // ADR-0010: while an interface is pinned, packets from sources neither on
+    // the Pinned Network nor matching a Static Peer address are dropped whole
+    // — no sighting, no message, no Flash. One check for every arm.
+    if !state.admits_source(from.ip()).await {
+        return Vec::new();
+    }
     match event {
         PatchEvent::Message(msg) => handle_message(msg, from, state, client_id).await,
         PatchEvent::DirectMessage { msg, target_id } => {
@@ -622,6 +628,177 @@ mod tests {
         let drained = reliability.lock().await.drain_retransmits();
         assert_eq!(drained.retransmits.len(), 1);
         assert_eq!(drained.retransmits[0].2, vec![addr(2)]);
+    }
+
+    /// Pins the state to a (test-injected) 10.1.0.0/24 Pinned Network.
+    /// `set_network_interface` recomputes the cache from real interfaces —
+    /// which don't exist in CI — so the test override comes after it.
+    async fn pin_to_10_1(state: &AppState) {
+        state
+            .set_network_interface(Some("test0".into()))
+            .await
+            .unwrap();
+        state.set_pinned_subnet_for_test(Some((
+            "10.1.0.1".parse().unwrap(),
+            "255.255.255.0".parse().unwrap(),
+        )));
+    }
+
+    fn presence(peer_id: Uuid) -> PatchEvent {
+        PatchEvent::Presence(PeerPresence {
+            peer_id,
+            peer_name: "Wanderer".into(),
+            channels: vec![],
+            role: None,
+            timestamp: chrono::Utc::now(),
+        })
+    }
+
+    #[tokio::test]
+    async fn pinned_drops_presence_from_outside_the_pinned_network() {
+        // ADR-0010: operate-only pinning — a peer beaconing from another
+        // network must not appear at all.
+        let state = test_state();
+        pin_to_10_1(&state).await;
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+        let peer_id = Uuid::new_v4();
+
+        handle(
+            presence(peer_id),
+            "192.168.4.7:9000".parse().unwrap(),
+            &state,
+            Uuid::new_v4(),
+            &reliability,
+        )
+        .await;
+
+        assert!(
+            state.get_peers().await.is_empty(),
+            "off-subnet presence must be dropped whole while pinned"
+        );
+    }
+
+    #[tokio::test]
+    async fn pinned_accepts_presence_from_the_pinned_network() {
+        let state = test_state();
+        pin_to_10_1(&state).await;
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+        let peer_id = Uuid::new_v4();
+
+        handle(
+            presence(peer_id),
+            "10.1.0.42:9000".parse().unwrap(),
+            &state,
+            Uuid::new_v4(),
+            &reliability,
+        )
+        .await;
+
+        assert!(state.get_peers().await.iter().any(|p| p.peer_id == peer_id));
+    }
+
+    #[tokio::test]
+    async fn pinned_admits_a_configured_static_peer_from_beyond_the_network() {
+        // The ADR-0010 exemption: an explicitly configured address is
+        // Operator intent — routed rigs stay reachable via Static Peers.
+        let state = test_state();
+        pin_to_10_1(&state).await;
+        state
+            .add_static_peer("192.168.4.7".into(), 9000, Some("LX".into()))
+            .await
+            .unwrap();
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+        let peer_id = Uuid::new_v4();
+
+        handle(
+            presence(peer_id),
+            "192.168.4.7:9000".parse().unwrap(),
+            &state,
+            Uuid::new_v4(),
+            &reliability,
+        )
+        .await;
+
+        assert!(
+            state.get_peers().await.iter().any(|p| p.peer_id == peer_id),
+            "a Static Peer's off-subnet source must be admitted while pinned"
+        );
+    }
+
+    #[tokio::test]
+    async fn pinned_drops_channel_messages_and_flashes_whole() {
+        // Whole-packet semantics: no ghost senders whose messages render
+        // while the Peer itself is filtered.
+        let state = test_state();
+        pin_to_10_1(&state).await;
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+        let off_subnet: SocketAddr = "192.168.4.7:9000".parse().unwrap();
+
+        handle(
+            PatchEvent::Message(PatchMessage::new(
+                Uuid::new_v4(),
+                "Wanderer",
+                "rf",
+                Priority::Info,
+                "hello?",
+            )),
+            off_subnet,
+            &state,
+            Uuid::new_v4(),
+            &reliability,
+        )
+        .await;
+        handle(
+            PatchEvent::Flash {
+                flash: ChannelFlash {
+                    channel_id: "rf".into(),
+                    sender_id: Uuid::new_v4(),
+                    sender_name: "Wanderer".into(),
+                },
+                message_id: Uuid::new_v4(),
+                timestamp: chrono::Utc::now(),
+            },
+            off_subnet,
+            &state,
+            Uuid::new_v4(),
+            &reliability,
+        )
+        .await;
+
+        assert!(state.get_messages("rf", 10).await.is_empty());
+        assert!(state.get_peers().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn unpinning_readmits_previously_dropped_sources() {
+        // Switching back to auto must clear the gate — the cache can't stay
+        // stuck on the old Pinned Network.
+        let state = test_state();
+        pin_to_10_1(&state).await;
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+        let peer_id = Uuid::new_v4();
+        let from: SocketAddr = "192.168.4.7:9000".parse().unwrap();
+
+        handle(
+            presence(peer_id),
+            from,
+            &state,
+            Uuid::new_v4(),
+            &reliability,
+        )
+        .await;
+        assert!(state.get_peers().await.is_empty());
+
+        state.set_network_interface(None).await.unwrap();
+        handle(
+            presence(peer_id),
+            from,
+            &state,
+            Uuid::new_v4(),
+            &reliability,
+        )
+        .await;
+        assert!(state.get_peers().await.iter().any(|p| p.peer_id == peer_id));
     }
 
     #[tokio::test]

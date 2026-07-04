@@ -77,9 +77,12 @@ pub struct Config {
     pub role: Option<String>,
     /// UDP port for OSC transport.
     pub osc_port: u16,
-    /// Interface to scope the discovery beacon to (e.g. "en0", "eth0"). The OSC
-    /// socket always binds `0.0.0.0` (listens on all); this only limits which
-    /// NIC's subnet the presence broadcast is sent on. None = announce on all.
+    /// The Pinned Network's interface (e.g. "en0", "eth0"). Operate-only
+    /// (ADR-0010): the beacon announces only on this NIC, and inbound packets
+    /// from sources outside its subnet are dropped at the protocol boundary
+    /// unless they match a Static Peer address. The socket still binds
+    /// `0.0.0.0` (the pin is enforced by admission, not by bind). None =
+    /// operate on every interface.
     pub network_interface: Option<String>,
     /// Manually-added peer addresses (ip:port).
     pub static_peers: Vec<StaticPeer>,

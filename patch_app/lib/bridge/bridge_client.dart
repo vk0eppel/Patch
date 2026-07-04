@@ -146,8 +146,9 @@ class BridgeClient {
   }
 
   /// Change the network interface (empty/'auto' → all interfaces). Throws on
-  /// failure. No restart needed: the socket always binds 0.0.0.0; the NIC only
-  /// scopes the discovery broadcast, which the engine re-reads each heartbeat.
+  /// failure. No restart needed. Pinning is operate-only (ADR-0010): the
+  /// beacon is scoped to the pinned NIC *and* inbound packets from sources
+  /// outside its subnet are dropped, unless they match a static peer.
   Future<void> setInterface(String name) =>
       rust.setInterface(name: name.isEmpty ? null : name);
 

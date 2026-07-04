@@ -65,8 +65,9 @@ class _NetworkSectionState extends State<NetworkSection> {
         ]),
         const SizedBox(height: 4),
         const Text(
-          'Which network Patch announces discovery on. Patch always listens on every interface; '
-          'this just scopes the beacon. Applies within a few seconds — no restart.',
+          'Confines Patch to this network — peers on other networks are '
+          'ignored unless added as static peers. Applies within a few '
+          'seconds — no restart.',
           style: TextStyle(
               color: PatchTheme.textSecondary,
               fontSize: PatchTheme.fontSizeSmall),

@@ -98,6 +98,15 @@ struct Inner {
     /// Global receive-side dedup cache — message IDs seen in the last 10 s.
     /// Prevents duplicate processing when a message arrives on multiple paths.
     seen_messages: Mutex<HashMap<Uuid, Instant>>,
+    /// The Pinned Network's IPv4 (address, netmask), cached so the per-packet
+    /// admission check (ADR-0010) never enumerates interfaces. None when no
+    /// pin is configured — or when the pinned interface has no usable IPv4
+    /// (then only Static Peers are admitted: fail-closed). Recomputed on
+    /// construction and on `set_network_interface`. std Mutex: set from the
+    /// sync constructor, read for nanoseconds per packet.
+    pinned_subnet: std::sync::Mutex<Option<(std::net::Ipv4Addr, std::net::Ipv4Addr)>>,
+    /// Rate limit for the "dropped off-pin source" log — last warn per source.
+    dropped_source_log: Mutex<HashMap<std::net::IpAddr, Instant>>,
 }
 
 /// True when `id` is our own client_id — every event/discovery loop that
@@ -113,6 +122,10 @@ impl AppState {
     pub fn new(config: Config) -> Self {
         let (tx, _) = broadcast::channel(256);
         let channel_data = config.default_channels.clone();
+        let pinned_subnet = config
+            .network_interface
+            .as_deref()
+            .and_then(crate::transport::pinned_ipv4_subnet);
         let config_arc = Arc::new(ConfigStore::new(config));
         let channels = ChannelStore::seeded(channel_data, Arc::clone(&config_arc));
 
@@ -125,6 +138,8 @@ impl AppState {
             dm_target: RwLock::new(None),
             events: tx,
             seen_messages: Mutex::new(HashMap::new()),
+            pinned_subnet: std::sync::Mutex::new(pinned_subnet),
+            dropped_source_log: Mutex::new(HashMap::new()),
         }))
     }
 
@@ -195,6 +210,11 @@ impl AppState {
             .config
             .mutate_and_persist(|c| c.network_interface = iface.clone())
             .await;
+        // Recompute the cached Pinned Network for the per-packet admission
+        // check (ADR-0010) — the one place besides construction it changes.
+        *self.0.pinned_subnet.lock().unwrap() = iface
+            .as_deref()
+            .and_then(crate::transport::pinned_ipv4_subnet);
         // Only clear dynamic peers when switching TO a pinned interface. In auto
         // mode (None) the per-address prune window handles dead paths; a full
         // clear would discard valid peer state on other interfaces.
@@ -550,6 +570,61 @@ impl AppState {
         let threshold_secs = heartbeat_secs.saturating_mul(3) as i64;
         let threshold = chrono::Utc::now() - chrono::Duration::seconds(threshold_secs);
         self.0.peers.prune_addresses(threshold).await;
+    }
+
+    // ── Source admission (ADR-0010, Pinned Network) ──────────────────────────
+
+    /// Whether an inbound packet from `source` may be processed at all.
+    /// True when no pin is configured, when the source is on the Pinned
+    /// Network, or when it matches a configured Static Peer address (the
+    /// deliberate exemption for routed networks). Everything else is dropped
+    /// whole at the protocol boundary — a denial logs the ignored source,
+    /// rate-limited to one line per source per 5 minutes.
+    pub async fn admits_source(&self, source: std::net::IpAddr) -> bool {
+        let config = self.config().await;
+        if config.network_interface.is_none() {
+            return true;
+        }
+        let on_pinned_network = match (*self.0.pinned_subnet.lock().unwrap(), source) {
+            (Some((iface_ip, mask)), std::net::IpAddr::V4(v4)) => {
+                crate::transport::in_pinned_subnet(v4, iface_ip, mask)
+            }
+            // Pinned but no usable IPv4 on the pinned interface (or an IPv6
+            // source): fail closed — only Static Peers get through.
+            _ => false,
+        };
+        if on_pinned_network
+            || config
+                .static_peers
+                .iter()
+                .any(|p| p.address.parse::<std::net::IpAddr>() == Ok(source))
+        {
+            return true;
+        }
+        const LOG_EVERY: std::time::Duration = std::time::Duration::from_secs(300);
+        let mut log = self.0.dropped_source_log.lock().await;
+        let now = Instant::now();
+        log.retain(|_, t| now.duration_since(*t) < LOG_EVERY);
+        if let std::collections::hash_map::Entry::Vacant(e) = log.entry(source) {
+            e.insert(now);
+            tracing::warn!(
+                "packet from {} ignored — outside the pinned network (ADR-0010); \
+                 add a static peer to reach hosts beyond it",
+                source
+            );
+        }
+        false
+    }
+
+    /// Test override for the cached Pinned Network — CI has no real interface
+    /// matching a pinned name, so tests inject the subnet directly (after
+    /// `set_network_interface`, which recomputes the cache).
+    #[cfg(test)]
+    pub(crate) fn set_pinned_subnet_for_test(
+        &self,
+        subnet: Option<(std::net::Ipv4Addr, std::net::Ipv4Addr)>,
+    ) {
+        *self.0.pinned_subnet.lock().unwrap() = subnet;
     }
 
     // ── Receive dedup ────────────────────────────────────────────────────────

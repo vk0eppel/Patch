@@ -9,7 +9,7 @@ Patch is a real-time messaging tool for live production crews. It runs over your
 When you open Patch for the first time:
 
 1. **Set your name** — go to **Settings → Identity** and enter your role or name (e.g. "FOH Engineer", "RF Tech", "Stage Manager"). This is how other crew members will see you.
-2. **Pick your network interface** (optional) — leave it on **Auto** unless you specifically want the discovery beacon announced on only one NIC (Patch listens on all either way). Go to **Settings → Network Interface**; changes apply within a few seconds, no restart.
+2. **Pick your network interface** (optional) — leave it on **Auto** unless you specifically want to confine Patch to one network (a pinned interface ignores peers on other networks; static peers stay reachable). Go to **Settings → Network Interface**; changes apply within a few seconds, no restart.
 
 ---
 

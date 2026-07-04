@@ -27,10 +27,12 @@ To clean up the list after a show or when moving between networks, tap the **�
 
 ## Network interface selection
 
-Patch **always listens on every interface**, so on most setups you can leave this on **Auto**. If your device has multiple NICs (e.g. Ethernet + Wi-Fi) and you want the discovery beacon announced on a specific one, go to **Settings → Network Interface** and select it. The change applies **within a few seconds — no restart needed**.
+On most setups leave this on **Auto** — Patch operates on every network it can see. Selecting a named interface **confines Patch to that network**: the discovery beacon announces only there, and peers on other networks are ignored entirely — they won't appear in the peers panel, and their messages and flashes won't come through. The change applies **within a few seconds — no restart needed**.
 
-- **Auto** — announces discovery on every interface. Best for almost everything.
-- **Named interface** — e.g. `en0` (Ethernet), `en1` (Wi-Fi). Scopes the discovery beacon to that one network (Patch still *listens* on all). Useful if you don't want Patch announcing itself on, say, a corporate VPN.
+- **Auto** — discovers and accepts peers on every interface. Best for almost everything.
+- **Named interface** — e.g. `en0` (Ethernet), `en1` (Wi-Fi). Pins Patch to that one network. Useful to keep a show-control VLAN clean, or to stop Patch operating over, say, a corporate VPN or venue Wi-Fi.
+
+> **Static peers are the exception.** A peer you configure by IP (Settings → Static Peers) is always reachable, pinned or not — that's how you reach machines on a *routed* network beyond the pinned one (e.g. a lighting VLAN behind a router). Rule of thumb: pinning confines automatic discovery; anything beyond the pinned network must be configured deliberately.
 
 > **One-way discovery (A sees B, but B doesn't see A)?** This happens when the machine that *can't* be seen has its **default route on the wrong interface** — a VPN (`utun`), iCloud Private Relay, or Ethernet/dock alongside Wi-Fi — so on macOS its broadcast beacon only leaves that interface and never reaches the Wi-Fi.
 > Patch now **self-heals** this: once one machine sees the other, it unicasts its heartbeat directly to that peer (unicast routes correctly regardless of the default route), so two-way visibility is restored within one heartbeat (~7 s). If it's still one-way after that, neither side ever made first contact — then:
