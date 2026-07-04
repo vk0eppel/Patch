@@ -41,6 +41,24 @@ fn pick_resolved_addresses(
     addrs.iter().map(|a| a.to_string()).collect()
 }
 
+/// What an mDNS resolution should record. `None` = record nothing: while
+/// pinned, a resolution with no on-subnet address must not create a Peer at
+/// all — ADR-0010 drops that peer's OSC presence at the protocol boundary,
+/// so the addressless entry could never gain an address and would sit in the
+/// panel unreachable forever (#152). Unpinned, an empty resolution still
+/// records addresslessly (`Some(vec![])`) — presence can fill it in.
+fn mdns_addresses_to_record(
+    addrs: &std::collections::HashSet<IpAddr>,
+    pin_configured: bool,
+    pinned_subnet: Option<(Ipv4Addr, Ipv4Addr)>,
+) -> Option<Vec<String>> {
+    let picked = pick_resolved_addresses(addrs, pin_configured, pinned_subnet);
+    if pin_configured && picked.is_empty() {
+        return None;
+    }
+    Some(picked)
+}
+
 pub struct Discovery {
     /// The mDNS daemon handle, held for the engine's lifetime. Dropping the last
     /// `ServiceDaemon` handle shuts the daemon thread down, so this must outlive
@@ -100,11 +118,21 @@ impl Discovery {
 
                             let iface_pin = browse_state.config().await.network_interface.clone();
                             let pinned_subnet = iface_pin.as_deref().and_then(pinned_ipv4_subnet);
-                            let addrs = pick_resolved_addresses(
+                            let Some(addrs) = mdns_addresses_to_record(
                                 info.get_addresses(),
                                 iface_pin.is_some(),
                                 pinned_subnet,
-                            );
+                            ) else {
+                                // Pinned with no on-subnet address: recording an
+                                // addressless peer would leave a permanent ghost —
+                                // ADR-0010 drops its presence, so nothing could
+                                // ever fill the address in (#152).
+                                debug!(
+                                    "mDNS resolved {} with no address on the pinned network — skipped",
+                                    info.get_fullname()
+                                );
+                                continue;
+                            };
                             let port = info.get_port();
 
                             // Prefer the peer_name TXT record; fall back to stripping
@@ -357,6 +385,33 @@ mod tests {
         // don't fall back to "first address", which could be the wrong NIC.
         let set = addrs(&["10.0.2.9"]);
         assert!(pick_resolved_addresses(&set, true, None).is_empty());
+    }
+
+    #[test]
+    fn pinned_resolution_with_no_on_subnet_address_records_nothing() {
+        // ADR-0010 (#152): while pinned, OSC presence from off-pin sources is
+        // dropped at the protocol boundary, so an addressless mDNS peer could
+        // never gain an address — it would sit in the panel unreachable
+        // forever. Record nothing instead of a permanent ghost.
+        let set = addrs(&["10.0.2.9"]);
+        let pinned_subnet = Some((
+            "169.254.10.1".parse().unwrap(),
+            "255.255.0.0".parse().unwrap(),
+        ));
+        assert_eq!(mdns_addresses_to_record(&set, true, pinned_subnet), None);
+        // Same when the pinned interface itself is unresolvable this tick.
+        assert_eq!(mdns_addresses_to_record(&set, true, None), None);
+    }
+
+    #[test]
+    fn unpinned_resolution_with_no_address_still_records_addressless() {
+        // Auto mode: presence can still fill the address in later — the
+        // addressless panel entry stays useful.
+        let set = addrs(&[]);
+        assert_eq!(
+            mdns_addresses_to_record(&set, false, None),
+            Some(Vec::new())
+        );
     }
 
     #[test]
