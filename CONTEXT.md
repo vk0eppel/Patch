@@ -64,3 +64,7 @@ _Avoid_: Manual peer, fixed peer, pinned peer
 A saved configuration for a specific production or venue — channels and optionally static peers. Loaded at the start of a run.
 _Avoid_: Session, preset, config, profile
 
+**Pinned Network**:
+The single network an Operator confines Patch to via Settings → Network. While pinned, dynamic discovery and traffic are confined to that network; Static Peers are the deliberate exception. No pin means Patch operates on every network it can see.
+_Avoid_: Interface filter, network lock, bound interface
+
