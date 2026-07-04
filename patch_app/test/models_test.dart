@@ -77,6 +77,26 @@ void main() {
       );
       expect(p.departed, isFalse);
     });
+
+    test('isManual is true only for a Static Peer (manual_ip)', () {
+      PeerInfo peer(String mode) => PeerInfo(
+            peerId: 'p1',
+            peerName: 'MON',
+            channels: const [],
+            address: '',
+            oscPort: 9000,
+            lastSeen: DateTime.parse('2026-06-04T12:00:00Z'),
+            discoveryMode: mode,
+            status: PeerStatus.online,
+          );
+      // 'manual_ip' is the only spelling the model ever emits (fromRust) —
+      // the classification gates the DM affordance, so no other string may
+      // classify as manual.
+      expect(peer('manual_ip').isManual, isTrue);
+      expect(peer('mdns').isManual, isFalse);
+      expect(peer('osc_beacon').isManual, isFalse);
+      expect(peer('ManualIp').isManual, isFalse);
+    });
   });
 
   group('ShowFileMeta', () {

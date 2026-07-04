@@ -226,9 +226,6 @@ class _PeerTile extends StatelessWidget {
     this.isUnread = false,
   });
 
-  bool get _isManual =>
-      peer.discoveryMode == 'manual_ip' || peer.discoveryMode == 'ManualIp';
-
   Color get _dotColor => switch (peer.status) {
         PeerStatus.online => PatchTheme.success,
         PeerStatus.stale => PatchTheme.warning,
@@ -309,7 +306,7 @@ class _PeerTile extends StatelessWidget {
       ),
     );
 
-    if (onDm == null || _isManual) return tile;
+    if (onDm == null || peer.isManual) return tile;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,

@@ -138,6 +138,12 @@ class PeerInfo {
   /// the peer is heard from again.
   final bool departed;
 
+  /// A Static Peer — configured by IP rather than discovered. Its id is a
+  /// synthetic UUID, so it can't receive Direct Messages; this getter is the
+  /// one owner of that classification (widgets must not compare
+  /// [discoveryMode] strings themselves).
+  bool get isManual => discoveryMode == 'manual_ip';
+
   const PeerInfo({
     required this.peerId,
     required this.peerName,
