@@ -182,6 +182,80 @@ mod backend {
     ) {
         crate::macro_router::fire_trigger(state, transport, reliability, &trigger).await;
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn note_on_with_velocity_zero_is_a_note_off_and_does_not_fire() {
+            // Many controllers send Note On v0 instead of Note Off on release —
+            // firing on it would double-trigger every footswitch callout.
+            assert!(parse(&[0x90, 60, 0]).is_none());
+        }
+
+        #[test]
+        fn note_on_with_any_nonzero_velocity_fires_that_note() {
+            assert!(matches!(parse(&[0x90, 60, 1]), Some(MidiTrigger::Note(60))));
+            assert!(matches!(
+                parse(&[0x90, 61, 127]),
+                Some(MidiTrigger::Note(61))
+            ));
+        }
+
+        #[test]
+        fn cc_fires_only_at_64_and_above_so_the_release_does_not_double_fire() {
+            assert!(parse(&[0xB0, 20, 0]).is_none()); // pedal up
+            assert!(parse(&[0xB0, 20, 63]).is_none()); // just under the gate
+            assert!(matches!(parse(&[0xB0, 20, 64]), Some(MidiTrigger::Cc(20))));
+            assert!(matches!(parse(&[0xB0, 21, 127]), Some(MidiTrigger::Cc(21))));
+        }
+
+        #[test]
+        fn short_buffers_are_rejected() {
+            assert!(parse(&[]).is_none());
+            assert!(parse(&[0x90]).is_none());
+            assert!(parse(&[0x90, 60]).is_none());
+        }
+
+        #[test]
+        fn status_is_masked_so_every_midi_channel_triggers() {
+            // 0x9F = Note On, MIDI channel 16 — the low nibble must not matter.
+            assert!(matches!(
+                parse(&[0x9F, 60, 100]),
+                Some(MidiTrigger::Note(60))
+            ));
+            assert!(matches!(parse(&[0xB7, 20, 100]), Some(MidiTrigger::Cc(20))));
+        }
+
+        #[test]
+        fn unbound_statuses_are_ignored() {
+            assert!(parse(&[0x80, 60, 100]).is_none()); // Note Off
+            assert!(parse(&[0xE0, 0, 64]).is_none()); // pitch bend
+        }
+
+        #[test]
+        fn a_note_trigger_matches_only_the_macro_bound_to_that_note() {
+            use crate::macro_router::MacroTrigger;
+            let mac = |note: Option<u8>, cc: Option<u8>| crate::state::channel::MacroMessage {
+                label: "GO".into(),
+                payload: "go".into(),
+                key_binding: None,
+                priority: 2,
+                midi_note: note,
+                midi_cc: cc,
+                osc: None,
+            };
+            // A Note trigger never matches a CC binding of the same number,
+            // and vice versa.
+            assert!(MidiTrigger::Note(60).matches(&mac(Some(60), None)));
+            assert!(!MidiTrigger::Note(60).matches(&mac(Some(61), None)));
+            assert!(!MidiTrigger::Note(60).matches(&mac(None, Some(60))));
+            assert!(MidiTrigger::Cc(20).matches(&mac(None, Some(20))));
+            assert!(!MidiTrigger::Cc(20).matches(&mac(Some(20), None)));
+            assert!(!MidiTrigger::Cc(20).matches(&mac(None, None)));
+        }
+    }
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
