@@ -26,7 +26,9 @@ Proven mistakes — these have caused real bugs. Read before touching the releva
 
 **Never update the peer list directly from a `PeerPresence` event.** It carries no address. Always call `getPeers()` (debounced via `_schedulePeersRefresh` in Flutter).
 
-**`send_to_peers` already includes static peers.** `get_peers()` merges them as synthetic entries. Never add a separate `config.static_peers` loop — static peers would receive every packet twice (flashes have no dedup, so they'd double-fire).
+**`send_to_peers` already includes static peers.** `get_peers()` merges them as synthetic entries. Never add a separate `config.static_peers` loop — static peers would receive every packet twice.
+
+**Any wire event that produces a stored entry or a pulse must carry a `message_id` — multi-path delivery (ADR-0007) duplicates everything else.** `/patch/<ch>/flash` shipped with only `(sender_id, sender_name)` on the wire; each per-interface broadcast copy synthesized a fresh-UUID log entry with a fresh local timestamp, so multi-NIC receivers logged N "X flashed" entries per flash — `is_message_duplicate` had nothing to key on, and the receiver-side `Utc::now()` stamp also made flash entries disagree with the sender's wire-timestamped messages. Fixed by carrying `message_id` + sender timestamp as flash args 3/4 (2-arg flashes from older peers still decode, without dedup). A future wire event with receive-side effects needs the id from day one, and its handler must call `is_message_duplicate` in `handle_message`'s order (ACK if critical → dedup → sighting → store).
 
 **Don't rely on the `detached` lifecycle event for shutdown.** It's fire-and-forget and usually loses the race with process teardown on desktop. Use `AppLifecycleListener.onExitRequested` (which the framework awaits before terminating).
 

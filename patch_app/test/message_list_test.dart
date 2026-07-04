@@ -151,6 +151,34 @@ void main() {
     expect(find.textContaining(':'), findsWidgets);
   });
 
+  testWidgets('flash row timestamp column aligns with message rows',
+      (tester) async {
+    final flash = PatchMessage(
+      messageId: 'f-align',
+      senderId: 's',
+      senderName: 'James',
+      channelId: 'rf',
+      timestamp: DateTime(2026, 6, 4, 9, 31),
+      priority: 1,
+      payload: '',
+      isFlash: true,
+      flashSenderName: 'James',
+    );
+    await tester.pumpWidget(_host([_msg('Check 1'), flash]));
+    await tester.pumpAndSettle();
+
+    // Both rows render a monospace timestamp Text — their left edges must
+    // line up, or the flash entry reads as visually out of column.
+    final timeTexts = find.byWidgetPredicate(
+      (w) => w is Text && w.style?.fontFamily == 'monospace',
+    );
+    expect(timeTexts, findsNWidgets(2));
+    final xs = tester
+        .getTopLeft(timeTexts.first)
+        .dx;
+    expect(tester.getTopLeft(timeTexts.last).dx, xs);
+  });
+
   testWidgets('flash row has no priority badge or sender-name chrome', (tester) async {
     final flash = PatchMessage(
       messageId: 'f4',
@@ -169,8 +197,16 @@ void main() {
     // The flash label is one combined text node — "James" does NOT appear alone
     // as a separate coloured sender widget.
     expect(find.text('James'), findsNothing);
-    // No priority-coloured Container border — the flash row uses a plain Padding.
-    expect(find.byType(Container), findsNothing);
+    // The row keeps the border *slot* (so columns align with message rows)
+    // but never takes the priority colour — even for a critical flash.
+    final decorated = tester
+        .widgetList<Container>(find.byType(Container))
+        .map((c) => c.decoration)
+        .whereType<BoxDecoration>();
+    for (final d in decorated) {
+      final left = (d.border as Border?)?.left;
+      expect(left?.color ?? Colors.transparent, Colors.transparent);
+    }
   });
 
   testWidgets('regular messages are unaffected by flash fields', (tester) async {

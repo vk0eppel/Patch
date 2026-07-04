@@ -187,7 +187,9 @@ pub(crate) async fn dispatch_flash(
         sender_id: config.client_id,
         sender_name: config.client_name.clone(),
     };
-    let bytes = encode_flash(&flash)?;
+    // One id shared by every path copy, so receivers dedup to a single Flash
+    // log entry (ADR-0007); the timestamp is our clock, displayed as-is.
+    let bytes = encode_flash(&flash, uuid::Uuid::new_v4(), chrono::Utc::now())?;
     transport.send_to_peers(bytes, state, &config).await?;
     state.publish(AppEvent::ChannelFlash(flash)).await;
     Ok(())

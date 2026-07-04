@@ -112,19 +112,26 @@ impl PatchMessage {
     /// Synthesize a Flash log entry for a received channel Flash.
     /// Stored in the message buffer so the message thread can display
     /// "Name (Role) flashed". Never sent over the wire.
+    ///
+    /// `message_id` and `timestamp` come from the Flash packet itself: the id
+    /// so multi-path copies dedup to one entry, the timestamp so the entry
+    /// reads on the sender's clock like every other message (display only —
+    /// it never feeds liveness, per ERRORS.md).
     pub fn new_flash_log(
+        message_id: Uuid,
         sender_id: Uuid,
         sender_name: impl Into<String>,
         sender_role: Option<String>,
         channel_id: impl Into<String>,
+        timestamp: DateTime<Utc>,
     ) -> Self {
         let name: String = sender_name.into();
         Self {
-            message_id: Uuid::new_v4(),
+            message_id,
             sender_id,
             sender_name: name.clone(),
             channel_id: channel_id.into(),
-            timestamp: Utc::now(),
+            timestamp,
             priority: Priority::Info,
             payload: String::new(),
             is_flash: true,

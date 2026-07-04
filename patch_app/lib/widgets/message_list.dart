@@ -129,27 +129,49 @@ class _MessageTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (message.isFlash) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-        child: Row(
-          children: [
-            Text(
-              _formatTime(message.timestamp),
-              style: const TextStyle(
-                color: PatchTheme.textMuted,
-                fontSize: PatchTheme.fontSizeSmall,
-                fontFamily: 'monospace',
+      // Mirror the message-row container (margin + 3px border slot + inner
+      // padding + optional channel dot) so the timestamp column lines up
+      // with every other row — just chrome-less and compact.
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+        decoration: const BoxDecoration(
+          border: Border(left: BorderSide(color: Colors.transparent, width: 3)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+          child: Row(
+            children: [
+              if (channelColor != null) ...[
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      color: channelColor,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              ],
+              Text(
+                _formatTime(message.timestamp),
+                style: const TextStyle(
+                  color: PatchTheme.textMuted,
+                  fontSize: PatchTheme.fontSizeSmall,
+                  fontFamily: 'monospace',
+                ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Text(
-              _flashLabel,
-              style: const TextStyle(
-                color: PatchTheme.textMuted,
-                fontSize: PatchTheme.fontSizeSmall,
+              const SizedBox(width: 10),
+              Text(
+                _flashLabel,
+                style: const TextStyle(
+                  color: PatchTheme.textMuted,
+                  fontSize: PatchTheme.fontSizeSmall,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       );
     }

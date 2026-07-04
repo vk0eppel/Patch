@@ -76,7 +76,11 @@ pub(crate) async fn handle(
         } => handle_ack(message_id, peer_id, state, reliability).await,
         PatchEvent::Presence(p) => handle_presence(p, from, state, client_id).await,
         PatchEvent::Bye { peer_id } => handle_bye(peer_id, state, client_id).await,
-        PatchEvent::Flash(f) => handle_flash(f, from, state, client_id).await,
+        PatchEvent::Flash {
+            flash,
+            message_id,
+            timestamp,
+        } => handle_flash(flash, message_id, timestamp, from, state, client_id).await,
         PatchEvent::Say {
             channel_id,
             payload,
@@ -255,6 +259,8 @@ async fn handle_bye(peer_id: Uuid, state: &AppState, client_id: Uuid) -> Vec<Out
 
 async fn handle_flash(
     f: ChannelFlash,
+    message_id: Uuid,
+    timestamp: chrono::DateTime<chrono::Utc>,
     from: SocketAddr,
     state: &AppState,
     client_id: Uuid,
@@ -265,17 +271,27 @@ async fn handle_flash(
     if is_self(f.sender_id, client_id) {
         return Vec::new();
     }
+    // Drop the copies multi-path delivery produces (one broadcast per
+    // interface) — same guard, same order as handle_message: dedup before
+    // sighting, so N copies mean one log entry and one pulse.
+    if state.is_message_duplicate(message_id).await {
+        return Vec::new();
+    }
     // Same sighting as for Message.
     record_sender_sighting(state, f.sender_id, f.sender_name.clone(), from).await;
     // Log a Flash entry in the channel's message thread so operators
     // can see who flashed and when. Role is best-effort: it's only
-    // available after a presence heartbeat has arrived.
+    // available after a presence heartbeat has arrived. The wire
+    // timestamp (sender's clock) is used so the entry reads consistently
+    // next to that sender's messages — display only, never liveness.
     let sender_role = state.peer_role(f.sender_id).await;
     let flash_log = PatchMessage::new_flash_log(
+        message_id,
         f.sender_id,
         f.sender_name.clone(),
         sender_role,
         f.channel_id.clone(),
+        timestamp,
     );
     state.store_message(flash_log).await;
     state.publish(AppEvent::ChannelFlash(f)).await;
@@ -609,6 +625,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn duplicate_flash_from_multipath_delivery_is_logged_once() {
+        // ADR-0007 multi-path delivery: the same Flash broadcast arrives once
+        // per interface on a multi-NIC receiver. Only one Flash log entry and
+        // one ChannelFlash pulse may result — same dedup guarantee messages
+        // already have.
+        let state = test_state();
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+        let sender_id = Uuid::new_v4();
+        let flash = ChannelFlash {
+            channel_id: "rf".into(),
+            sender_id,
+            sender_name: "Sender".into(),
+        };
+        let message_id = Uuid::new_v4();
+        let timestamp = chrono::Utc::now();
+
+        // Two copies of the same packet, arriving via two paths — same
+        // wire message_id, different source addresses.
+        handle(
+            PatchEvent::Flash {
+                flash: flash.clone(),
+                message_id,
+                timestamp,
+            },
+            addr(7),
+            &state,
+            Uuid::new_v4(),
+            &reliability,
+        )
+        .await;
+        handle(
+            PatchEvent::Flash {
+                flash,
+                message_id,
+                timestamp,
+            },
+            addr(8),
+            &state,
+            Uuid::new_v4(),
+            &reliability,
+        )
+        .await;
+
+        assert_eq!(
+            state.get_messages("rf", 10).await.len(),
+            1,
+            "one flash delivered over two paths must log exactly one entry"
+        );
+    }
+
+    #[tokio::test]
     async fn flash_from_self_is_ignored_entirely() {
         // Reachable when a static peer is misconfigured to our own address —
         // the echoed flash must not register us as a peer, log a duplicate
@@ -620,11 +687,15 @@ mod tests {
         let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
 
         let out = handle(
-            PatchEvent::Flash(ChannelFlash {
-                channel_id: "rf".into(),
-                sender_id: client_id, // our own flash echoed back
-                sender_name: "us".into(),
-            }),
+            PatchEvent::Flash {
+                flash: ChannelFlash {
+                    channel_id: "rf".into(),
+                    sender_id: client_id, // our own flash echoed back
+                    sender_name: "us".into(),
+                },
+                message_id: Uuid::new_v4(),
+                timestamp: chrono::Utc::now(),
+            },
             addr(1),
             &state,
             client_id,
@@ -914,11 +985,15 @@ mod tests {
         let sender_id = Uuid::new_v4();
 
         handle(
-            PatchEvent::Flash(ChannelFlash {
-                channel_id: "rf".into(),
-                sender_id,
-                sender_name: "Sender".into(),
-            }),
+            PatchEvent::Flash {
+                flash: ChannelFlash {
+                    channel_id: "rf".into(),
+                    sender_id,
+                    sender_name: "Sender".into(),
+                },
+                message_id: Uuid::new_v4(),
+                timestamp: chrono::Utc::now(),
+            },
             addr(7),
             &state,
             Uuid::new_v4(),

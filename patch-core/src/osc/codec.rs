@@ -1,7 +1,7 @@
 //! Encode/decode PATCH OSC packets using the `rosc` crate.
 
 use anyhow::{bail, Context, Result};
-use chrono::{TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use rosc::{OscMessage, OscPacket, OscType};
 use uuid::Uuid;
 
@@ -51,13 +51,21 @@ pub fn encode_presence(p: &PeerPresence) -> Result<Vec<u8>> {
     rosc::encoder::encode(&OscPacket::Message(osc)).context("Failed to encode /patch/presence")
 }
 
-/// Encode a channel flash packet.
-pub fn encode_flash(flash: &ChannelFlash) -> Result<Vec<u8>> {
+/// Encode a channel flash packet. `message_id` lets receivers dedup the
+/// multi-path copies (ADR-0007); `timestamp` is the sender's clock, so the
+/// receiver's Flash log entry aligns with the sender's other messages.
+pub fn encode_flash(
+    flash: &ChannelFlash,
+    message_id: Uuid,
+    timestamp: DateTime<Utc>,
+) -> Result<Vec<u8>> {
     let osc = OscMessage {
         addr: addresses::channel_flash(&flash.channel_id),
         args: vec![
             OscType::String(flash.sender_id.to_string()),
             OscType::String(flash.sender_name.clone()),
+            OscType::String(message_id.to_string()),
+            OscType::Long(timestamp.timestamp_millis()),
         ],
     };
     rosc::encoder::encode(&OscPacket::Message(osc)).context("Failed to encode flash")
@@ -234,7 +242,14 @@ pub enum PatchEvent {
     Bye {
         peer_id: Uuid,
     },
-    Flash(ChannelFlash),
+    /// A channel Flash. `message_id`/`timestamp` ride the wire so multi-path
+    /// copies dedup to one log entry stamped with the sender's clock; both are
+    /// synthesized locally when decoding an older peer's 2-arg flash.
+    Flash {
+        flash: ChannelFlash,
+        message_id: Uuid,
+        timestamp: DateTime<Utc>,
+    },
     /// A direct (peer-to-peer) message addressed to `target_id`. `msg.channel_id`
     /// is already set to `dm:{sender_id}` by the decoder (the receiver's key for
     /// the conversation with the sender).
@@ -604,11 +619,29 @@ fn decode_flash(msg: OscMessage) -> Result<PatchEvent> {
     if args.len() < 2 {
         bail!("Expected 2 args for .../flash, got {}", args.len());
     }
-    Ok(PatchEvent::Flash(ChannelFlash {
-        channel_id,
-        sender_id: parse_uuid(&args[0])?,
-        sender_name: parse_string(&args[1])?,
-    }))
+    // Older peers send 2 args (no id/timestamp): synthesize both locally.
+    // Multi-path copies from such peers can't be deduped — status quo for
+    // mixed-version networks.
+    let (message_id, timestamp) = if args.len() >= 4 {
+        let ts_ms = parse_long(&args[3])?;
+        (
+            parse_uuid(&args[2])?,
+            Utc.timestamp_millis_opt(ts_ms)
+                .single()
+                .context("Invalid flash timestamp")?,
+        )
+    } else {
+        (Uuid::new_v4(), Utc::now())
+    };
+    Ok(PatchEvent::Flash {
+        flash: ChannelFlash {
+            channel_id,
+            sender_id: parse_uuid(&args[0])?,
+            sender_name: parse_string(&args[1])?,
+        },
+        message_id,
+        timestamp,
+    })
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -740,18 +773,50 @@ mod tests {
     }
 
     #[test]
-    fn flash_round_trip_carries_channel_in_address() {
+    fn flash_round_trip_carries_channel_in_address_and_id_and_timestamp() {
         let f = ChannelFlash {
             channel_id: "lighting".into(),
             sender_id: Uuid::new_v4(),
             sender_name: "LD".into(),
         };
-        let bytes = encode_flash(&f).unwrap();
+        let id = Uuid::new_v4();
+        let ts = Utc.timestamp_millis_opt(1_750_000_000_000).unwrap();
+        let bytes = encode_flash(&f, id, ts).unwrap();
         match decode_packet(&bytes).unwrap() {
-            PatchEvent::Flash(d) => {
+            PatchEvent::Flash {
+                flash: d,
+                message_id,
+                timestamp,
+            } => {
                 assert_eq!(d.channel_id, "lighting");
                 assert_eq!(d.sender_id, f.sender_id);
                 assert_eq!(d.sender_name, f.sender_name);
+                // Both dedup key and sender clock survive the wire.
+                assert_eq!(message_id, id);
+                assert_eq!(timestamp, ts);
+            }
+            other => panic!("expected Flash, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn legacy_two_arg_flash_decodes_with_synthesized_id_and_local_time() {
+        // An older peer sends only (sender_id, sender_name) — must still
+        // decode; id/timestamp are synthesized locally (no dedup possible).
+        let legacy = OscMessage {
+            addr: addresses::channel_flash("rf"),
+            args: vec![
+                OscType::String(Uuid::new_v4().to_string()),
+                OscType::String("LD".into()),
+            ],
+        };
+        let before = Utc::now();
+        match decode_message(legacy).unwrap() {
+            PatchEvent::Flash {
+                flash, timestamp, ..
+            } => {
+                assert_eq!(flash.channel_id, "rf");
+                assert!(timestamp >= before && timestamp <= Utc::now());
             }
             other => panic!("expected Flash, got {:?}", other),
         }
