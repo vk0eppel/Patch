@@ -23,9 +23,10 @@ class NetworkPresenter {
   /// Non-privileged UDP port range ("Applies live, 1024–65535").
   static const oscPortMin = 1024, oscPortMax = 65535;
 
-  /// Scope the discovery beacon to one interface; null means auto.
-  Future<void> selectInterface(String? name) async {
-    await setInterface(name ?? 'auto');
+  /// Scope the discovery beacon to one interface. Pinning is mandatory —
+  /// there is no "Auto" to select back to.
+  Future<void> selectInterface(String name) async {
+    await setInterface(name);
     await refreshConfig();
   }
 

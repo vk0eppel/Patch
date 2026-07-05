@@ -35,6 +35,9 @@ class _NetworkSectionState extends State<NetworkSection> {
   }
 
   void _selectInterface(String? name) {
+    // null only happens by tapping the "Select a network…" placeholder
+    // itself while unresolved — a no-op, not a way to unpin.
+    if (name == null) return;
     runGuarded(context, () async {
       await widget.presenter.selectInterface(name);
       if (!mounted) return;

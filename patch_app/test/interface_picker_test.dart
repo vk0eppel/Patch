@@ -28,10 +28,17 @@ Widget _host({required List<Map<String, String>> interfaces, String? selected}) 
     );
 
 void main() {
-  testWidgets('renders with Auto selected (null)', (tester) async {
+  testWidgets('never renders an Auto option (mandatory pinning)', (tester) async {
     await tester.pumpWidget(_host(interfaces: _ifaces, selected: null));
     expect(tester.takeException(), isNull);
-    expect(find.text('Auto (all interfaces)'), findsOneWidget);
+    expect(find.textContaining('Auto'), findsNothing);
+  });
+
+  testWidgets('shows a distinct placeholder when nothing has ever been resolved', (tester) async {
+    await tester.pumpWidget(_host(interfaces: _ifaces, selected: null));
+    expect(tester.takeException(), isNull);
+    expect(find.text('Select a network…'), findsOneWidget);
+    expect(find.textContaining('not connected'), findsNothing);
   });
 
   testWidgets('renders with an enumerated interface selected', (tester) async {
@@ -53,5 +60,16 @@ void main() {
     await tester.pumpWidget(_host(interfaces: const [], selected: 'en10'));
     expect(tester.takeException(), isNull);
     expect(find.textContaining('en10'), findsOneWidget);
+  });
+
+  testWidgets('shows a prominent banner while unresolved', (tester) async {
+    await tester.pumpWidget(_host(interfaces: _ifaces, selected: null));
+    expect(find.textContaining('No network selected'), findsOneWidget);
+    expect(find.textContaining('Static peers still work'), findsOneWidget);
+  });
+
+  testWidgets('hides the banner once an interface is pinned', (tester) async {
+    await tester.pumpWidget(_host(interfaces: _ifaces, selected: 'en0'));
+    expect(find.textContaining('No network selected'), findsNothing);
   });
 }

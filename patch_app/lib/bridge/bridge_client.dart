@@ -145,12 +145,11 @@ class BridgeClient {
     return AppConfig.fromRust(cfg);
   }
 
-  /// Change the network interface (empty/'auto' → all interfaces). Throws on
-  /// failure. No restart needed. Pinning is operate-only (ADR-0010): the
-  /// beacon is scoped to the pinned NIC *and* inbound packets from sources
-  /// outside its subnet are dropped, unless they match a static peer.
-  Future<void> setInterface(String name) =>
-      rust.setInterface(name: name.isEmpty ? null : name);
+  /// Pin the network interface. Throws on failure. No restart needed.
+  /// Pinning is mandatory and operate-only (ADR-0010): the beacon is scoped
+  /// to the pinned NIC *and* inbound packets from sources outside its subnet
+  /// are dropped, unless they match a static peer.
+  Future<void> setInterface(String name) => rust.setInterface(name: name);
 
   /// Set the local Operator's display name. Throws on failure;
   /// `client_name_changed` is emitted by the engine event bus.

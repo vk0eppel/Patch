@@ -58,7 +58,7 @@ fn config_path() -> PathBuf {
 
 /// The config schema version this build writes. Bump when adding an ordered
 /// migration step in [`migrate`].
-pub const CURRENT_CONFIG_VERSION: u32 = 1;
+pub const CURRENT_CONFIG_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -81,8 +81,11 @@ pub struct Config {
     /// (ADR-0010): the beacon announces only on this NIC, and inbound packets
     /// from sources outside its subnet are dropped at the protocol boundary
     /// unless they match a Static Peer address. The socket still binds
-    /// `0.0.0.0` (the pin is enforced by admission, not by bind). None =
-    /// operate on every interface.
+    /// `0.0.0.0` (the pin is enforced by admission, not by bind). Pinning is
+    /// mandatory — `None` means unresolved (pending `init`'s first-run
+    /// auto-select, or a manual choice in Settings → Network), not "operate
+    /// on every interface." Dynamic discovery stays fully inert while
+    /// unresolved; Static Peers are unaffected.
     pub network_interface: Option<String>,
     /// Manually-added peer addresses (ip:port).
     pub static_peers: Vec<StaticPeer>,
@@ -754,6 +757,29 @@ default_channels = []
     #[test]
     fn fresh_config_is_current_version() {
         assert_eq!(Config::default().config_version, CURRENT_CONFIG_VERSION);
+    }
+
+    #[test]
+    fn migrate_does_not_touch_network_interface_value() {
+        // Mandatory pinning's reinterpretation of `network_interface: None`
+        // (unresolved vs. the old deliberate Auto) lives entirely in how
+        // `init`/`admits_source` read it — migrate() must not try to
+        // transform or clear the stored value itself.
+        let mut cfg = Config {
+            config_version: 0,
+            network_interface: Some("en0".into()),
+            ..Config::default()
+        };
+        migrate(&mut cfg);
+        assert_eq!(cfg.network_interface, Some("en0".into()));
+
+        let mut cfg_none = Config {
+            config_version: 0,
+            network_interface: None,
+            ..Config::default()
+        };
+        migrate(&mut cfg_none);
+        assert_eq!(cfg_none.network_interface, None);
     }
 
     #[test]

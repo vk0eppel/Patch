@@ -48,11 +48,6 @@ void main() {
       expect(calls, ['setOscPort:9000', 'refreshConfig']);
     });
 
-    test('selecting no interface means auto', () async {
-      await p.selectInterface(null);
-      expect(calls, ['setInterface:auto', 'refreshConfig']);
-    });
-
     test('selecting a named interface saves it', () async {
       await p.selectInterface('en0');
       expect(calls, ['setInterface:en0', 'refreshConfig']);

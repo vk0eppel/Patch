@@ -18,42 +18,37 @@ use crate::osc::{codec::encode_presence, types::PeerPresence};
 use crate::state::{is_self, AppState, Config, PeerSighting};
 use crate::transport::{in_pinned_subnet, pinned_ipv4_subnet, Transport};
 
-/// Returns all resolved mDNS addresses that match the configured interface pin.
-/// With no pin, all addresses are returned. With a pin, only addresses on the
-/// pinned subnet are returned — an empty Vec means "no matching address" and
-/// callers should record the peer with an empty address (appears in the panel
-/// but unreachable until an OSC presence provides a usable address).
+/// Returns resolved mDNS addresses on the pinned subnet — empty when
+/// `pinned_subnet` is unknown (unresolved pin, or the pinned interface's own
+/// IP couldn't be resolved this tick). Under mandatory pinning these are the
+/// same condition: no known subnet to match against, so nothing qualifies.
 fn pick_resolved_addresses(
     addrs: &std::collections::HashSet<IpAddr>,
-    pin_configured: bool,
     pinned_subnet: Option<(Ipv4Addr, Ipv4Addr)>,
 ) -> Vec<String> {
-    if pin_configured {
-        let Some((iface_ip, mask)) = pinned_subnet else {
-            return Vec::new();
-        };
-        return addrs
-            .iter()
-            .filter(|ip| matches!(ip, IpAddr::V4(v4) if in_pinned_subnet(*v4, iface_ip, mask)))
-            .map(|ip| ip.to_string())
-            .collect();
-    }
-    addrs.iter().map(|a| a.to_string()).collect()
+    let Some((iface_ip, mask)) = pinned_subnet else {
+        return Vec::new();
+    };
+    addrs
+        .iter()
+        .filter(|ip| matches!(ip, IpAddr::V4(v4) if in_pinned_subnet(*v4, iface_ip, mask)))
+        .map(|ip| ip.to_string())
+        .collect()
 }
 
-/// What an mDNS resolution should record. `None` = record nothing: while
-/// pinned, a resolution with no on-subnet address must not create a Peer at
-/// all — ADR-0010 drops that peer's OSC presence at the protocol boundary,
-/// so the addressless entry could never gain an address and would sit in the
-/// panel unreachable forever (#152). Unpinned, an empty resolution still
-/// records addresslessly (`Some(vec![])`) — presence can fill it in.
+/// What an mDNS resolution should record. `None` = record nothing: a
+/// resolution with no on-subnet address must not create a Peer at all —
+/// ADR-0010 drops that peer's OSC presence at the protocol boundary, so the
+/// addressless entry could never gain an address and would sit in the panel
+/// unreachable forever (#152). This covers both an unresolved pin (mandatory
+/// pinning means "pending choice," not "Auto") and a momentarily-unresolvable
+/// pinned interface — both leave `pinned_subnet` as `None`.
 fn mdns_addresses_to_record(
     addrs: &std::collections::HashSet<IpAddr>,
-    pin_configured: bool,
     pinned_subnet: Option<(Ipv4Addr, Ipv4Addr)>,
 ) -> Option<Vec<String>> {
-    let picked = pick_resolved_addresses(addrs, pin_configured, pinned_subnet);
-    if pin_configured && picked.is_empty() {
+    let picked = pick_resolved_addresses(addrs, pinned_subnet);
+    if picked.is_empty() {
         return None;
     }
     Some(picked)
@@ -118,11 +113,9 @@ impl Discovery {
 
                             let iface_pin = browse_state.config().await.network_interface.clone();
                             let pinned_subnet = iface_pin.as_deref().and_then(pinned_ipv4_subnet);
-                            let Some(addrs) = mdns_addresses_to_record(
-                                info.get_addresses(),
-                                iface_pin.is_some(),
-                                pinned_subnet,
-                            ) else {
+                            let Some(addrs) =
+                                mdns_addresses_to_record(info.get_addresses(), pinned_subnet)
+                            else {
                                 // Pinned with no on-subnet address: recording an
                                 // addressless peer would leave a permanent ghost —
                                 // ADR-0010 drops its presence, so nothing could
@@ -266,9 +259,16 @@ impl Discovery {
                         );
                         // Broadcast so still-undiscovered peers can find us
                         // (subnet-directed + macOS per-NIC, see transport::broadcast_all_paths).
-                        hb_transport
-                            .broadcast_all_paths(&bytes, osc_port, cfg.network_interface.as_deref())
-                            .await;
+                        // Unresolved (no pin yet) stays fully inert outbound too.
+                        if crate::transport::should_broadcast(cfg.network_interface.as_deref()) {
+                            hb_transport
+                                .broadcast_all_paths(
+                                    &bytes,
+                                    osc_port,
+                                    cfg.network_interface.as_deref(),
+                                )
+                                .await;
+                        }
                         // Also unicast to peers we already know (dynamic + static):
                         // a peer we can see learns about us even when our broadcast
                         // can't reach them (asymmetric routing / AP isolation).
@@ -339,22 +339,6 @@ mod tests {
     }
 
     #[test]
-    fn no_pin_returns_all_addresses() {
-        let set = addrs(&["10.0.2.5", "192.168.1.1"]);
-        let result = pick_resolved_addresses(&set, false, None);
-        assert_eq!(result.len(), 2);
-    }
-
-    #[test]
-    fn no_pin_single_address_returns_it() {
-        let set = addrs(&["10.0.2.5"]);
-        assert_eq!(
-            pick_resolved_addresses(&set, false, None),
-            vec!["10.0.2.5".to_string()]
-        );
-    }
-
-    #[test]
     fn pin_returns_only_addresses_on_matching_subnet() {
         // M1 pinned to the wired Dante NIC (169.254.x.x/16); Intel's service
         // resolved with both its Dante address and an unrelated Wi-Fi one.
@@ -364,7 +348,7 @@ mod tests {
             "255.255.0.0".parse().unwrap(),
         ));
         assert_eq!(
-            pick_resolved_addresses(&set, true, pinned_subnet),
+            pick_resolved_addresses(&set, pinned_subnet),
             vec!["169.254.30.7".to_string()]
         );
     }
@@ -376,7 +360,7 @@ mod tests {
             "169.254.10.1".parse().unwrap(),
             "255.255.0.0".parse().unwrap(),
         ));
-        assert!(pick_resolved_addresses(&set, true, pinned_subnet).is_empty());
+        assert!(pick_resolved_addresses(&set, pinned_subnet).is_empty());
     }
 
     #[test]
@@ -384,7 +368,7 @@ mod tests {
         // The pinned interface itself couldn't be found/resolved this tick —
         // don't fall back to "first address", which could be the wrong NIC.
         let set = addrs(&["10.0.2.9"]);
-        assert!(pick_resolved_addresses(&set, true, None).is_empty());
+        assert!(pick_resolved_addresses(&set, None).is_empty());
     }
 
     #[test]
@@ -398,20 +382,18 @@ mod tests {
             "169.254.10.1".parse().unwrap(),
             "255.255.0.0".parse().unwrap(),
         ));
-        assert_eq!(mdns_addresses_to_record(&set, true, pinned_subnet), None);
+        assert_eq!(mdns_addresses_to_record(&set, pinned_subnet), None);
         // Same when the pinned interface itself is unresolvable this tick.
-        assert_eq!(mdns_addresses_to_record(&set, true, None), None);
+        assert_eq!(mdns_addresses_to_record(&set, None), None);
     }
 
     #[test]
-    fn unpinned_resolution_with_no_address_still_records_addressless() {
-        // Auto mode: presence can still fill the address in later — the
-        // addressless panel entry stays useful.
-        let set = addrs(&[]);
-        assert_eq!(
-            mdns_addresses_to_record(&set, false, None),
-            Some(Vec::new())
-        );
+    fn unresolved_records_nothing_even_with_addresses() {
+        // No pin means unresolved (mandatory pinning) — dynamic discovery
+        // stays fully inert, so an mDNS resolution records no peer at all,
+        // same as the pinned-but-off-subnet case.
+        let set = addrs(&["10.0.2.9"]);
+        assert_eq!(mdns_addresses_to_record(&set, None), None);
     }
 
     #[test]
@@ -422,7 +404,7 @@ mod tests {
             "169.254.10.1".parse().unwrap(),
             "255.255.0.0".parse().unwrap(),
         ));
-        let result = pick_resolved_addresses(&set, true, pinned_subnet);
+        let result = pick_resolved_addresses(&set, pinned_subnet);
         assert_eq!(result.len(), 2);
         assert!(result.contains(&"169.254.30.7".to_string()));
         assert!(result.contains(&"169.254.31.2".to_string()));

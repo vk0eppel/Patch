@@ -8,7 +8,7 @@ Sending to all of a peer's addresses (broadcast + unicast heartbeat, channel mes
 
 ACK matching changed as a consequence: `ReliabilityManager` previously keyed pending ACKs by source `SocketAddr`, which breaks when a receiver ACKs from a different address than the one the Critical message was sent to. `/patch/ack` now carries a `peer_id` field; the reliability manager tracks `(message_id, peer_id)` instead.
 
-Auto mode (`network_interface = None`) no longer calls `clear_dynamic()` on any interface-topology change — the per-address prune window makes that unnecessary and a full clear would discard valid peer state on the other interfaces.
+Only switching the pin to a *different* interface calls `clear_dynamic()`, so the peer list rebuilds via the new NIC's discovery; the per-address prune window handles dead paths on any other interface without a full clear (ADR-0011: mandatory pinning means there's no longer an "every interface at once" state this needed to protect against).
 
 ## Considered options
 

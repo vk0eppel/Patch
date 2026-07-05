@@ -27,10 +27,12 @@ To clean up the list after a show or when moving between networks, tap the **�
 
 ## Network interface selection
 
-On most setups leave this on **Auto** — Patch operates on every network it can see. Selecting a named interface **confines Patch to that network**: the discovery beacon announces only there, and peers on other networks are ignored entirely — they won't appear in the peers panel, and their messages and flashes won't come through. The change applies **within a few seconds — no restart needed**.
+Patch always confines itself to one network — **pinning is mandatory**: the discovery beacon announces only there, and peers on other networks are ignored entirely — they won't appear in the peers panel, and their messages and flashes won't come through. The change applies **within a few seconds — no restart needed**.
 
-- **Auto** — discovers and accepts peers on every interface. Best for almost everything.
+- **First launch**: if your machine has exactly one usable network, Patch pins to it automatically — no setup needed. If it has more than one (e.g. Ethernet and Wi-Fi both active), Patch won't guess — it stays inert (no discovery in or out) until you pick one in Settings → Network.
 - **Named interface** — e.g. `en0` (Ethernet), `en1` (Wi-Fi). Pins Patch to that one network. Useful to keep a show-control VLAN clean, or to stop Patch operating over, say, a corporate VPN or venue Wi-Fi.
+- **No network selected** — dynamic discovery is fully inert (nothing sent or received) until you choose an interface. Static Peers still work. This is rare in practice: it only happens on a fresh install with more than one usable network at first launch.
+- There is no "unpin" action — the only way to change the pinned network is picking a different one from the same list. If your pinned NIC temporarily disappears (unplugged, VPN toggled), it shows as "(not connected)" rather than falling back to no confinement, and resumes automatically once it's back.
 
 > **Static peers are the exception.** A peer you configure by IP (Settings → Static Peers) is always reachable, pinned or not — that's how you reach machines on a *routed* network beyond the pinned one (e.g. a lighting VLAN behind a router). Rule of thumb: pinning confines automatic discovery; anything beyond the pinned network must be configured deliberately.
 

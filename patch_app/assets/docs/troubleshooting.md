@@ -11,7 +11,7 @@ Patch uses UDP multicast/broadcast for discovery — peers must be reachable at 
 Very common in venues. Devices on the same SSID can't talk directly. Fix: add static peers manually (**Settings → Static Peers**) using each device's IP and port 9000. See [Networking](networking.md#ap-isolated-networks).
 
 **3. Check the network interface selection**
-Go to **Settings → Network Interface**. Pinning an interface **confines Patch to that network** — a peer on any other network is ignored entirely (it won't appear, and its messages won't come through). If a peer is missing while an interface is pinned, they're probably on a different network: check which network their machine is actually on (IP range), move them onto the pinned one, add them as a **Static Peer** by IP (static peers are always reachable, pinned or not), or switch to **Auto** (applies within a few seconds, no restart).
+Go to **Settings → Network Interface**. Pinning is mandatory and **confines Patch to that network** — a peer on any other network is ignored entirely (it won't appear, and its messages won't come through). If a peer is missing, they're probably on a different network: check which network their machine is actually on (IP range), move them onto the pinned one, or add them as a **Static Peer** by IP (static peers are always reachable regardless of the pin). There's no "switch to Auto" fallback — the only fix is picking the right interface or adding a static peer.
 
 **4. Firewall blocking UDP port 9000**
 Ensure inbound UDP port 9000 is open on each device:

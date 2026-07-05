@@ -445,11 +445,28 @@ mod tests {
     use crate::osc::types::{ChannelFlash, Priority};
     use crate::state::{Config, PeerSighting};
 
+    /// These handler tests exercise message-routing logic, not the Pinned
+    /// Network admission boundary (ADR-0010) — but under mandatory pinning,
+    /// an unresolved `AppState` denies every non-Static-Peer source, which
+    /// would silently drop every synthetic `addr(n)` packet these tests send.
+    /// Pin to a fake interface name and inject a subnet covering `addr()`'s
+    /// `10.0.0.0/24` range, mirroring the existing `set_pinned_subnet_for_test`
+    /// pattern (real CI has no interface with this fake name to resolve).
+    fn pin_test_subnet(state: &AppState) {
+        state.set_pinned_subnet_for_test(Some((
+            std::net::Ipv4Addr::new(10, 0, 0, 0),
+            std::net::Ipv4Addr::new(255, 255, 255, 0),
+        )));
+    }
+
     fn test_state() -> AppState {
-        AppState::new(Config {
+        let state = AppState::new(Config {
             default_channels: Vec::new(),
+            network_interface: Some("test-pin".into()),
             ..Config::default()
-        })
+        });
+        pin_test_subnet(&state);
+        state
     }
 
     /// A state whose `config.client_id` is `client_id` — needed by any test
@@ -457,11 +474,14 @@ mod tests {
     /// `state.config().client_id` will be used to originate/sign packets with
     /// (e.g. `Say` origination, `ChannelsRequest` replies).
     fn test_state_with_id(client_id: Uuid) -> AppState {
-        AppState::new(Config {
+        let state = AppState::new(Config {
             client_id,
             default_channels: Vec::new(),
+            network_interface: Some("test-pin".into()),
             ..Config::default()
-        })
+        });
+        pin_test_subnet(&state);
+        state
     }
 
     fn addr(n: u8) -> SocketAddr {
@@ -770,9 +790,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unpinning_readmits_previously_dropped_sources() {
-        // Switching back to auto must clear the gate — the cache can't stay
-        // stuck on the old Pinned Network.
+    async fn repinning_to_a_new_network_readmits_its_sources() {
+        // Switching the pin to a different network must refresh the
+        // admission gate — the cache can't stay stuck on the old Pinned
+        // Network. Under mandatory pinning there's no "unpin" action, only
+        // ever a move to a different pin, so this exercises that move
+        // directly rather than a round-trip through the unresolved state.
         let state = test_state();
         pin_to_10_1(&state).await;
         let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
@@ -789,7 +812,15 @@ mod tests {
         .await;
         assert!(state.get_peers().await.is_empty());
 
-        state.set_network_interface(None).await.unwrap();
+        // Re-pin to the network `from` is actually on.
+        state
+            .set_network_interface(Some("test1".into()))
+            .await
+            .unwrap();
+        state.set_pinned_subnet_for_test(Some((
+            "192.168.4.1".parse().unwrap(),
+            "255.255.255.0".parse().unwrap(),
+        )));
         handle(
             presence(peer_id),
             from,

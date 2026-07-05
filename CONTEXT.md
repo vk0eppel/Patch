@@ -65,6 +65,6 @@ A saved configuration for a specific production or venue — channels and option
 _Avoid_: Session, preset, config, profile
 
 **Pinned Network**:
-The single network an Operator confines Patch to via Settings → Network. While pinned, dynamic discovery and traffic are confined to that network; Static Peers are the deliberate exception. No pin means Patch operates on every network it can see.
-_Avoid_: Interface filter, network lock, bound interface
+The single network an Operator confines Patch to via Settings → Network. Pinning is mandatory — dynamic discovery and traffic are always confined to the pinned network; Static Peers are the deliberate exception. No pin means unresolved: dynamic discovery is fully inert (nothing sent or received) until one is chosen, either automatically on first run (when only one network is usable) or manually in Settings.
+_Avoid_: Interface filter, network lock, bound interface, Auto
 

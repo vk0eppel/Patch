@@ -81,7 +81,7 @@ The whole-screen overlay exists because the in-app pulse is invisible if Patch i
 
 ## Discovery & Broadcast
 
-The socket always binds `0.0.0.0` so it receives on all interfaces including broadcasts. `network_interface` only scopes which NIC the discovery beacon is *announced* on. Changing it is live: the heartbeat picks it up on the next tick. When switching *to* a pinned interface, dynamic peers (OscBeacon/Mdns) are cleared so the peer list rebuilds cleanly via the new NIC's discovery; when switching *to* auto mode (`None`), peers are preserved and per-address pruning at 3× heartbeat handles dead paths on other interfaces. ManualIp/static peers are always kept.
+The socket always binds `0.0.0.0` so it receives on all interfaces including broadcasts. `network_interface` only scopes which NIC the discovery beacon is *announced* on (and, per ADR-0010/0011, which inbound sources are admitted at all). Changing it is live: the heartbeat picks it up on the next tick. Switching to a (different) pinned interface clears dynamic peers (OscBeacon/Mdns) so the peer list rebuilds cleanly via the new NIC's discovery. ManualIp/static peers are always kept. Pinning is mandatory (ADR-0011) — there is no "auto mode" to switch back to.
 
 Presence heartbeats go to:
 - `255.255.255.255` — load-bearing on macOS (the only broadcast address macOS delivers to apps)

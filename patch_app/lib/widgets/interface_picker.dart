@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import '../theme/patch_theme.dart';
 
-/// Dropdown for scoping the discovery beacon to a network interface ("Auto" =
-/// all). [selected] is the persisted `network_interface` (null = auto).
+/// Dropdown for scoping the discovery beacon to a network interface. Pinning
+/// is mandatory — there is no "Auto"/all-interfaces option. [selected] is the
+/// persisted `network_interface`; null means unresolved (pending the
+/// engine's first-run auto-select, or a manual choice here).
 ///
 /// The saved interface may not be in the current enumeration — the NIC is down,
 /// has no IPv4, was filtered, or the config came from another machine. A
 /// `DropdownButton` throws if its `value` matches no item, so a missing saved
-/// interface is surfaced as an "(not connected)" item: the setting stays visible
-/// and editable instead of crashing the screen.
+/// interface is surfaced as an "(not connected)" item — distinct from the
+/// "Select a network…" placeholder shown when nothing has ever been resolved —
+/// the setting stays visible and editable instead of crashing the screen.
 class InterfacePicker extends StatelessWidget {
   final List<Map<String, String>> interfaces;
   final String? selected; // null = auto
@@ -27,12 +30,14 @@ class InterfacePicker extends StatelessWidget {
   Widget build(BuildContext context) {
     final names = interfaces.map((i) => i['name']).toSet();
 
-    // Build dropdown items: Auto + each enumerated interface.
+    // Build dropdown items: each enumerated interface, plus a placeholder
+    // when nothing has ever been resolved (mandatory pinning has no Auto).
     final items = <DropdownMenuItem<String?>>[
-      const DropdownMenuItem(
-        value: null,
-        child: Text('Auto (all interfaces)'),
-      ),
+      if (selected == null)
+        const DropdownMenuItem(
+          value: null,
+          child: Text('Select a network…'),
+        ),
       ...interfaces.map((iface) => DropdownMenuItem(
             value: iface['name'],
             child: Text('${iface['name']}  •  ${iface['ip']}'),
@@ -51,6 +56,35 @@ class InterfacePicker extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (selected == null) ...[
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: PatchTheme.warning.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: PatchTheme.warning),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.warning_amber_rounded,
+                    size: 16, color: PatchTheme.warning),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'No network selected — Patch cannot discover or be '
+                    'discovered by other devices until you choose one. '
+                    'Static peers still work.',
+                    style: TextStyle(
+                        color: PatchTheme.warning,
+                        fontSize: PatchTheme.fontSizeSmall),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
           decoration: BoxDecoration(

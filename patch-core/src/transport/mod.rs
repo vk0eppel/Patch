@@ -449,6 +449,13 @@ const SKIP_PREFIXES: &[&str] = &[
     "utun", "awdl", "llw", "stf", "gif", "p2p", "XHC", "anpi", "bridge", "vmnet", "veth", "docker",
 ];
 
+/// Whether the discovery beacon (and shutdown "bye" broadcast) should be sent
+/// at all. `None` means the Pinned Network is unresolved — dynamic discovery
+/// stays fully inert, outbound included, until an interface is chosen.
+pub(crate) fn should_broadcast(iface_pin: Option<&str>) -> bool {
+    iface_pin.is_some()
+}
+
 /// True when `name` is a real interface to include and the optional pin allows it.
 fn is_usable_iface(name: &str, iface_pin: Option<&str>) -> bool {
     if SKIP_PREFIXES.iter().any(|p| name.starts_with(p)) {
@@ -584,6 +591,12 @@ mod tests {
     use super::*;
 
     #[test]
+    fn should_broadcast_false_when_unresolved_true_when_pinned() {
+        assert!(!should_broadcast(None));
+        assert!(should_broadcast(Some("en0")));
+    }
+
+    #[test]
     fn broadcast_targets_non_empty_ipv4_on_port() {
         let targets = broadcast_targets(None, 9000);
         assert!(!targets.is_empty()); // real subnets, or the 255.255.255.255 fallback
@@ -707,9 +720,19 @@ mod tests {
         // Port 0 → the OS assigns a free port (no flaky hard-coded ports).
         let config = Config {
             osc_port: 0,
+            // Mandatory pinning denies non-Static-Peer sources when
+            // unresolved; this test sends from 127.0.0.1, which
+            // `is_usable_ip` treats as unusable so a real pin can't resolve
+            // it — pin to a fake name and inject a matching subnet instead
+            // (mirrors `set_pinned_subnet_for_test`'s existing pattern).
+            network_interface: Some("test-pin".into()),
             ..Config::default()
         };
         let state = AppState::new(config.clone());
+        state.set_pinned_subnet_for_test(Some((
+            std::net::Ipv4Addr::new(127, 0, 0, 1),
+            std::net::Ipv4Addr::new(255, 0, 0, 0),
+        )));
         let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
         let transport = Transport::new(&config, state.clone(), reliability)
             .await

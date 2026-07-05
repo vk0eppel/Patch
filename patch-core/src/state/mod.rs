@@ -198,9 +198,10 @@ impl AppState {
         Ok(())
     }
 
-    /// Persist the discovery-beacon interface scope (None = announce on all).
-    /// Applies live — the heartbeat re-reads it each tick; the socket always
-    /// binds 0.0.0.0, so there's nothing to rebind.
+    /// Persist the discovery-beacon interface scope. Pinning is mandatory
+    /// (ADR-0011) — None means unresolved, not "announce on all." Applies
+    /// live — the heartbeat re-reads it each tick; the socket always binds
+    /// 0.0.0.0, so there's nothing to rebind.
     ///
     /// Also clears all dynamically-discovered peers (OscBeacon/Mdns) so the
     /// peer list rebuilds via the new NIC's discovery. ManualIp/static peers
@@ -215,9 +216,8 @@ impl AppState {
         *self.0.pinned_subnet.lock().unwrap() = iface
             .as_deref()
             .and_then(crate::transport::pinned_ipv4_subnet);
-        // Only clear dynamic peers when switching TO a pinned interface. In auto
-        // mode (None) the per-address prune window handles dead paths; a full
-        // clear would discard valid peer state on other interfaces.
+        // Only clear dynamic peers when switching TO a pinned interface. The
+        // per-address prune window handles dead paths without a full clear.
         if iface.is_some() {
             let removed = self.clear_dynamic_peers().await;
             for id in removed {
@@ -583,7 +583,10 @@ impl AppState {
     pub async fn admits_source(&self, source: std::net::IpAddr) -> bool {
         let config = self.config().await;
         if config.network_interface.is_none() {
-            return true;
+            return config
+                .static_peers
+                .iter()
+                .any(|p| p.address.parse::<std::net::IpAddr>() == Ok(source));
         }
         let on_pinned_network = match (*self.0.pinned_subnet.lock().unwrap(), source) {
             (Some((iface_ip, mask)), std::net::IpAddr::V4(v4)) => {
@@ -1208,6 +1211,27 @@ mod tests {
         )
         .await;
 
+        let targets = st.reachable_peer_addrs(client_id).await;
+        assert_eq!(targets, vec!["10.0.0.5:9000".parse().unwrap()]);
+    }
+
+    #[tokio::test]
+    async fn reachable_peer_addrs_includes_static_peer_when_unresolved() {
+        // send_to_peers (unicast) must keep reaching Static Peers even when
+        // network_interface is unresolved — the Pinned Network admission
+        // gate governs inbound sources, not this outbound path.
+        let client_id = Uuid::new_v4();
+        let st = AppState::new(Config {
+            default_channels: Vec::new(),
+            static_peers: vec![config::StaticPeer {
+                address: "10.0.0.5".into(),
+                port: 9000,
+                label: None,
+            }],
+            client_id,
+            network_interface: None,
+            ..Config::default()
+        });
         let targets = st.reachable_peer_addrs(client_id).await;
         assert_eq!(targets, vec!["10.0.0.5:9000".parse().unwrap()]);
     }
@@ -2372,6 +2396,25 @@ mod tests {
         assert!(!st.get_peers().await.is_empty());
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn admits_source_denies_arbitrary_source_when_unresolved() {
+        let st = test_state();
+        let source: std::net::IpAddr = "203.0.113.7".parse().unwrap();
+        assert!(!st.admits_source(source).await);
+    }
+
+    #[tokio::test]
+    async fn admits_source_admits_static_peer_when_unresolved() {
+        let st = AppState::new(Config {
+            default_channels: Vec::new(),
+            static_peers: vec![config::StaticPeer::new("203.0.113.7", 9000, None).unwrap()],
+            global_macros: Vec::new(),
+            ..Config::default()
+        });
+        let source: std::net::IpAddr = "203.0.113.7".parse().unwrap();
+        assert!(st.admits_source(source).await);
     }
 
     #[tokio::test]

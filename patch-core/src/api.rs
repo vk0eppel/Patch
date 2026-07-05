@@ -44,6 +44,35 @@ pub struct EngineHandle {
 
 static ENGINE: OnceCell<EngineHandle> = OnceCell::const_new();
 
+/// What to do with `network_interface` at startup, given the currently
+/// configured pin (if any) and the interfaces actually enumerated this run.
+#[derive(Debug, PartialEq, Eq)]
+enum InterfaceResolution {
+    /// Already pinned — leave it alone.
+    AlreadyPinned,
+    /// Unresolved with exactly one usable candidate — auto-select it.
+    AutoSelected(String),
+    /// Unresolved with zero or 2+ candidates — stay inert pending a manual
+    /// choice in Settings → Network. Carries the candidate count for logging.
+    Blocked(usize),
+}
+
+/// Decide the first-run interface resolution. Pure and independent of the
+/// engine singleton so it's directly unit-testable — `init` calls this with
+/// the real enumeration and applies the result (persist + log, or just log).
+fn resolve_network_interface(
+    current: &Option<String>,
+    candidates: &[InterfaceInfo],
+) -> InterfaceResolution {
+    if current.is_some() {
+        return InterfaceResolution::AlreadyPinned;
+    }
+    match candidates {
+        [only] => InterfaceResolution::AutoSelected(only.name.clone()),
+        _ => InterfaceResolution::Blocked(candidates.len()),
+    }
+}
+
 /// Initialize the engine. Idempotent — subsequent calls are no-ops.
 ///
 /// `config_dir`, when `Some`, overrides the platform default data directory
@@ -57,12 +86,32 @@ pub async fn init(config_dir: Option<String>) -> Result<()> {
             }
 
             // Blocking file I/O — read off the async runtime.
-            let config = tokio::task::spawn_blocking(Config::load_or_default).await??;
+            let mut config = tokio::task::spawn_blocking(Config::load_or_default).await??;
             tracing::info!(
                 client_name = %config.client_name,
                 osc_port = config.osc_port,
                 "Engine initializing"
             );
+
+            // Mandatory pinning: resolve an unset network_interface before any
+            // transport/discovery starts, so they never see a stale
+            // never-attempted state.
+            let candidates = tokio::task::spawn_blocking(list_interfaces).await??;
+            match resolve_network_interface(&config.network_interface, &candidates) {
+                InterfaceResolution::AlreadyPinned => {}
+                InterfaceResolution::AutoSelected(name) => {
+                    config.network_interface = Some(name.clone());
+                    let cfg_to_save = config.clone();
+                    tokio::task::spawn_blocking(move || cfg_to_save.save()).await??;
+                    tracing::info!(iface = %name, "Auto-selected the only usable network interface");
+                }
+                InterfaceResolution::Blocked(candidate_count) => {
+                    tracing::warn!(
+                        candidate_count,
+                        "No network interface pinned — dynamic discovery is inert until one is selected in Settings → Network"
+                    );
+                }
+            }
 
             let state = AppState::new(config.clone());
             let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
@@ -326,10 +375,13 @@ pub async fn shutdown() -> Result<()> {
             let _ = h.transport.send_now(&bytes, addr).await;
         }
     }
-    // Broadcast (per-interface) for anyone we haven't resolved yet.
-    h.transport
-        .broadcast_now(&bytes, config.osc_port, config.network_interface.as_deref())
-        .await;
+    // Broadcast (per-interface) for anyone we haven't resolved yet. Unresolved
+    // (no pin yet) stays fully inert outbound too.
+    if crate::transport::should_broadcast(config.network_interface.as_deref()) {
+        h.transport
+            .broadcast_now(&bytes, config.osc_port, config.network_interface.as_deref())
+            .await;
+    }
     Ok(())
 }
 
@@ -474,7 +526,7 @@ pub async fn set_role(role: Option<String>) -> Result<()> {
 /// Pass `None` (or an empty string at the caller) to bind all interfaces.
 pub async fn set_interface(name: Option<String>) -> Result<()> {
     let iface = match name.as_deref() {
-        None | Some("") | Some("auto") => None,
+        None | Some("") => None,
         Some(s) => Some(s.to_string()),
     };
     engine().state.set_network_interface(iface).await
@@ -1001,6 +1053,65 @@ impl From<AppEvent> for PatchAppEvent {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_network_interface_blocked_when_multiple_candidates() {
+        let candidates = vec![
+            InterfaceInfo {
+                name: "en0".into(),
+                ip: "192.168.1.5".into(),
+            },
+            InterfaceInfo {
+                name: "en1".into(),
+                ip: "10.0.0.2".into(),
+            },
+        ];
+        assert_eq!(
+            resolve_network_interface(&None, &candidates),
+            InterfaceResolution::Blocked(2)
+        );
+    }
+
+    #[test]
+    fn resolve_network_interface_blocked_when_zero_candidates() {
+        assert_eq!(
+            resolve_network_interface(&None, &[]),
+            InterfaceResolution::Blocked(0)
+        );
+    }
+
+    #[test]
+    fn resolve_network_interface_auto_selects_sole_candidate() {
+        let candidates = vec![InterfaceInfo {
+            name: "en0".into(),
+            ip: "192.168.1.5".into(),
+        }];
+        assert_eq!(
+            resolve_network_interface(&None, &candidates),
+            InterfaceResolution::AutoSelected("en0".into())
+        );
+    }
+
+    #[test]
+    fn resolve_network_interface_already_pinned_is_a_noop() {
+        let candidates = vec![
+            InterfaceInfo {
+                name: "en0".into(),
+                ip: "192.168.1.5".into(),
+            },
+            InterfaceInfo {
+                name: "en1".into(),
+                ip: "10.0.0.2".into(),
+            },
+        ];
+        let current = Some("en0".to_string());
+        assert!(matches!(
+            resolve_network_interface(&current, &candidates),
+            InterfaceResolution::AlreadyPinned
+        ));
+    }
+
     /// `upsert_channel` must reject the reserved broadcast id. The validation
     /// runs before `engine()`, so this returns Err without a running engine.
     #[tokio::test]
