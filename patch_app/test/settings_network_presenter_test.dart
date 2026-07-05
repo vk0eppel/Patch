@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:patch/presenters/settings/network_presenter.dart';
+import 'package:patch/presenters/settings/save_result.dart';
 
 void main() {
   late List<String> calls;
@@ -26,25 +27,25 @@ void main() {
   group('NetworkPresenter', () {
     test('heartbeat outside 1–60 is rejected before any bridge call',
         () async {
-      expect(await p.saveHeartbeatInterval(0), isFalse);
-      expect(await p.saveHeartbeatInterval(61), isFalse);
+      expect(await p.saveHeartbeatInterval(0), isA<SaveError>());
+      expect(await p.saveHeartbeatInterval(61), isA<SaveError>());
       expect(calls, isEmpty);
     });
 
     test('valid heartbeat saves then refetches', () async {
-      expect(await p.saveHeartbeatInterval(7), isTrue);
+      expect(await p.saveHeartbeatInterval(7), isA<SaveOk>());
       expect(calls, ['setHeartbeat:7', 'refreshConfig']);
     });
 
     test('OSC port outside 1024–65535 is rejected before any bridge call',
         () async {
-      expect(await p.saveOscPort(80), isFalse);
-      expect(await p.saveOscPort(70000), isFalse);
+      expect(await p.saveOscPort(80), isA<SaveError>());
+      expect(await p.saveOscPort(70000), isA<SaveError>());
       expect(calls, isEmpty);
     });
 
     test('valid OSC port saves then refetches', () async {
-      expect(await p.saveOscPort(9000), isTrue);
+      expect(await p.saveOscPort(9000), isA<SaveOk>());
       expect(calls, ['setOscPort:9000', 'refreshConfig']);
     });
 

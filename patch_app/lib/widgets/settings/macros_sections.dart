@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../bridge/bridge_client.dart';
 import '../../models/channel.dart';
 import '../../presenters/settings/macros_section_presenter.dart';
+import '../../presenters/settings/save_result.dart';
 import '../../store/app_store.dart';
 import '../../theme/patch_theme.dart';
 import '../../util/run_guarded.dart';
@@ -137,6 +138,25 @@ class ChannelsMacrosSection extends StatelessWidget {
 
 // ── Macro helpers ─────────────────────────────────────────────────────────────
 
+/// Surface a rejected macro save (invalid OSC target) the same way
+/// `runGuarded` surfaces a thrown bridge failure — a critical-coloured
+/// SnackBar with the operator-facing message (#163: the presenter now
+/// returns a [SaveResult] instead of throwing).
+void _showSaveError(BuildContext context, SaveResult result) {
+  if (result case SaveError(:final message)) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: PatchTheme.critical,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+  }
+}
+
 /// Lower-cases a string and capitalizes its first character. Used to turn an
 /// uppercase button label (e.g. "LOW BATT") into a readable message ("Low batt")
 /// when autofilling the macro message text.
@@ -173,9 +193,8 @@ class _ChannelMacroEditor extends StatelessWidget {
       emptyText: 'No macros yet',
       // Channel-macro CRUD refreshes the screens via the ChannelsChanged push
       // (no config refetch needed); runGuarded surfaces failures (ADR-0004).
-      onUpsert: (ol, l, p, k, pr, mn, mc, osc) => runGuarded(
-        context,
-        () => presenter.saveChannelMacro(
+      onUpsert: (ol, l, p, k, pr, mn, mc, osc) => runGuarded(context, () async {
+        final result = await presenter.saveChannelMacro(
           channelId: channel.id,
           originalLabel: ol,
           label: l,
@@ -185,8 +204,9 @@ class _ChannelMacroEditor extends StatelessWidget {
           midiNote: mn,
           midiCc: mc,
           osc: osc,
-        ),
-      ),
+        );
+        if (context.mounted) _showSaveError(context, result);
+      }),
       onDelete: (m) => runGuarded(
           context, () => bridge.deleteMacro(channelId: channel.id, label: m.label)),
       onReorder: (labels) =>
@@ -726,7 +746,7 @@ class _GlobalMacrosEditor extends StatelessWidget {
       // each mutation so both screens reflect the change (#56).
       onUpsert: (ol, l, p, k, pr, mn, mc, osc) => runGuarded(context, () async {
         final store = AppStoreScope.read(context);
-        await presenter.saveGlobalMacro(
+        final result = await presenter.saveGlobalMacro(
           originalLabel: ol,
           label: l,
           payload: p,
@@ -736,6 +756,10 @@ class _GlobalMacrosEditor extends StatelessWidget {
           midiCc: mc,
           osc: osc,
         );
+        if (result is SaveError) {
+          if (context.mounted) _showSaveError(context, result);
+          return;
+        }
         await store.refreshConfig();
       }),
       onDelete: (m) => runGuarded(context, () async {

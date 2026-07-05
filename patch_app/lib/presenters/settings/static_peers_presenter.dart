@@ -1,3 +1,5 @@
+import 'save_result.dart';
+
 /// Owns the Static Peers section's validate→save→refetch loops (#141).
 /// Address/port sanity is checked before any bridge call (the engine
 /// validates the IP fully — `StaticPeer::new`); every mutation refetches
@@ -16,15 +18,19 @@ class StaticPeersPresenter {
   final Future<void> Function() refreshConfig;
   final Future<void> Function() refreshPeers;
 
-  /// Add a Static Peer. Returns an operator-facing error for input rejected
-  /// before any bridge call, or null on success.
-  Future<String?> add(String address, int port, String? label) async {
+  /// Add a Static Peer. Input is rejected before any bridge call for a blank
+  /// address or an out-of-range port.
+  Future<SaveResult> add(String address, int port, String? label) {
     final addr = address.trim();
-    if (addr.isEmpty) return 'Enter an IP address';
-    if (port < 1 || port > 65535) return 'Port must be 1–65535';
-    await addStaticPeer(addr, port, label);
-    await _refetch();
-    return null;
+    return validateThenSave(
+      validate: () {
+        if (addr.isEmpty) return 'Enter an IP address';
+        if (port < 1 || port > 65535) return 'Port must be 1–65535';
+        return null;
+      },
+      save: () => addStaticPeer(addr, port, label),
+      refetch: _refetch,
+    );
   }
 
   Future<void> remove(String address, int port) async {

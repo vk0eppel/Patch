@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:patch/models/channel.dart';
 import 'package:patch/presenters/settings/macros_section_presenter.dart';
+import 'package:patch/presenters/settings/save_result.dart';
 
 void main() {
   late List<String> calls;
@@ -40,7 +41,7 @@ void main() {
   group('MacrosSectionPresenter', () {
     test('saveChannelMacro calls the bridge with a valid OSC target',
         () async {
-      await p.saveChannelMacro(
+      final result = await p.saveChannelMacro(
         channelId: 'rf',
         label: 'GO',
         payload: 'go',
@@ -51,54 +52,55 @@ void main() {
           argType: MacroOscArgType.string,
         ),
       );
+      expect(result, isA<SaveOk>());
       expect(calls, ['upsertChannelMacro:rf:GO']);
     });
 
     test('saveChannelMacro rejects an invalid OSC target before any bridge call',
         () async {
-      await expectLater(
-        () => p.saveChannelMacro(
-          channelId: 'rf',
-          label: 'GO',
-          payload: 'go',
-          osc: const MacroOsc(
-            address: 'not-an-ip',
-            port: 53000,
-            path: '/cue/1/start',
-            argType: MacroOscArgType.string,
-          ),
+      final result = await p.saveChannelMacro(
+        channelId: 'rf',
+        label: 'GO',
+        payload: 'go',
+        osc: const MacroOsc(
+          address: 'not-an-ip',
+          port: 53000,
+          path: '/cue/1/start',
+          argType: MacroOscArgType.string,
         ),
-        throwsFormatException,
       );
+      expect(result, isA<SaveError>());
       expect(calls, isEmpty);
     });
 
     test('saveChannelMacro with no OSC target skips the guard', () async {
-      await p.saveChannelMacro(channelId: 'rf', label: 'GO', payload: 'go');
+      final result =
+          await p.saveChannelMacro(channelId: 'rf', label: 'GO', payload: 'go');
+      expect(result, isA<SaveOk>());
       expect(calls, ['upsertChannelMacro:rf:GO']);
     });
 
     test('saveGlobalMacro calls the bridge with a valid OSC target',
         () async {
-      await p.saveGlobalMacro(label: 'Standby', payload: 'standby');
+      final result =
+          await p.saveGlobalMacro(label: 'Standby', payload: 'standby');
+      expect(result, isA<SaveOk>());
       expect(calls, ['upsertGlobalMacro:Standby']);
     });
 
     test('saveGlobalMacro rejects an invalid OSC target before any bridge call',
         () async {
-      await expectLater(
-        () => p.saveGlobalMacro(
-          label: 'Standby',
-          payload: 'standby',
-          osc: const MacroOsc(
-            address: '10.0.0.9',
-            port: 0,
-            path: '/cue/1/start',
-            argType: MacroOscArgType.string,
-          ),
+      final result = await p.saveGlobalMacro(
+        label: 'Standby',
+        payload: 'standby',
+        osc: const MacroOsc(
+          address: '10.0.0.9',
+          port: 0,
+          path: '/cue/1/start',
+          argType: MacroOscArgType.string,
         ),
-        throwsFormatException,
       );
+      expect(result, isA<SaveError>());
       expect(calls, isEmpty);
     });
   });

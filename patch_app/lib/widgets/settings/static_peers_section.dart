@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/config.dart' show StaticPeerInfo;
+import '../../presenters/settings/save_result.dart';
 import '../../presenters/settings/static_peers_presenter.dart';
 import '../../screens/help_screen.dart';
 import '../../theme/patch_theme.dart';
@@ -238,16 +239,17 @@ void _showAddPeerDialog(BuildContext context, StaticPeersPresenter presenter) {
               // Validation + add + config/peers refetch live in the
               // presenter (#141). Rejected input stays in the dialog.
               runGuarded(context, () async {
-                final err = await presenter.add(
+                final result = await presenter.add(
                   addrCtrl.text,
                   port,
                   label.isEmpty ? null : label,
                 );
-                if (err != null) {
-                  setDialogState(() => error = err);
-                  return;
+                switch (result) {
+                  case SaveError(:final message):
+                    setDialogState(() => error = message);
+                  case SaveOk():
+                    if (ctx.mounted) Navigator.pop(ctx);
                 }
-                if (ctx.mounted) Navigator.pop(ctx);
               });
             },
             child: const Text('Add'),

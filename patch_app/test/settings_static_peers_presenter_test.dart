@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:patch/presenters/settings/save_result.dart';
 import 'package:patch/presenters/settings/static_peers_presenter.dart';
 
 void main() {
@@ -18,14 +19,14 @@ void main() {
   group('StaticPeersPresenter', () {
     test('blank address or out-of-range port is rejected before any bridge '
         'call', () async {
-      expect(await p.add('  ', 9000, null), isNotNull);
-      expect(await p.add('10.0.0.9', 0, null), isNotNull);
-      expect(await p.add('10.0.0.9', 70000, null), isNotNull);
+      expect(await p.add('  ', 9000, null), isA<SaveError>());
+      expect(await p.add('10.0.0.9', 0, null), isA<SaveError>());
+      expect(await p.add('10.0.0.9', 70000, null), isA<SaveError>());
       expect(calls, isEmpty);
     });
 
     test('a valid add saves then refetches config and peers', () async {
-      expect(await p.add(' 10.0.0.9 ', 9000, 'QLab'), isNull);
+      expect(await p.add(' 10.0.0.9 ', 9000, 'QLab'), isA<SaveOk>());
       expect(calls,
           ['add:10.0.0.9:9000:QLab', 'refreshConfig', 'refreshPeers']);
     });

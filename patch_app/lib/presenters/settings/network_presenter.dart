@@ -1,3 +1,5 @@
+import 'save_result.dart';
+
 /// Owns the Network section's validate → bridge call → refetch loops (#140):
 /// discovery-interface selection, heartbeat interval, and OSC port, with the
 /// operator-facing bounds enforced before any bridge call. Presentation
@@ -32,20 +34,23 @@ class NetworkPresenter {
 
   /// Save the heartbeat interval; out-of-bounds is rejected before any
   /// bridge call.
-  Future<bool> saveHeartbeatInterval(int secs) async {
-    if (secs < heartbeatMin || secs > heartbeatMax) return false;
-    await setHeartbeatInterval(secs);
-    await refreshConfig();
-    return true;
-  }
+  Future<SaveResult> saveHeartbeatInterval(int secs) => validateThenSave(
+        validate: () => (secs < heartbeatMin || secs > heartbeatMax)
+            ? 'Heartbeat interval must be between $heartbeatMin and '
+                '$heartbeatMax seconds'
+            : null,
+        save: () => setHeartbeatInterval(secs),
+        refetch: refreshConfig,
+      );
 
   /// Save the OSC port; out-of-bounds is rejected before any bridge call.
-  Future<bool> saveOscPort(int port) async {
-    if (port < oscPortMin || port > oscPortMax) return false;
-    await setOscPort(port);
-    await refreshConfig();
-    return true;
-  }
+  Future<SaveResult> saveOscPort(int port) => validateThenSave(
+        validate: () => (port < oscPortMin || port > oscPortMax)
+            ? 'OSC port must be between $oscPortMin and $oscPortMax'
+            : null,
+        save: () => setOscPort(port),
+        refetch: refreshConfig,
+      );
 
   /// Available NICs for the picker. A load failure degrades to an empty
   /// picker — non-critical.
