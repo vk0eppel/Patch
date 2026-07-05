@@ -12,7 +12,6 @@ import '../bridge/bridge_client.dart';
 import '../models/channel.dart';
 import '../models/config.dart';
 import '../models/dm_thread.dart';
-import '../presenters/home_controller.dart';
 import '../presenters/home_presenter.dart';
 import '../models/message.dart';
 import '../models/selection.dart';
@@ -128,10 +127,6 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   late final HomePresenter _presenter;
   StreamSubscription<HomeCommand>? _commandSub;
 
-  /// Store→presenter wiring: stream fan-out, the one-shot name-prompt gate,
-  /// the first-load macros-panel default, and channel-set change detection
-  /// all live in [HomeController] so they're testable without this widget.
-  final _homeController = HomeController();
   /// Macros shown on every channel (configured once); fired on the currently-
   /// selected channel(s). Owned by the AppStore config (#56).
   List<MacroMessage> get _globalMacros => _config?.globalMacros ?? const [];
@@ -254,8 +249,6 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
       _selectionController = SelectionController(store, widget.bridge);
       _presenter = HomePresenter(
         pushes: widget.bridge.pushes,
-        configStream: _homeController.configStream,
-        peersStream: _homeController.peersStream,
         supportsFlashOverlay: Platform.isMacOS || Platform.isWindows,
         selectionController: _selectionController,
         channelGetter: () => AppStoreScope.read(context).channels,
@@ -274,11 +267,11 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
     }
   }
 
-  /// Reduce a store notification via [HomeController] and apply the returned
-  /// effects — the controller decides, this widget only presents (ADR-0005).
+  /// Reduce a store notification via [HomePresenter] and apply the returned
+  /// effects — the presenter decides, this widget only presents (ADR-0005).
   void _onStoreChanged() {
     final cfg = _store?.config;
-    final fx = _homeController.onStoreChanged(
+    final fx = _presenter.onStoreChanged(
       config: cfg,
       peers: _store?.peers ?? const [],
       channelIds: (_store?.channels ?? const []).map((c) => c.id).toList(),
@@ -312,7 +305,6 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     _store?.removeListener(_onStoreChanged);
     _commandSub?.cancel();
-    _homeController.dispose();
     _presenter.dispose();
     _alertPlayer.dispose();
     super.dispose();
@@ -373,7 +365,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
 
   // ── Event dispatch ──────────────────────────────────────────────────────────
 
-  /// Show the first-run name prompt (gating decided by [HomeController]).
+  /// Show the first-run name prompt (gating decided by [HomePresenter]).
   /// Deferred to a post-frame callback so there's a built, mounted context to
   /// push the dialog onto.
   void _showNamePromptFor({required String currentName}) {

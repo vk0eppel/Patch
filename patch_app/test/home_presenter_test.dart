@@ -37,7 +37,11 @@ StreamController<PatchEvent> _pushes() =>
 StreamController<AppConfig?> _configs() =>
     StreamController<AppConfig?>(sync: true);
 
-AppConfig _cfg({bool audibleAlert = false, bool flashWholeScreen = false}) =>
+AppConfig _cfg({
+  bool audibleAlert = false,
+  bool flashWholeScreen = false,
+  bool nameIsDefault = false,
+}) =>
     AppConfig(
       clientName: 'Test',
       oscPort: 8000,
@@ -49,7 +53,7 @@ AppConfig _cfg({bool audibleAlert = false, bool flashWholeScreen = false}) =>
       audibleAlert: audibleAlert,
       flashWholeScreen: flashWholeScreen,
       heartbeatIntervalSecs: 5,
-      nameIsDefault: false,
+      nameIsDefault: nameIsDefault,
     );
 
 const _failedStatus = MessageDeliveryStatus(
@@ -411,6 +415,120 @@ void main() {
 
       expect(commands.whereType<PulseOverlay>(), isEmpty);
 
+      presenter.dispose();
+    });
+  });
+
+  // ── #160 — HomeController folded in: store→presenter reduction ───────────
+
+  group('HomePresenter.onStoreChanged', () {
+    test('applies config and peers immediately — no stream round-trip', () {
+      final ctrl = _pushes();
+      final presenter = HomePresenter(pushes: ctrl.stream);
+
+      presenter.onStoreChanged(
+        config: _cfg(),
+        peers: [peer('p1', 'Alice', PeerStatus.online)],
+        channelIds: const [],
+        macrosPanelPreferenceSet: true,
+        anyMacrosConfigured: false,
+      );
+
+      expect(presenter.flashCount, 4);
+      expect(presenter.dmPeerName('p1'), 'Alice');
+      presenter.dispose();
+    });
+
+    test('name prompt fires once for a default name, never again', () {
+      final ctrl = _pushes();
+      final presenter = HomePresenter(pushes: ctrl.stream);
+      final first = presenter.onStoreChanged(
+        config: _cfg(nameIsDefault: true),
+        peers: const [],
+        channelIds: const [],
+        macrosPanelPreferenceSet: true,
+        anyMacrosConfigured: false,
+      );
+      final second = presenter.onStoreChanged(
+        config: _cfg(nameIsDefault: true),
+        peers: const [],
+        channelIds: const [],
+        macrosPanelPreferenceSet: true,
+        anyMacrosConfigured: false,
+      );
+      expect(first.showNamePrompt, isTrue);
+      expect(second.showNamePrompt, isFalse);
+      presenter.dispose();
+    });
+
+    test('no name prompt when the Operator already set a name', () {
+      final ctrl = _pushes();
+      final presenter = HomePresenter(pushes: ctrl.stream);
+      final fx = presenter.onStoreChanged(
+        config: _cfg(nameIsDefault: false),
+        peers: const [],
+        channelIds: const [],
+        macrosPanelPreferenceSet: true,
+        anyMacrosConfigured: false,
+      );
+      expect(fx.showNamePrompt, isFalse);
+      presenter.dispose();
+    });
+
+    test(
+        'macros panel default derives from configured macros only while '
+        'no explicit preference exists', () {
+      final ctrl = _pushes();
+      final presenter = HomePresenter(pushes: ctrl.stream);
+      final fx = presenter.onStoreChanged(
+        config: _cfg(),
+        peers: const [],
+        channelIds: const [],
+        macrosPanelPreferenceSet: false,
+        anyMacrosConfigured: true,
+      );
+      expect(fx.defaultMacrosPanel, isTrue);
+
+      final afterPreference = presenter.onStoreChanged(
+        config: _cfg(),
+        peers: const [],
+        channelIds: const [],
+        macrosPanelPreferenceSet: true,
+        anyMacrosConfigured: true,
+      );
+      expect(afterPreference.defaultMacrosPanel, isNull);
+      presenter.dispose();
+    });
+
+    test('no macros panel default before the first config load', () {
+      final ctrl = _pushes();
+      final presenter = HomePresenter(pushes: ctrl.stream);
+      final fx = presenter.onStoreChanged(
+        config: null,
+        peers: const [],
+        channelIds: const [],
+        macrosPanelPreferenceSet: false,
+        anyMacrosConfigured: false,
+      );
+      expect(fx.defaultMacrosPanel, isNull);
+      presenter.dispose();
+    });
+
+    test('selection reconciles only when the Channel id list changes', () {
+      final ctrl = _pushes();
+      final presenter = HomePresenter(pushes: ctrl.stream);
+      HomeStoreEffects fire(List<String> ids) => presenter.onStoreChanged(
+            config: _cfg(),
+            peers: const [],
+            channelIds: ids,
+            macrosPanelPreferenceSet: true,
+            anyMacrosConfigured: false,
+          );
+
+      expect(fire(['rf']).reconcileSelection, isTrue);
+      expect(fire(['rf']).reconcileSelection, isFalse);
+      expect(fire(['rf', 'audio']).reconcileSelection, isTrue);
+      expect(fire(['rf', 'audio']).reconcileSelection, isFalse);
       presenter.dispose();
     });
   });

@@ -20,8 +20,32 @@ import '../models/flash_model.dart' as fm
 import '../models/message.dart' show MessageDeliveryStatus, PeerInfo, PeerStatus;
 import '../models/selection.dart';
 import '../models/selection_controller.dart';
+import '../widgets/name_prompt.dart' show shouldShowNamePrompt;
 
 export '../models/flash_model.dart' show FlashState, FlashSettings;
+
+// ── Store reduction ───────────────────────────────────────────────────────────
+
+/// What the Home screen must do in response to one store notification.
+/// Pure data — the widget applies these (dialogs, setState, workspace saves).
+class HomeStoreEffects {
+  /// Show the one-shot first-run name prompt (at most once per session).
+  final bool showNamePrompt;
+
+  /// Set the macros-panel default (derived from whether any Macros are
+  /// configured) — only on the first config load while the Operator has never
+  /// explicitly toggled the panel. Null means leave it alone.
+  final bool? defaultMacrosPanel;
+
+  /// The Channel id list changed — reconcile the current selection.
+  final bool reconcileSelection;
+
+  const HomeStoreEffects({
+    required this.showNamePrompt,
+    required this.defaultMacrosPanel,
+    required this.reconcileSelection,
+  });
+}
 
 // ── Commands ──────────────────────────────────────────────────────────────────
 
@@ -94,6 +118,8 @@ class HomePresenter extends ChangeNotifier {
   StreamSubscription<AppConfig?>? _configSub;
   StreamSubscription<List<PeerInfo>>? _peersSub;
   List<PeerInfo> _peers = [];
+  bool _namePromptShown = false;
+  List<String>? _lastChannelIds;
   final _commandCtrl = StreamController<HomeCommand>.broadcast(sync: true);
 
   final List<PatchChannel> Function() _channelGetter;
@@ -151,6 +177,54 @@ class HomePresenter extends ChangeNotifier {
   // ── Public API ────────────────────────────────────────────────────────────
 
   Stream<HomeCommand> get commands => _commandCtrl.stream;
+
+  /// Reduce one store notification: apply config/peers immediately and decide
+  /// the one-shot effects (name prompt, macros-panel default, selection
+  /// reconcile). The Home screen calls this directly from its store listener
+  /// — no intermediate controller hop (#160).
+  HomeStoreEffects onStoreChanged({
+    required AppConfig? config,
+    required List<PeerInfo> peers,
+    required List<String> channelIds,
+    required bool macrosPanelPreferenceSet,
+    required bool anyMacrosConfigured,
+  }) {
+    _applyConfig(config);
+    _peers = peers;
+
+    var showNamePrompt = false;
+    bool? defaultMacrosPanel;
+    if (config != null) {
+      showNamePrompt = shouldShowNamePrompt(
+        nameIsDefault: config.nameIsDefault,
+        alreadyShown: _namePromptShown,
+      );
+      if (showNamePrompt) _namePromptShown = true;
+      if (!macrosPanelPreferenceSet) {
+        defaultMacrosPanel = anyMacrosConfigured;
+      }
+    }
+
+    var reconcile = false;
+    if (!_sameIds(channelIds, _lastChannelIds)) {
+      _lastChannelIds = List.of(channelIds);
+      reconcile = true;
+    }
+
+    return HomeStoreEffects(
+      showNamePrompt: showNamePrompt,
+      defaultMacrosPanel: defaultMacrosPanel,
+      reconcileSelection: reconcile,
+    );
+  }
+
+  static bool _sameIds(List<String> a, List<String>? b) {
+    if (b == null || a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 
   void apply(fm.FlashEvent event) {
     final sel = _selectionController?.selection ?? ChannelSelection(const {});
