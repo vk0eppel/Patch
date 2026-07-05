@@ -16,7 +16,7 @@ patch/
 │   ├── discovery/mod.rs    # mDNS + heartbeat loop
 │   ├── midi/mod.rs         # MIDI input (desktop only)
 │   ├── reliability/mod.rs  # ACK tracking, exponential-backoff retransmit
-│   └── state/              # AppState, Config, Channel, ChannelStore, Peer, ShowFile
+│   └── state/              # AppState, Config, Channel, ChannelRegistry, Peer, ShowFile
 └── patch_app/lib/
     ├── bridge/bridge_client.dart  # Façade over FRB bindings
     ├── models/                    # channel, message, config, selection —
@@ -143,7 +143,7 @@ Resolving a peer's address for single-target sends (DM, DM flash, channels-reque
 
 ## Config I/O
 
-**`ChannelStore`** (`state/channel_store.rs`) wraps `ChannelRegistry` with an `Arc<ConfigStore>` so every write method (`upsert`, `delete`, `replace_all`, `merge`, `set_flash`, `upsert_macro`, `delete_macro`, `reorder_macros`) auto-persists after mutating — callers never call `persist_channels()` manually. The exception is `replace_all_silent`, used by `apply_show_file_full` which must batch channels + peers into a single `mutate_and_persist`; using `replace_all` there would cause a double write. See ADR-0003 for the rationale behind giving `ChannelStore` a cross-domain `Arc<ConfigStore>` reference.
+**`ChannelRegistry`** (`state/channel.rs`) holds an `Option<Arc<ConfigStore>>`, attached once via `attach_config` (called by `AppState::new`), so every write method (`upsert`, `delete`, `replace_all`, `merge`, `set_flash`, `upsert_macro`, `delete_macro`, `reorder_macros`) auto-persists after mutating — callers never call `persist_channels()` manually. The exception is `replace_all_silent`, used by `apply_show_file_full` which must batch channels + peers into a single `mutate_and_persist`; using `replace_all` there would cause a double write. The config reference defaults to `None`, so `ChannelRegistry::default()`/bare `seeded()` stays persistence-free for the registry's own direct unit tests. See ADR-0003 for the rationale behind giving `ChannelRegistry` a cross-domain `Arc<ConfigStore>` reference.
 
 `ConfigStore` (`state/config.rs`) owns `Config` and persistence together — see ADR-0003. The single entry point for callers is `mutate_and_persist`: it applies a closure under the write lock immediately (in-memory change is visible at once) and schedules a debounced 500ms disk write. Rapid sequential calls coalesce — only the last write fires within the window, preventing bursts of Setting saves from pounding the disk. The write itself is offloaded via `spawn_blocking` so async workers are never blocked on file I/O. A `save_lock` (`Mutex<()>`, `Arc`-wrapped so the spawned task can hold it) serialises concurrent writes — acquired after cloning the config, so the config read lock is not held during I/O. There is no public `save` or `mutate` — callers always go through `mutate_and_persist`. In tests, `SAVE_DEBOUNCE_MS` is 0 and `flush()` lets a test confirm disk state synchronously after a mutation.
 

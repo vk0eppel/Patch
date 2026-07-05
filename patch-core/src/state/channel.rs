@@ -1,10 +1,13 @@
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use crate::osc::types::OscArgKind;
+
+use super::config::ConfigStore;
 
 fn default_true() -> bool {
     true
@@ -192,6 +195,30 @@ pub(crate) fn validate_binding_unique<'a>(
         }
     }
     Ok(())
+}
+
+/// Resolve a macro upsert's rename-aware match label, matched by
+/// `original_label` when given (an edit, possibly renaming) or `macro_msg.label`
+/// otherwise (create/no-op rename). Bails if the new label collides with an
+/// existing entry in `existing`. Validates the binding against `existing`'s
+/// other entries chained with `other_context` (the macros living in the other
+/// scope: global macros for a channel-scoped edit, all channels' macros for a
+/// global edit). Shared by `ChannelRegistry::upsert_macro` and
+/// `AppState::upsert_global_macro` — the two upsert call sites, one per scope.
+pub(crate) fn resolve_macro_rename<'a>(
+    existing: &'a [MacroMessage],
+    original_label: Option<&str>,
+    macro_msg: &MacroMessage,
+    other_context: impl Iterator<Item = &'a MacroMessage>,
+    scope_desc: &str,
+) -> anyhow::Result<String> {
+    let match_label = original_label.unwrap_or(macro_msg.label.as_str()).to_owned();
+    if match_label != macro_msg.label && existing.iter().any(|s| s.label == macro_msg.label) {
+        anyhow::bail!("A macro named '{}' already exists {}", macro_msg.label, scope_desc);
+    }
+    let same_scope_others = existing.iter().filter(|m| m.label != match_label);
+    validate_binding_unique(macro_msg, same_scope_others.chain(other_context))?;
+    Ok(match_label)
 }
 
 /// Validates every channel id and every macro's OSC target up front, before
@@ -415,24 +442,46 @@ pub(crate) fn classify_macro_import(
     out
 }
 
-/// Pure channel/macro-domain logic — no `AppEvent`/broadcast-channel
-/// dependency, and no knowledge of `Config`. Per ADR-0003, cross-domain
-/// orchestration (persisting a channel snapshot into `Config`, reading
-/// `Config`'s flash defaults for `merge`) is owned by `AppState`, which
-/// passes in whatever this registry needs as plain parameters.
+/// Channel/macro-domain logic, plus (ADR-0003 amendment — see
+/// `docs/adr/0003-appstate-domain-registries.md`) its own persistence:
+/// every write auto-persists a channel snapshot into `Config` once
+/// `attach_config` has wired up a `ConfigStore`. Reading `Config`'s flash
+/// defaults for `merge` remains owned by `AppState`, which passes them in as
+/// plain parameters — `ChannelRegistry` still has no other knowledge of
+/// `Config`.
 #[derive(Debug, Default)]
 pub(crate) struct ChannelRegistry {
     channels: RwLock<HashMap<String, Channel>>,
+    config: Option<Arc<ConfigStore>>,
 }
 
 impl ChannelRegistry {
     /// Seed the registry with an initial set of channels (e.g. from loaded
-    /// config at startup). Sync because `AppState::new` is sync.
+    /// config at startup). Sync because `AppState::new` is sync. Persistence
+    /// is off until `attach_config` is called — bare `seeded()`/`default()`
+    /// stays persistence-free for direct registry unit tests.
     pub(crate) fn seeded(channels: Vec<Channel>) -> Self {
         let map = channels.into_iter().map(|ch| (ch.id.clone(), ch)).collect();
         Self {
             channels: RwLock::new(map),
+            config: None,
         }
+    }
+
+    /// Wire up auto-persistence. Called once by `AppState::new`.
+    pub(crate) fn attach_config(mut self, config: Arc<ConfigStore>) -> Self {
+        self.config = Some(config);
+        self
+    }
+
+    /// Persist the current channel list into `Config`. No-op when no
+    /// `ConfigStore` has been attached (e.g. in direct registry unit tests).
+    async fn persist(&self) {
+        let Some(config) = &self.config else { return };
+        let channels = self.list().await;
+        config
+            .mutate_and_persist(|cfg| cfg.default_channels = channels)
+            .await;
     }
 
     pub(crate) async fn list(&self) -> Vec<Channel> {
@@ -443,20 +492,34 @@ impl ChannelRegistry {
 
     pub(crate) async fn upsert(&self, ch: Channel) {
         self.channels.write().await.insert(ch.id.clone(), ch);
+        self.persist().await;
     }
 
     pub(crate) async fn delete(&self, channel_id: &str) {
         self.channels.write().await.remove(channel_id);
+        self.persist().await;
     }
 
-    /// Replace every channel with `channels` (used by `apply_show_file_full`/
-    /// `apply_show_file` after `validate_show_file_channels` has passed).
-    pub(crate) async fn replace_all(&self, channels: Vec<Channel>) {
+    async fn replace_all_raw(&self, channels: Vec<Channel>) {
         let mut map = self.channels.write().await;
         map.clear();
         for ch in channels {
             map.insert(ch.id.clone(), ch);
         }
+    }
+
+    /// Replace every channel with `channels` (used by `apply_show_file_full`/
+    /// `apply_show_file` after `validate_show_file_channels` has passed).
+    pub(crate) async fn replace_all(&self, channels: Vec<Channel>) {
+        self.replace_all_raw(channels).await;
+        self.persist().await;
+    }
+
+    /// Replace channels without auto-persisting. Used by `apply_show_file_full`
+    /// which combines the channels + static-peers write in one
+    /// `mutate_and_persist` call — persisting here too would double-write.
+    pub(crate) async fn replace_all_silent(&self, channels: Vec<Channel>) {
+        self.replace_all_raw(channels).await;
     }
 
     /// Merge incoming channels, **adding only ids not already present** —
@@ -511,6 +574,10 @@ impl ChannelRegistry {
             map.insert(ch.id.clone(), ch);
             added += 1;
         }
+        drop(map);
+        if added > 0 {
+            self.persist().await;
+        }
         added
     }
 
@@ -537,6 +604,8 @@ impl ChannelRegistry {
         if let Some(v) = flash_count {
             ch.flash_count = if v == 0 { None } else { Some(v.clamp(3, 7)) };
         }
+        drop(channels);
+        self.persist().await;
         Ok(())
     }
 
@@ -560,20 +629,20 @@ impl ChannelRegistry {
         let ch = channels
             .get_mut(channel_id)
             .ok_or_else(|| anyhow::anyhow!("Channel '{}' not found", channel_id))?;
-        let match_label = original_label.unwrap_or(macro_msg.label.as_str());
-        if match_label != macro_msg.label && ch.macros.iter().any(|s| s.label == macro_msg.label) {
-            anyhow::bail!(
-                "A macro named '{}' already exists on this channel",
-                macro_msg.label
-            );
-        }
-        let same_channel_others = ch.macros.iter().filter(|m| m.label != match_label);
-        validate_binding_unique(&macro_msg, same_channel_others.chain(global_macros.iter()))?;
+        let match_label = resolve_macro_rename(
+            &ch.macros,
+            original_label,
+            &macro_msg,
+            global_macros.iter(),
+            "on this channel",
+        )?;
         if let Some(pos) = ch.macros.iter().position(|s| s.label == match_label) {
             ch.macros[pos] = macro_msg;
         } else {
             ch.macros.push(macro_msg);
         }
+        drop(channels);
+        self.persist().await;
         Ok(())
     }
 
@@ -584,6 +653,8 @@ impl ChannelRegistry {
             .get_mut(channel_id)
             .ok_or_else(|| anyhow::anyhow!("Channel '{}' not found", channel_id))?;
         ch.macros.retain(|s| s.label != label);
+        drop(channels);
+        self.persist().await;
         Ok(())
     }
 
@@ -610,6 +681,8 @@ impl ChannelRegistry {
         }
         reordered.append(&mut remaining);
         ch.macros = reordered;
+        drop(channels);
+        self.persist().await;
         Ok(())
     }
 }

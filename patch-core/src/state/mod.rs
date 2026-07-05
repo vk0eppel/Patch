@@ -2,7 +2,6 @@
 //! All access is through `Arc<AppState>`; interior mutation via `tokio::sync::RwLock`.
 
 pub mod channel;
-mod channel_store;
 pub mod config;
 pub(crate) mod export;
 mod message;
@@ -15,7 +14,7 @@ use std::time::Instant;
 use tokio::sync::{broadcast, Mutex, RwLock};
 use uuid::Uuid;
 
-use channel_store::ChannelStore;
+use channel::ChannelRegistry;
 use config::ConfigStore;
 use message::MessageBuffer;
 use peer::PeerRegistry;
@@ -76,7 +75,7 @@ struct Inner {
     /// Config store — owns its own lock(s) internally.
     pub config: Arc<ConfigStore>,
     /// Channel/macro registry with auto-persist — owns its own lock internally.
-    pub channels: ChannelStore,
+    pub channels: ChannelRegistry,
     /// Peer registry — owns its own lock internally.
     pub peers: PeerRegistry,
     /// Recent messages (ring buffer with dedup) — owns its own lock internally.
@@ -127,7 +126,7 @@ impl AppState {
             .as_deref()
             .and_then(crate::transport::pinned_ipv4_subnet);
         let config_arc = Arc::new(ConfigStore::new(config));
-        let channels = ChannelStore::seeded(channel_data, Arc::clone(&config_arc));
+        let channels = ChannelRegistry::seeded(channel_data).attach_config(Arc::clone(&config_arc));
 
         Self(Arc::new(Inner {
             config: config_arc,
@@ -881,19 +880,16 @@ impl AppState {
         original_label: Option<&str>,
         macro_msg: channel::MacroMessage,
     ) -> anyhow::Result<()> {
-        let match_label = original_label
-            .map(str::to_owned)
-            .unwrap_or_else(|| macro_msg.label.clone());
         let global_macros = self.0.config.read(|c| c.global_macros.clone()).await;
-        if match_label != macro_msg.label
-            && global_macros.iter().any(|m| m.label == macro_msg.label)
-        {
-            anyhow::bail!("A global macro named '{}' already exists", macro_msg.label);
-        }
-        let other_globals = global_macros.iter().filter(|m| m.label != match_label);
         let all_channels = self.0.channels.list().await;
         let all_channel_macros = all_channels.iter().flat_map(|c| c.macros.iter());
-        channel::validate_binding_unique(&macro_msg, other_globals.chain(all_channel_macros))?;
+        let match_label = channel::resolve_macro_rename(
+            &global_macros,
+            original_label,
+            &macro_msg,
+            all_channel_macros,
+            "globally",
+        )?;
 
         self.0
             .config
