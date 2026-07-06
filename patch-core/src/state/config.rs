@@ -227,32 +227,37 @@ impl Config {
     /// present.
     pub fn load_or_default() -> Result<Self> {
         let target = config_path();
-        if target.exists() {
-            let raw = std::fs::read_to_string(&target)?;
-            let mut config: Config = toml::from_str(&raw)?;
-            config.sanitize();
-            // Bring the schema up to date; persist if anything changed so the
-            // next load is a no-op.
-            if migrate(&mut config) {
-                config.save()?;
-            }
-            return Ok(config);
-        }
-
         let legacy = Path::new("patch.toml");
-        if legacy.exists() {
-            let raw = std::fs::read_to_string(legacy)?;
-            let mut config: Config = toml::from_str(&raw)?;
-            config.sanitize();
-            migrate(&mut config);
+
+        let source = if target.exists() {
+            Some((target.clone(), false))
+        } else if legacy.exists() {
+            Some((legacy.to_path_buf(), true))
+        } else {
+            None
+        };
+
+        let Some((path, is_legacy)) = source else {
+            let config = Config::default();
+            config.save()?;
+            return Ok(config);
+        };
+
+        let raw = std::fs::read_to_string(&path)?;
+        let mut config: Config = toml::from_str(&raw)?;
+        config.sanitize();
+        // Bring the schema up to date; persist if anything changed so the
+        // next load is a no-op.
+        let migrated = migrate(&mut config);
+
+        if is_legacy {
             // Persist into the new location so subsequent saves don't fight CWD.
             config.save()?;
             tracing::info!("Migrated legacy patch.toml → {}", target.display());
-            return Ok(config);
+        } else if migrated {
+            config.save()?;
         }
 
-        let config = Config::default();
-        config.save()?;
         Ok(config)
     }
 
@@ -892,5 +897,41 @@ default_channels = []
         let reloaded = Config::load_or_default().unwrap();
         assert_eq!(reloaded.client_name, "Persisted");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn load_or_default_migrates_a_legacy_cwd_config_into_the_data_dir() {
+        let _guard = test_data_dir_guard().await;
+        let data_dir = std::env::temp_dir().join(format!("patch-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&data_dir).unwrap();
+        set_data_dir(data_dir.clone());
+
+        let legacy_dir =
+            std::env::temp_dir().join(format!("patch-legacy-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&legacy_dir).unwrap();
+        let legacy_config = Config {
+            client_name: "Legacy".into(),
+            ..Config::default()
+        };
+        std::fs::write(
+            legacy_dir.join("patch.toml"),
+            toml::to_string(&legacy_config).unwrap(),
+        )
+        .unwrap();
+
+        let original_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&legacy_dir).unwrap();
+        let result = Config::load_or_default();
+        std::env::set_current_dir(&original_cwd).unwrap();
+
+        let loaded = result.unwrap();
+        assert_eq!(loaded.client_name, "Legacy");
+        // Migrated into the new data-dir location, sanitized and versioned the
+        // same way the current-location path would have loaded it.
+        assert!(data_dir.join("patch.toml").exists());
+        assert_eq!(loaded.config_version, CURRENT_CONFIG_VERSION);
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+        let _ = std::fs::remove_dir_all(&legacy_dir);
     }
 }
