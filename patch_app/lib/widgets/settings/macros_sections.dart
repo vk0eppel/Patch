@@ -464,7 +464,6 @@ class _MacroListCard extends StatelessWidget {
     MacroOscArgType oscArgType = existing?.osc?.argType ?? MacroOscArgType.string;
     bool oscEnabled = existing?.osc != null;
     int priority = existing?.priority ?? 1;
-    String? error;
     // For a new macro, mirror the label into the message text (capitalized-first)
     // until the user edits the message themselves. Off when editing an existing
     // macro so its saved message is never overwritten.
@@ -654,10 +653,6 @@ class _MacroListCard extends StatelessWidget {
                     ),
                   ),
                 ],
-                if (error != null) ...[
-                  const SizedBox(height: 8),
-                  Text(error!, style: const TextStyle(color: PatchTheme.critical, fontSize: 11)),
-                ],
               ],
             ),
           ),
@@ -679,21 +674,17 @@ class _MacroListCard extends StatelessWidget {
                   return (v != null && v >= 0 && v <= 127) ? v : null;
                 }
 
+                // OSC-target validity is decided in exactly one place:
+                // validateMacroOscTarget, reached via the presenter's
+                // validateThenSave seam after Save. Build the raw value here
+                // and let that seam reject it — no second, looser check.
                 MacroOsc? osc;
                 if (oscEnabled) {
-                  final addr = oscAddrCtrl.text.trim();
-                  final port = int.tryParse(oscPortCtrl.text.trim());
-                  final path = oscPathCtrl.text.trim();
-                  if (addr.isEmpty || port == null || port < 1 || port > 65535 || !path.startsWith('/')) {
-                    setDialogState(() => error =
-                        'OSC needs an IP, a port (1–65535), and a path starting with "/".');
-                    return;
-                  }
                   final a = oscArgCtrl.text.trim();
                   osc = MacroOsc(
-                    address: addr,
-                    port: port,
-                    path: path,
+                    address: oscAddrCtrl.text.trim(),
+                    port: int.tryParse(oscPortCtrl.text.trim()) ?? 0,
+                    path: oscPathCtrl.text.trim(),
                     arg: a.isEmpty ? null : a,
                     argType: oscArgType,
                   );
