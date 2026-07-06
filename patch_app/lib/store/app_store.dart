@@ -68,8 +68,18 @@ class AppStore extends ChangeNotifier {
     if (_messages.containsKey(channelId)) return;
     try {
       final fetched = await _bridge.getMessages(channelId);
+      // A message can arrive (and be appended by _onPush) while the fetch is
+      // in flight. Merge it after the history instead of overwriting it away
+      // — the fetch snapshot may predate its store engine-side, so dropping
+      // the pushed copy could lose it from the UI entirely. Dedup by id (the
+      // snapshot may equally already include it) and restamp in final order
+      // so localSeq keeps history before the just-arrived tail.
+      final pushed = _messages[channelId] ?? const <PatchMessage>[];
+      final fetchedIds = {for (final m in fetched) m.messageId};
       _messages[channelId] = [
         for (final m in fetched) m.withLocalSeq(_stampSeq()),
+        for (final m in pushed)
+          if (!fetchedIds.contains(m.messageId)) m.withLocalSeq(_stampSeq()),
       ];
       notifyListeners();
     } catch (e) {
@@ -146,9 +156,11 @@ class AppStore extends ChangeNotifier {
       case PeersChanged():
         _schedulePeersRefresh();
       // A full refetch (not a targeted drop) so a static-peer-backed entry
-      // reappears as ManualIp rather than vanishing.
+      // reappears as ManualIp rather than vanishing. Debounced like
+      // PeersChanged: "Clear inactive peers" emits one PeerExpired per
+      // removed peer, and N stale peers must not mean N refetches.
       case PeerExpired():
-        refreshPeers();
+        _schedulePeersRefresh();
       // The local name changed — refetch config so both screens reflect it.
       case ClientNameChanged():
         refreshConfig();
@@ -160,7 +172,13 @@ class AppStore extends ChangeNotifier {
         final list = _messages.putIfAbsent(message.channelId, () => [])
           ..add(message.withLocalSeq(_stampSeq()));
         if (list.length > _kMaxMessagesPerChannel) {
-          list.removeRange(0, list.length - _kMaxMessagesPerChannel);
+          final excess = list.length - _kMaxMessagesPerChannel;
+          // Drop the trimmed messages' delivery entries too — they'd
+          // otherwise accumulate for the session (the same leak
+          // DeliveryTracker.clearForMessageIds exists to prevent on clear).
+          _delivery
+              .clearForMessageIds(list.take(excess).map((m) => m.messageId));
+          list.removeRange(0, excess);
         }
         notifyListeners();
       case DeliveryUpdated(:final messageId, :final status):
