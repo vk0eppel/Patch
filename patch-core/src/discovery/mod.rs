@@ -7,52 +7,15 @@ use anyhow::Result;
 use chrono::Utc;
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use std::collections::HashMap;
-use std::net::IpAddr;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
-use uuid::Uuid;
-
-use std::net::Ipv4Addr;
 
 use crate::osc::{codec::encode_presence, types::PeerPresence};
-use crate::state::{is_self, AppState, Config, PeerSighting};
-use crate::transport::{in_pinned_subnet, pinned_ipv4_subnet, Transport};
+use crate::state::{AppState, Config, PeerSighting};
+use crate::transport::{pinned_ipv4_subnet, Transport};
 
-/// Returns resolved mDNS addresses on the pinned subnet — empty when
-/// `pinned_subnet` is unknown (unresolved pin, or the pinned interface's own
-/// IP couldn't be resolved this tick). Under mandatory pinning these are the
-/// same condition: no known subnet to match against, so nothing qualifies.
-fn pick_resolved_addresses(
-    addrs: &std::collections::HashSet<IpAddr>,
-    pinned_subnet: Option<(Ipv4Addr, Ipv4Addr)>,
-) -> Vec<String> {
-    let Some((iface_ip, mask)) = pinned_subnet else {
-        return Vec::new();
-    };
-    addrs
-        .iter()
-        .filter(|ip| matches!(ip, IpAddr::V4(v4) if in_pinned_subnet(*v4, iface_ip, mask)))
-        .map(|ip| ip.to_string())
-        .collect()
-}
-
-/// What an mDNS resolution should record. `None` = record nothing: a
-/// resolution with no on-subnet address must not create a Peer at all —
-/// ADR-0010 drops that peer's OSC presence at the protocol boundary, so the
-/// addressless entry could never gain an address and would sit in the panel
-/// unreachable forever (#152). This covers both an unresolved pin (mandatory
-/// pinning means "pending choice," not "Auto") and a momentarily-unresolvable
-/// pinned interface — both leave `pinned_subnet` as `None`.
-fn mdns_addresses_to_record(
-    addrs: &std::collections::HashSet<IpAddr>,
-    pinned_subnet: Option<(Ipv4Addr, Ipv4Addr)>,
-) -> Option<Vec<String>> {
-    let picked = pick_resolved_addresses(addrs, pinned_subnet);
-    if picked.is_empty() {
-        return None;
-    }
-    Some(picked)
-}
+mod peer_lifecycle;
+use peer_lifecycle::{PeerLifecycle, ResolveOutcome, ResolvedService};
 
 pub struct Discovery {
     /// The mDNS daemon handle, held for the engine's lifetime. Dropping the last
@@ -93,94 +56,83 @@ impl Discovery {
             let browse_state = state.clone();
             let receiver = mdns.browse(service_type)?;
             tokio::spawn(async move {
-                // Map a service's full mDNS name → its peer_id, so a later
-                // ServiceRemoved (which carries no TXT props) can be matched back
-                // to the peer and expired promptly.
-                let mut resolved_ids: HashMap<String, Uuid> = HashMap::new();
+                let mut lifecycle = PeerLifecycle::new();
                 while let Ok(event) = receiver.recv_async().await {
                     match event {
                         ServiceEvent::ServiceResolved(info) => {
-                            let peer_id = info
-                                .get_properties()
-                                .get("peer_id")
-                                .and_then(|p| Uuid::parse_str(p.val_str()).ok())
-                                .unwrap_or_else(Uuid::new_v4);
-
-                            // Skip our own service — mDNS resolves it too.
-                            if is_self(peer_id, client_id) {
-                                continue;
-                            }
-
                             let iface_pin = browse_state.config().await.network_interface.clone();
                             let pinned_subnet = iface_pin.as_deref().and_then(pinned_ipv4_subnet);
-                            let Some(addrs) =
-                                mdns_addresses_to_record(info.get_addresses(), pinned_subnet)
-                            else {
-                                // Pinned with no on-subnet address: recording an
-                                // addressless peer would leave a permanent ghost —
-                                // ADR-0010 drops its presence, so nothing could
-                                // ever fill the address in (#152).
-                                debug!(
-                                    "mDNS resolved {} with no address on the pinned network — skipped",
-                                    info.get_fullname()
-                                );
-                                continue;
-                            };
-                            let port = info.get_port();
+                            let peer_id_prop =
+                                info.get_properties().get("peer_id").map(|p| p.val_str());
+                            let peer_name_prop =
+                                info.get_properties().get("peer_name").map(|p| p.val_str());
 
-                            // Prefer the peer_name TXT record; fall back to stripping
-                            // the service-type suffix from the full DNS name.
-                            let peer_name = info
-                                .get_properties()
-                                .get("peer_name")
-                                .map(|p| p.val_str().to_string())
-                                .unwrap_or_else(|| {
-                                    info.get_fullname()
-                                        .split("._patch._udp")
-                                        .next()
-                                        .unwrap_or(info.get_fullname())
-                                        .to_string()
-                                });
-
-                            debug!(
-                                "mDNS resolved: {} ({}) @ {:?}:{}",
-                                peer_name, peer_id, addrs, port
+                            let outcome = lifecycle.on_resolved(
+                                ResolvedService {
+                                    fullname: info.get_fullname(),
+                                    peer_id_prop,
+                                    peer_name_prop,
+                                    addresses: info.get_addresses(),
+                                    port: info.get_port(),
+                                },
+                                client_id,
+                                pinned_subnet,
                             );
-                            resolved_ids.insert(info.get_fullname().to_string(), peer_id);
-                            // Record all resolved addresses for unicast, but do NOT
-                            // refresh liveness — mDNS can replay from a stale cache
-                            // long after a peer quits. `last_seen` is driven only by
-                            // a `PeerSighting::Presence`/`Heartbeat` sighting.
-                            if addrs.is_empty() {
-                                // No usable address (e.g. pinned to a subnet with no
-                                // match) — record without an address so the peer shows
-                                // up in the panel; OSC presence will fill it in.
-                                let presence = PeerPresence {
+
+                            match outcome {
+                                ResolveOutcome::SelfService => {}
+                                ResolveOutcome::NoAddressOnPinnedSubnet => {
+                                    debug!(
+                                        "mDNS resolved {} with no address on the pinned network — skipped",
+                                        info.get_fullname()
+                                    );
+                                }
+                                ResolveOutcome::Record {
                                     peer_id,
                                     peer_name,
-                                    channels: Vec::new(),
-                                    role: None,
-                                    timestamp: Utc::now(),
-                                };
-                                browse_state
-                                    .record_sighting(
-                                        PeerSighting::Mdns(presence),
-                                        String::new(),
-                                        port,
-                                    )
-                                    .await;
-                            } else {
-                                for addr in addrs {
-                                    let presence = PeerPresence {
-                                        peer_id,
-                                        peer_name: peer_name.clone(),
-                                        channels: Vec::new(),
-                                        role: None,
-                                        timestamp: Utc::now(),
-                                    };
-                                    browse_state
-                                        .record_sighting(PeerSighting::Mdns(presence), addr, port)
-                                        .await;
+                                    addrs,
+                                    port,
+                                } => {
+                                    debug!(
+                                        "mDNS resolved: {} ({}) @ {:?}:{}",
+                                        peer_name, peer_id, addrs, port
+                                    );
+                                    if addrs.is_empty() {
+                                        // No usable address (e.g. pinned to a subnet with
+                                        // no match) — record without an address so the peer
+                                        // shows up in the panel; OSC presence will fill it in.
+                                        let presence = PeerPresence {
+                                            peer_id,
+                                            peer_name,
+                                            channels: Vec::new(),
+                                            role: None,
+                                            timestamp: Utc::now(),
+                                        };
+                                        browse_state
+                                            .record_sighting(
+                                                PeerSighting::Mdns(presence),
+                                                String::new(),
+                                                port,
+                                            )
+                                            .await;
+                                    } else {
+                                        for addr in addrs {
+                                            let presence = PeerPresence {
+                                                peer_id,
+                                                peer_name: peer_name.clone(),
+                                                channels: Vec::new(),
+                                                role: None,
+                                                timestamp: Utc::now(),
+                                            };
+                                            browse_state
+                                                .record_sighting(
+                                                    PeerSighting::Mdns(presence),
+                                                    addr,
+                                                    port,
+                                                )
+                                                .await;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -190,15 +142,7 @@ impl Discovery {
                             // heartbeat timeout, but keep it in the list. If it was
                             // a transient mDNS blip and the peer is still up, its
                             // next OSC presence greens it again.
-                            //
-                            // `mdns-sd` fires spurious ServiceRemoved events far
-                            // more readily on Windows than macOS/Linux, which
-                            // otherwise flapped a still-live peer offline every
-                            // time one arrived — see #126. So this only marks
-                            // offline if the peer isn't still within its Online
-                            // window; a peer we've genuinely stopped hearing
-                            // from still gets marked offline promptly.
-                            if let Some(peer_id) = resolved_ids.remove(&fullname) {
+                            if let Some(peer_id) = lifecycle.on_removed(&fullname) {
                                 let heartbeat_secs =
                                     browse_state.config().await.heartbeat_interval_secs;
                                 browse_state
@@ -327,86 +271,4 @@ fn gethostname() -> String {
         }
     }
     "patch-node".to_string()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::HashSet;
-
-    fn addrs(ips: &[&str]) -> HashSet<IpAddr> {
-        ips.iter().map(|s| s.parse().unwrap()).collect()
-    }
-
-    #[test]
-    fn pin_returns_only_addresses_on_matching_subnet() {
-        // M1 pinned to the wired Dante NIC (169.254.x.x/16); Intel's service
-        // resolved with both its Dante address and an unrelated Wi-Fi one.
-        let set = addrs(&["169.254.30.7", "10.0.2.9"]);
-        let pinned_subnet = Some((
-            "169.254.10.1".parse().unwrap(),
-            "255.255.0.0".parse().unwrap(),
-        ));
-        assert_eq!(
-            pick_resolved_addresses(&set, pinned_subnet),
-            vec!["169.254.30.7".to_string()]
-        );
-    }
-
-    #[test]
-    fn pin_with_no_matching_address_returns_empty_rather_than_guessing() {
-        let set = addrs(&["10.0.2.9"]); // only the unrelated Wi-Fi address resolved
-        let pinned_subnet = Some((
-            "169.254.10.1".parse().unwrap(),
-            "255.255.0.0".parse().unwrap(),
-        ));
-        assert!(pick_resolved_addresses(&set, pinned_subnet).is_empty());
-    }
-
-    #[test]
-    fn pin_configured_but_unresolvable_returns_empty_rather_than_first() {
-        // The pinned interface itself couldn't be found/resolved this tick —
-        // don't fall back to "first address", which could be the wrong NIC.
-        let set = addrs(&["10.0.2.9"]);
-        assert!(pick_resolved_addresses(&set, None).is_empty());
-    }
-
-    #[test]
-    fn pinned_resolution_with_no_on_subnet_address_records_nothing() {
-        // ADR-0010 (#152): while pinned, OSC presence from off-pin sources is
-        // dropped at the protocol boundary, so an addressless mDNS peer could
-        // never gain an address — it would sit in the panel unreachable
-        // forever. Record nothing instead of a permanent ghost.
-        let set = addrs(&["10.0.2.9"]);
-        let pinned_subnet = Some((
-            "169.254.10.1".parse().unwrap(),
-            "255.255.0.0".parse().unwrap(),
-        ));
-        assert_eq!(mdns_addresses_to_record(&set, pinned_subnet), None);
-        // Same when the pinned interface itself is unresolvable this tick.
-        assert_eq!(mdns_addresses_to_record(&set, None), None);
-    }
-
-    #[test]
-    fn unresolved_records_nothing_even_with_addresses() {
-        // No pin means unresolved (mandatory pinning) — dynamic discovery
-        // stays fully inert, so an mDNS resolution records no peer at all,
-        // same as the pinned-but-off-subnet case.
-        let set = addrs(&["10.0.2.9"]);
-        assert_eq!(mdns_addresses_to_record(&set, None), None);
-    }
-
-    #[test]
-    fn pin_returns_multiple_matching_addresses() {
-        // Peer with two Dante addresses on the pinned subnet — both should be kept.
-        let set = addrs(&["169.254.30.7", "169.254.31.2", "10.0.2.9"]);
-        let pinned_subnet = Some((
-            "169.254.10.1".parse().unwrap(),
-            "255.255.0.0".parse().unwrap(),
-        ));
-        let result = pick_resolved_addresses(&set, pinned_subnet);
-        assert_eq!(result.len(), 2);
-        assert!(result.contains(&"169.254.30.7".to_string()));
-        assert!(result.contains(&"169.254.31.2".to_string()));
-    }
 }
