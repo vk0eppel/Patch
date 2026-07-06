@@ -49,6 +49,13 @@ class AppStore extends ChangeNotifier {
   final Map<String, List<PatchMessage>> _messages = {};
   Map<String, List<PatchMessage>> get messages => _messages;
 
+  /// Next value to stamp onto a message's [PatchMessage.localSeq] — global
+  /// across every channel/DM, incrementing once per message this client
+  /// stores, in true arrival order. Never derived from [PatchMessage.timestamp]
+  /// (the sender's own clock) — see [PatchMessage.localSeq].
+  int _nextLocalSeq = 0;
+  int _stampSeq() => _nextLocalSeq++;
+
   /// Delivery status for Critical Messages we sent, keyed by message id.
   final DeliveryTracker _delivery = DeliveryTracker();
   Map<String, MessageDeliveryStatus> get delivery => _delivery.all;
@@ -60,7 +67,10 @@ class AppStore extends ChangeNotifier {
   Future<void> ensureMessages(String channelId) async {
     if (_messages.containsKey(channelId)) return;
     try {
-      _messages[channelId] = await _bridge.getMessages(channelId);
+      final fetched = await _bridge.getMessages(channelId);
+      _messages[channelId] = [
+        for (final m in fetched) m.withLocalSeq(_stampSeq()),
+      ];
       notifyListeners();
     } catch (e) {
       debugPrint('AppStore.ensureMessages($channelId) failed: $e');
@@ -148,7 +158,7 @@ class AppStore extends ChangeNotifier {
       // screen-local concern (home's _handlePush), not the store's (#58).
       case MessageReceived(:final message):
         final list = _messages.putIfAbsent(message.channelId, () => [])
-          ..add(message);
+          ..add(message.withLocalSeq(_stampSeq()));
         if (list.length > _kMaxMessagesPerChannel) {
           list.removeRange(0, list.length - _kMaxMessagesPerChannel);
         }

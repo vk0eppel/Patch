@@ -5,7 +5,7 @@ import 'package:patch/models/message.dart';
 import 'package:patch/models/selection.dart';
 import 'package:patch/util/message_view.dart';
 
-PatchMessage _msg(String channelId, DateTime ts) => PatchMessage(
+PatchMessage _msg(String channelId, DateTime ts, {int seq = 0}) => PatchMessage(
       messageId: channelId + ts.millisecondsSinceEpoch.toString(),
       senderId: 's',
       senderName: 'S',
@@ -13,6 +13,7 @@ PatchMessage _msg(String channelId, DateTime ts) => PatchMessage(
       priority: 1,
       payload: 'hi',
       timestamp: ts,
+      localSeq: seq,
     );
 
 final _t1 = DateTime(2026, 1, 1, 12, 0, 0);
@@ -40,11 +41,11 @@ void main() {
   });
 
   group('combinedMessages — AllSelection', () {
-    test('includes all non-DM messages sorted by timestamp', () {
+    test('includes all non-DM messages sorted by local arrival order', () {
       final messages = {
-        'rf': [_msg('rf', _t3)],
-        kAllChannelId: [_msg(kAllChannelId, _t1)],
-        'dm:p1': [_msg('dm:p1', _t2)],
+        'rf': [_msg('rf', _t3, seq: 2)],
+        kAllChannelId: [_msg(kAllChannelId, _t1, seq: 1)],
+        'dm:p1': [_msg('dm:p1', _t2, seq: 3)],
       };
       final result =
           combinedMessages(messages, AllSelection(const {}));
@@ -54,11 +55,13 @@ void main() {
   });
 
   group('combinedMessages — ChannelSelection', () {
-    test('includes selected channel messages + broadcast, sorted by timestamp', () {
+    test(
+        'includes selected channel messages + broadcast, sorted by local '
+        'arrival order', () {
       final messages = {
-        'rf': [_msg('rf', _t2)],
-        'audio': [_msg('audio', _t3)],
-        kAllChannelId: [_msg(kAllChannelId, _t1)],
+        'rf': [_msg('rf', _t2, seq: 2)],
+        'audio': [_msg('audio', _t3, seq: 3)],
+        kAllChannelId: [_msg(kAllChannelId, _t1, seq: 1)],
       };
       final result =
           combinedMessages(messages, const ChannelSelection({'rf'}));
@@ -73,6 +76,22 @@ void main() {
       final result =
           combinedMessages(messages, const ChannelSelection({'rf'}));
       expect(result.map((m) => m.channelId), ['rf']);
+    });
+
+    test(
+        'sorts by local arrival order (localSeq), not the sender\'s embedded '
+        'timestamp — immune to clock skew between machines', () {
+      final messages = {
+        // Arrived locally first (localSeq 1) despite a later embedded
+        // timestamp — simulates a sender with a fast clock.
+        'rf': [_msg('rf', _t3, seq: 1)],
+        // Arrived locally second (localSeq 2) despite an earlier embedded
+        // timestamp — simulates a sender with a slow/unset clock.
+        'audio': [_msg('audio', _t1, seq: 2)],
+      };
+      final result = combinedMessages(
+          messages, const ChannelSelection({'rf', 'audio'}));
+      expect(result.map((m) => m.channelId), ['rf', 'audio']);
     });
   });
 

@@ -203,6 +203,21 @@ void main() {
     expect(notified, 1);
   });
 
+  test('MessageReceived push stamps each message with an increasing '
+      'localSeq, in arrival order, regardless of channel', () async {
+    pushes.add(MessageReceived(_msg('rf', 'm1')));
+    await pumpEventQueue();
+    pushes.add(MessageReceived(_msg('audio', 'm2')));
+    await pumpEventQueue();
+    pushes.add(MessageReceived(_msg('rf', 'm3')));
+    await pumpEventQueue();
+
+    final rfSeqs = store.messages['rf']!.map((m) => m.localSeq).toList();
+    final audioSeq = store.messages['audio']!.single.localSeq;
+    expect(rfSeqs[0], lessThan(audioSeq));
+    expect(audioSeq, lessThan(rfSeqs[1]));
+  });
+
   test('ensureMessages fetches a channel once', () async {
     bridge.messagesToReturn['rf'] = [_msg('rf', 'a'), _msg('rf', 'b')];
 
@@ -212,6 +227,16 @@ void main() {
 
     await store.ensureMessages('rf'); // already loaded — no refetch
     expect(bridge.getMessagesCalls, 1);
+  });
+
+  test('ensureMessages stamps fetched history with increasing localSeq, '
+      'preserving the order the bridge returned', () async {
+    bridge.messagesToReturn['rf'] = [_msg('rf', 'a'), _msg('rf', 'b')];
+
+    await store.ensureMessages('rf');
+
+    final seqs = store.messages['rf']!.map((m) => m.localSeq).toList();
+    expect(seqs[0], lessThan(seqs[1]));
   });
 
   test('dropMessages clears a channel buffer and notifies', () async {

@@ -6,6 +6,10 @@ import '../models/message.dart';
 import '../models/selection.dart';
 
 /// Merges and sorts messages for the current view. Pure — no side effects.
+/// Sorted by [PatchMessage.localSeq] (local arrival order), not
+/// [PatchMessage.timestamp] — the embedded timestamp is the sender's own
+/// clock, so sorting by it would misorder messages when machines' clocks
+/// disagree.
 List<PatchMessage> combinedMessages(
   Map<String, List<PatchMessage>> messages,
   Selection selection,
@@ -25,7 +29,7 @@ List<PatchMessage> combinedMessages(
       }
       all.addAll(messages[kAllChannelId] ?? []);
   }
-  all.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+  all.sort((a, b) => a.localSeq.compareTo(b.localSeq));
   return all;
 }
 

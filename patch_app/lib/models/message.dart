@@ -19,6 +19,14 @@ class PatchMessage {
   final String? flashSenderName;
   final String? flashSenderRole;
 
+  /// Local arrival-order sequence, stamped by [AppStore] as this client
+  /// receives the message — never by the sender. Ordering must not trust
+  /// [timestamp], which is the sender's own clock and carried on the wire
+  /// as-is: two machines with different clocks would otherwise sort into
+  /// the wrong order. Defaults to 0 for messages not yet stored (tests,
+  /// freshly-decoded wire messages before `AppStore` stamps them).
+  final int localSeq;
+
   const PatchMessage({
     required this.messageId,
     required this.senderId,
@@ -30,10 +38,27 @@ class PatchMessage {
     this.isFlash = false,
     this.flashSenderName,
     this.flashSenderRole,
+    this.localSeq = 0,
   });
 
   bool get isCritical => priority >= 3;
   bool get isWarning => priority == 2;
+
+  /// Stamp this message with its local arrival-order sequence. The only
+  /// mutation `AppStore` performs on a message after decoding it.
+  PatchMessage withLocalSeq(int seq) => PatchMessage(
+        messageId: messageId,
+        senderId: senderId,
+        senderName: senderName,
+        channelId: channelId,
+        timestamp: timestamp,
+        priority: priority,
+        payload: payload,
+        isFlash: isFlash,
+        flashSenderName: flashSenderName,
+        flashSenderRole: flashSenderRole,
+        localSeq: seq,
+      );
 
   factory PatchMessage.fromJson(Map<String, dynamic> j) => PatchMessage(
         messageId: j['message_id'] as String,
