@@ -39,6 +39,13 @@ pub(crate) async fn originate_channel_message(
     prio: Priority,
     delivery: Delivery<'_>,
 ) -> Result<(Uuid, Vec<Outgoing>)> {
+    // Enforce the same slug rule the inbound decoder does — the FFI
+    // `send_message` entry is otherwise unvalidated, and a `dm:{uuid}` key
+    // here would store a channel message into a DM-thread buffer (the dm:
+    // key-shape contract, #176) while sending packets receivers reject.
+    if !crate::osc::codec::valid_channel_id(&channel_id) {
+        anyhow::bail!("invalid channel id {:?}", channel_id);
+    }
     let config = state.config().await;
     let msg = PatchMessage::new(
         config.client_id,
@@ -353,6 +360,41 @@ mod tests {
 
         assert!(out.is_empty(), "direct delivery returns no relay packets");
         expect_delivery_failure(&mut events).await;
+    }
+
+    #[tokio::test]
+    async fn origination_rejects_a_channel_id_that_is_not_a_valid_slug() {
+        // The FFI `send_message` entry is otherwise unvalidated: a buggy or
+        // crafted call with a `dm:{uuid}` key would store a channel message
+        // into a local DM-thread buffer (violating the dm: key-shape
+        // contract, #176) and unicast packets every receiver rejects at
+        // decode. Outbound origination must enforce the same slug rule the
+        // inbound decoder does.
+        let state = test_state();
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+        let dm_key = DmThreadKey::for_peer(Uuid::new_v4()).local_key();
+
+        for bad in [dm_key.as_str(), "", "NOT A SLUG!"] {
+            let err = originate_channel_message(
+                &state,
+                &reliability,
+                bad.into(),
+                "go".into(),
+                Priority::Info,
+                Delivery::Relay,
+            )
+            .await
+            .err()
+            .unwrap_or_else(|| panic!("origination must fail for {bad:?}"));
+            assert!(
+                err.to_string().contains("invalid channel id"),
+                "expected invalid-channel-id error for {bad:?}, got: {err}"
+            );
+            assert!(
+                state.get_messages(bad, 10).await.is_empty(),
+                "nothing may be stored under {bad:?}"
+            );
+        }
     }
 
     #[tokio::test]

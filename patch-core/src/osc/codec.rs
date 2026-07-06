@@ -539,7 +539,11 @@ fn decode_presence(msg: OscMessage) -> Result<PatchEvent> {
             MAX_PRESENCE_CHANNELS_JSON
         );
     }
-    let channels: Vec<String> = serde_json::from_str(&channels_json)?;
+    let mut channels: Vec<String> = serde_json::from_str(&channels_json)?;
+    // Network input headed for the peer registry (and every PeerUpdated FFI
+    // publish): keep only entries that could actually be a channel id —
+    // dropped silently, keeping the heartbeat, like an oversized role.
+    channels.retain(|c| valid_channel_id(c));
     let ts_ms = parse_long(&args[3])?;
     // arg 4 (optional): role. Absent from older 4-arg peers → None; an empty
     // string (role explicitly cleared) also normalises to None. Oversized
@@ -674,7 +678,7 @@ fn decode_flash(msg: OscMessage) -> Result<PatchEvent> {
         flash: ChannelFlash {
             channel_id,
             sender_id: parse_uuid(&args[0])?,
-            sender_name: parse_string(&args[1])?,
+            sender_name: parse_name(&args[1])?,
         },
         message_id,
         timestamp,
@@ -1295,6 +1299,54 @@ mod tests {
             PatchEvent::Presence(p) => assert_eq!(p.role, None),
             other => panic!("expected Presence, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn presence_drops_channel_entries_that_are_not_valid_slugs() {
+        // The channels list is network input stored in the peer registry and
+        // echoed over FFI on every sighting — entries that could never be a
+        // real channel id (they're validated everywhere else they exist) are
+        // dropped while the heartbeat itself is kept, same leniency as an
+        // oversized role.
+        let msg = OscMessage {
+            addr: addresses::PRESENCE.to_string(),
+            args: vec![
+                OscType::String(Uuid::new_v4().to_string()),
+                OscType::String("MON".into()),
+                OscType::String(r#"["rf","NOT A SLUG!","audio"]"#.into()),
+                OscType::Long(0),
+            ],
+        };
+        match decode_message(msg).unwrap() {
+            PatchEvent::Presence(p) => {
+                assert_eq!(p.channels, vec!["rf".to_string(), "audio".to_string()]);
+            }
+            other => panic!("expected Presence, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_oversized_flash_sender_name() {
+        // The flash arm must bound the sender name like every other arm — a
+        // crafted flash otherwise plants a ~64 KB name in the peer registry
+        // (riding every PeerUpdated publish) and the flash log.
+        let flash = OscMessage {
+            addr: addresses::channel_flash("rf"),
+            args: vec![
+                OscType::String(Uuid::new_v4().to_string()),
+                OscType::String("x".repeat(MAX_NAME_LEN + 1)),
+            ],
+        };
+        assert!(decode_message(flash).is_err());
+        // Exactly at the limit still decodes.
+        let flash = OscMessage {
+            addr: addresses::channel_flash("rf"),
+            args: vec![
+                OscType::String(Uuid::new_v4().to_string()),
+                OscType::String("x".repeat(MAX_NAME_LEN)),
+            ],
+        };
+        assert!(decode_message(flash).is_ok());
     }
 
     #[test]
