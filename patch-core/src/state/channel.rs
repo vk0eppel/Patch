@@ -212,9 +212,15 @@ pub(crate) fn resolve_macro_rename<'a>(
     other_context: impl Iterator<Item = &'a MacroMessage>,
     scope_desc: &str,
 ) -> anyhow::Result<String> {
-    let match_label = original_label.unwrap_or(macro_msg.label.as_str()).to_owned();
+    let match_label = original_label
+        .unwrap_or(macro_msg.label.as_str())
+        .to_owned();
     if match_label != macro_msg.label && existing.iter().any(|s| s.label == macro_msg.label) {
-        anyhow::bail!("A macro named '{}' already exists {}", macro_msg.label, scope_desc);
+        anyhow::bail!(
+            "A macro named '{}' already exists {}",
+            macro_msg.label,
+            scope_desc
+        );
     }
     let same_scope_others = existing.iter().filter(|m| m.label != match_label);
     validate_binding_unique(macro_msg, same_scope_others.chain(other_context))?;
