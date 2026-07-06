@@ -208,36 +208,6 @@ pub fn engine() -> &'static EngineHandle {
 
 // ── Messaging ────────────────────────────────────────────────────────────────
 
-/// Core send path, shared by the FFI `send_message` and the engine-internal MIDI
-/// trigger (`crate::midi`). Delegates to `messaging::dispatch_channel_message`.
-#[frb(ignore)]
-pub(crate) async fn dispatch_message(
-    state: &AppState,
-    transport: &Arc<Transport>,
-    reliability: &Arc<Mutex<ReliabilityManager>>,
-    channel_id: String,
-    payload: String,
-    prio: Priority,
-) -> Result<uuid::Uuid> {
-    crate::messaging::dispatch_channel_message(
-        state,
-        transport,
-        reliability,
-        channel_id,
-        payload,
-        prio,
-    )
-    .await
-}
-
-/// Send an arbitrary outbound OSC message to external gear (the "OSC macro"
-/// action). Shared by the FFI `send_osc_macro` and the engine-side MIDI fire path.
-/// Delegates to `messaging::dispatch_osc`.
-#[frb(ignore)]
-pub(crate) async fn dispatch_osc(transport: &Arc<Transport>, target: &OscTarget) -> Result<()> {
-    crate::messaging::dispatch_osc(transport, target).await
-}
-
 /// Fire an OSC message to an external target (e.g. QLab). Used by the UI's
 /// dual-action macro (the macro sends its Patch message *and* this OSC packet).
 /// Validates before touching `engine()` — same pattern as `upsert_macro` — so a
@@ -259,7 +229,7 @@ pub async fn send_osc_macro(
         arg_type,
     };
     channel::validate_osc_target(&target)?;
-    dispatch_osc(&engine().transport, &target).await
+    crate::messaging::dispatch_osc(&engine().transport, &target).await
 }
 
 /// Fire a Macro from the UI (tap or F-key): `channel_id` names the Channel a
@@ -288,28 +258,23 @@ pub async fn fire_key_binding(label: String) -> Result<bool> {
     let channels = h.state.get_channels().await;
     let globals = h.state.config().await.global_macros;
     let selected = h.state.selected_channels().await;
-    let Some((ch, m)) =
-        crate::macro_router::resolve_key_macro(&channels, &globals, &selected, &label)
-    else {
-        return Ok(false);
-    };
-    let (ch, label) = (ch.map(str::to_owned), m.label.clone());
-    crate::macro_router::fire_identified(
+    Ok(crate::macro_router::fire_key_bound_macro(
         &h.state,
         &h.transport,
         &h.reliability,
-        ch.as_deref(),
+        &channels,
+        &globals,
+        &selected,
         &label,
     )
-    .await?;
-    Ok(true)
+    .await)
 }
 
 /// Sends a message on a channel. Returns the message_id.
 pub async fn send_message(channel_id: String, payload: String, priority: i32) -> Result<String> {
     let h = engine();
     let prio = Priority::try_from(priority).unwrap_or(Priority::Info);
-    let id = dispatch_message(
+    let id = crate::messaging::dispatch_channel_message(
         &h.state,
         &h.transport,
         &h.reliability,

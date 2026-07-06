@@ -103,6 +103,52 @@ pub(crate) fn resolve_key_macro<'a>(
     globals.iter().find(|m| bound(m)).map(|m| (None, m))
 }
 
+/// Fire the macro bound to key `label`, if any (the OS-level key handler's
+/// entry point). Resolves the macro exactly once via [`resolve_key_macro`]'s
+/// precedence walk and fires it directly through [`fire_matching`] — the
+/// caller's `channels`/`globals` are reused as-is rather than re-fetched, and
+/// the macro found isn't re-searched by label a second time. Routing stays
+/// centralized in `fire_matching` (ADR-0009); this only removes the duplicate
+/// lookup. Returns `false` when nothing is bound to `label`.
+pub(crate) async fn fire_key_bound_macro(
+    state: &AppState,
+    transport: &Arc<Transport>,
+    reliability: &Arc<Mutex<ReliabilityManager>>,
+    channels: &[Channel],
+    globals: &[MacroMessage],
+    selected: &[String],
+    label: &str,
+) -> bool {
+    let Some((channel_id, macro_msg)) = resolve_key_macro(channels, globals, selected, label)
+    else {
+        return false;
+    };
+
+    let (narrowed_channels, narrowed_globals): (Vec<Channel>, Vec<MacroMessage>) = match channel_id
+    {
+        Some(id) => {
+            let ch = channels
+                .iter()
+                .find(|c| c.id == id)
+                .cloned()
+                .expect("resolve_key_macro returned an id it found in `channels`");
+            (vec![ch], Vec::new())
+        }
+        None => (Vec::new(), vec![macro_msg.clone()]),
+    };
+
+    fire_matching(
+        state,
+        transport,
+        reliability,
+        &narrowed_channels,
+        &narrowed_globals,
+        &LabelTrigger(&macro_msg.label),
+    )
+    .await;
+    true
+}
+
 /// Matches exactly one macro by label — used to funnel a UI tap (which already
 /// knows *which* macro fired) through the same routing as every other trigger.
 struct LabelTrigger<'a>(&'a str);
@@ -192,7 +238,7 @@ async fn fire_matching(
         let selected = state.selected_channels().await;
         for (ch_id, payload, priority) in resolve_targets(channels, globals, &selected, trigger) {
             let prio = Priority::try_from(priority).unwrap_or(Priority::Info);
-            if let Err(e) = crate::api::dispatch_message(
+            if let Err(e) = crate::messaging::dispatch_channel_message(
                 state,
                 transport,
                 reliability,
@@ -207,7 +253,7 @@ async fn fire_matching(
         }
     }
     for target in resolve_osc(channels, globals, trigger) {
-        if let Err(e) = crate::api::dispatch_osc(transport, &target).await {
+        if let Err(e) = crate::messaging::dispatch_osc(transport, &target).await {
             tracing::warn!("macro OSC to {} failed: {}", target.address, e);
         }
     }
@@ -365,6 +411,72 @@ mod tests {
     fn key_binding_with_no_match_resolves_nothing() {
         let globals = vec![mac_key("G", "F1")];
         assert!(resolve_key_macro(&[], &globals, &[], "F2").is_none());
+    }
+
+    // ── fire_key_bound_macro (OS key handler → engine routing, #170) ─────────
+
+    #[tokio::test]
+    async fn fire_key_bound_macro_fires_the_channel_macro_on_its_own_channel() {
+        let state = test_state();
+        let (transport, reliability) = deps(&state).await;
+        let mut rf = Channel::new("rf", "RF", "#fff").unwrap();
+        rf.macros = vec![mac_key("A", "F1")];
+        state.upsert_channel(rf.clone()).await;
+        let selected = vec!["rf".to_string()];
+
+        let fired = fire_key_bound_macro(
+            &state,
+            &transport,
+            &reliability,
+            &[rf],
+            &[],
+            &selected,
+            "F1",
+        )
+        .await;
+
+        assert!(fired);
+        let stored = state.get_messages("rf", 10).await;
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].payload, "p-A");
+    }
+
+    #[tokio::test]
+    async fn fire_key_bound_macro_fires_the_global_macro_on_selected_channels() {
+        let state = test_state();
+        let (transport, reliability) = deps(&state).await;
+        let rf = Channel::new("rf", "RF", "#fff").unwrap();
+        state.upsert_channel(rf.clone()).await;
+        state.set_selected_channels(vec!["rf".into()]).await;
+        let globals = vec![mac_key("G", "F1")];
+        let selected = vec!["rf".to_string()];
+
+        let fired = fire_key_bound_macro(
+            &state,
+            &transport,
+            &reliability,
+            &[rf],
+            &globals,
+            &selected,
+            "F1",
+        )
+        .await;
+
+        assert!(fired);
+        let stored = state.get_messages("rf", 10).await;
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].payload, "p-G");
+    }
+
+    #[tokio::test]
+    async fn fire_key_bound_macro_returns_false_when_nothing_is_bound() {
+        let state = test_state();
+        let (transport, reliability) = deps(&state).await;
+
+        let fired =
+            fire_key_bound_macro(&state, &transport, &reliability, &[], &[], &[], "F1").await;
+
+        assert!(!fired);
     }
 
     // ── fire_identified (UI tap → engine routing, #138) ──────────────────────
