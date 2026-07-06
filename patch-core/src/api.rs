@@ -129,39 +129,13 @@ pub async fn init(config_dir: Option<String>) -> Result<()> {
                 Arc::clone(&reliability),
             );
 
-            // Retransmit poller for unacked critical messages. It ticks every
-            // POLL_INTERVAL_MS; each in-flight entry retransmits on its own
-            // exponential backoff (drain_retransmits) until acked or it exceeds
-            // MAX_RETRIES. When an entry exhausts its retries it comes back as a `failure`,
-            // which we surface to the UI as a failed `MessageDelivery` naming the
-            // peers that never ACKed.
-            let rt_transport = Arc::clone(&transport);
-            let rt_reliability = Arc::clone(&reliability);
-            let rt_state = state.clone();
-            tokio::spawn(async move {
-                let mut interval = tokio::time::interval(std::time::Duration::from_millis(
-                    crate::reliability::POLL_INTERVAL_MS,
-                ));
-                loop {
-                    interval.tick().await;
-                    let due = rt_reliability.lock().await.drain_retransmits();
-                    for (_id, bytes, targets) in due.retransmits {
-                        for addr in targets {
-                            let _ = rt_transport.send_to(bytes.clone(), addr).await;
-                        }
-                    }
-                    for failure in due.failures {
-                        crate::reliability::report_delivery_failure(
-                            &rt_state,
-                            failure.message_id,
-                            failure.acked,
-                            failure.total,
-                            &failure.unacked,
-                        )
-                        .await;
-                    }
-                }
-            });
+            // Retransmit poller for unacked critical messages — see
+            // `reliability::spawn_retransmit_loop`.
+            crate::reliability::spawn_retransmit_loop(
+                state.clone(),
+                Arc::clone(&transport),
+                Arc::clone(&reliability),
+            );
 
             Ok::<_, anyhow::Error>(EngineHandle {
                 state,

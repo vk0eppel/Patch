@@ -10,12 +10,14 @@
 
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
 use uuid::Uuid;
 
 use crate::state::{AppEvent, AppState};
+use crate::transport::Transport;
 
 /// Max retransmit attempts for an unacked critical before it's reported failed.
 const MAX_RETRIES: u32 = 5;
@@ -252,6 +254,42 @@ async fn resolve_peer_names(state: &AppState, peer_ids: &[Uuid]) -> Vec<String> 
                 .unwrap_or_else(|| id.to_string())
         })
         .collect()
+}
+
+/// Starts the retransmit poller for unacked critical messages and returns its
+/// task handle. Ticks every [`POLL_INTERVAL_MS`]; each in-flight entry
+/// retransmits on its own exponential backoff (`drain_retransmits`) until
+/// acked or it exceeds `MAX_RETRIES`. When an entry exhausts its retries it
+/// comes back as a failure, surfaced to the UI as a failed `MessageDelivery`
+/// naming the peers that never ACKed.
+pub fn spawn_retransmit_loop(
+    state: AppState,
+    transport: Arc<Transport>,
+    reliability: Arc<Mutex<ReliabilityManager>>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut interval =
+            tokio::time::interval(std::time::Duration::from_millis(POLL_INTERVAL_MS));
+        loop {
+            interval.tick().await;
+            let due = reliability.lock().await.drain_retransmits();
+            for (_id, bytes, targets) in due.retransmits {
+                for addr in targets {
+                    let _ = transport.send_to(bytes.clone(), addr).await;
+                }
+            }
+            for failure in due.failures {
+                report_delivery_failure(
+                    &state,
+                    failure.message_id,
+                    failure.acked,
+                    failure.total,
+                    &failure.unacked,
+                )
+                .await;
+            }
+        }
+    })
 }
 
 #[cfg(test)]
@@ -530,5 +568,47 @@ mod tests {
             }
             other => panic!("expected MessageDelivery, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn spawn_retransmit_loop_resends_an_unacked_critical_message() {
+        let state = test_state();
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+        let transport = Arc::new(
+            Transport::new(
+                &crate::state::Config {
+                    osc_port: 0,
+                    default_channels: Vec::new(),
+                    ..crate::state::Config::default()
+                },
+                state.clone(),
+                Arc::clone(&reliability),
+            )
+            .await
+            .unwrap(),
+        );
+
+        // A local UDP socket standing in for the unacked peer — the loop
+        // should retransmit to it without any ACK ever arriving.
+        let listener = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let listener_addr = listener.local_addr().unwrap();
+
+        reliability.lock().await.track(
+            Uuid::new_v4(),
+            b"hello".to_vec(),
+            vec![(Uuid::new_v4(), vec![listener_addr])],
+        );
+
+        let _handle = spawn_retransmit_loop(state, transport, Arc::clone(&reliability));
+
+        let mut buf = [0u8; 16];
+        let (n, _) = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            listener.recv_from(&mut buf),
+        )
+        .await
+        .expect("expected a retransmit within 2s")
+        .unwrap();
+        assert_eq!(&buf[..n], b"hello");
     }
 }
