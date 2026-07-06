@@ -11,12 +11,12 @@ import '../models/flash_model.dart' as fm
         FlashState,
         FlashSettings,
         applyFlashEvent,
-        reduceEvent,
         markDmUnread,
         clearUnread,
         clearDmThread,
         openDmThread,
-        flashOutput;
+        flashOutput,
+        decideFlashCommand;
 import '../models/message.dart' show MessageDeliveryStatus, PeerInfo, PeerStatus;
 import '../models/selection.dart';
 import '../models/selection_controller.dart';
@@ -287,17 +287,23 @@ class HomePresenter extends ChangeNotifier {
   void _handleFlashPush(PatchEvent event) {
     final sel = _selectionController!.selection;
     final prev = _state;
-    _state = fm.reduceEvent(_state, event, sel, _channelGetter(), _settings);
+    final decision =
+        fm.decideFlashCommand(prev, event, sel, _channelGetter(), _settings);
+    _state = decision.state;
     if (_state != prev) {
-      _fireFlashCommandsIfNeeded(prev);
+      _fireCommands(decision.playAlert, decision.pulse);
       notifyListeners();
     }
   }
 
   void _fireFlashCommandsIfNeeded(fm.FlashState prev) {
     final out = fm.flashOutput(prev, _state, _settings);
-    if (out.playAlert) _commandCtrl.add(const PlayAlert());
-    if (out.pulse case final p?) {
+    _fireCommands(out.playAlert, out.pulse);
+  }
+
+  void _fireCommands(bool playAlert, ({Color color, int count})? pulse) {
+    if (playAlert) _commandCtrl.add(const PlayAlert());
+    if (pulse case final p?) {
       _commandCtrl.add(PulseOverlay(color: p.color, pulseCount: p.count));
     }
   }

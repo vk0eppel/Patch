@@ -202,3 +202,22 @@ FlashState clearDmThread(FlashState state, String peerId) =>
         : null,
   );
 }
+
+/// One seam for "does this inbound push produce a screen effect": chains
+/// [reduceEvent] (does the event even count as a flash, given the current
+/// selection/settings) and [flashOutput] (does the resulting state change
+/// warrant a command) into a single pure decision. [HomePresenter] calls
+/// this on each push instead of composing the two itself, so the whole
+/// event → command path is one unit, testable without a widget tree.
+({FlashState state, bool playAlert, ({Color color, int count})? pulse})
+    decideFlashCommand(
+  FlashState prev,
+  PatchEvent event,
+  Selection selection,
+  List<PatchChannel> channels,
+  FlashSettings settings,
+) {
+  final next = reduceEvent(prev, event, selection, channels, settings);
+  final out = flashOutput(prev, next, settings);
+  return (state: next, playAlert: out.playAlert, pulse: out.pulse);
+}

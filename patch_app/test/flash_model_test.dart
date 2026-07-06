@@ -292,4 +292,96 @@ void main() {
       expect(out.pulse, isNull);
     });
   });
+
+  group('decideFlashCommand — push-event → command, end to end', () {
+    test('a critical message on the selected channel pulses the overlay', () {
+      final sel = ChannelSelection({'rf'});
+      final settings = _defaultSettings.copyWith(flashWholeScreen: true);
+
+      final decision = decideFlashCommand(
+        FlashState.empty,
+        MessageReceived(_msg(channelId: 'rf', priority: 3)),
+        sel,
+        const [_ch],
+        settings,
+      );
+
+      expect(decision.pulse, isNotNull);
+      expect(decision.pulse!.color, Colors.red);
+      expect(decision.pulse!.count, 3);
+      expect(decision.state.flashNotify, 1);
+    });
+
+    test('a non-critical message with flashOnMessage off produces no command', () {
+      final sel = ChannelSelection({'rf'});
+      final settings = _defaultSettings.copyWith(flashWholeScreen: true);
+
+      final decision = decideFlashCommand(
+        FlashState.empty,
+        MessageReceived(_msg(channelId: 'rf', priority: 1)),
+        sel,
+        const [_ch],
+        settings,
+      );
+
+      expect(decision.pulse, isNull);
+      expect(decision.playAlert, isFalse);
+      expect(decision.state.flashNotify, 0);
+    });
+
+    test('a non-critical message with flashOnMessage on produces a command', () {
+      final sel = ChannelSelection({'rf'});
+      final settings = _defaultSettings.copyWith(
+        flashOnMessage: true,
+        flashWholeScreen: true,
+      );
+
+      final decision = decideFlashCommand(
+        FlashState.empty,
+        MessageReceived(_msg(channelId: 'rf', priority: 1)),
+        sel,
+        const [_ch],
+        settings,
+      );
+
+      expect(decision.pulse, isNotNull);
+      expect(decision.state.flashNotify, 1);
+    });
+
+    test('a critical message on a non-selected channel updates counts but fires no command', () {
+      final sel = ChannelSelection({'audio'});
+      final settings = _defaultSettings.copyWith(flashWholeScreen: true);
+
+      final decision = decideFlashCommand(
+        FlashState.empty,
+        MessageReceived(_msg(channelId: 'rf', priority: 3)),
+        sel,
+        const [_ch],
+        settings,
+      );
+
+      expect(decision.state.flashCounts['rf'], 1);
+      expect(decision.pulse, isNull);
+      expect(decision.playAlert, isFalse);
+    });
+
+    test('audibleAlert plays alongside the pulse when both are enabled', () {
+      final sel = ChannelSelection({'rf'});
+      final settings = _defaultSettings.copyWith(
+        flashWholeScreen: true,
+        audibleAlert: true,
+      );
+
+      final decision = decideFlashCommand(
+        FlashState.empty,
+        MessageReceived(_msg(channelId: 'rf', priority: 3)),
+        sel,
+        const [_ch],
+        settings,
+      );
+
+      expect(decision.playAlert, isTrue);
+      expect(decision.pulse, isNotNull);
+    });
+  });
 }
