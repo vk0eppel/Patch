@@ -107,6 +107,26 @@ class AppStore extends ChangeNotifier {
     await Future.wait([refreshPeers(), refreshConfig(), refreshChannels()]);
   }
 
+  /// Re-read everything fetched after the engine reported this subscriber's
+  /// event stream lagged ([Resynced]) — dropped pushes may include
+  /// MessageReceived, which nothing else ever refetches. Loaded message
+  /// buffers are replaced from the engine's ring buffer (restamped in buffer
+  /// order); delivery entries are kept — the lag doesn't invalidate them.
+  Future<void> resync() async {
+    await Future.wait([refreshPeers(), refreshConfig(), refreshChannels()]);
+    for (final channelId in _messages.keys.toList()) {
+      try {
+        final fetched = await _bridge.getMessages(channelId);
+        _messages[channelId] = [
+          for (final m in fetched) m.withLocalSeq(_stampSeq()),
+        ];
+      } catch (e) {
+        debugPrint('AppStore.resync($channelId) failed: $e');
+      }
+    }
+    notifyListeners();
+  }
+
   /// Refetch the channel list and notify; throws are swallowed.
   Future<void> refreshChannels() async {
     try {
@@ -166,6 +186,9 @@ class AppStore extends ChangeNotifier {
         refreshConfig();
       case ChannelsChanged():
         refreshChannels();
+      // This subscriber's event stream lagged — refetch everything.
+      case Resynced():
+        resync();
       // Store the message + track delivery. The flash/unread *reaction* is a
       // screen-local concern (home's _handlePush), not the store's (#58).
       case MessageReceived(:final message):

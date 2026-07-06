@@ -306,6 +306,46 @@ void main() {
         reason: 'trimmed message must not leak its delivery entry');
   });
 
+  test('Resynced push refetches loaded message buffers, recovering a '
+      'message the event stream dropped', () async {
+    // The engine sends Desynced when this subscriber's event stream lagged —
+    // a dropped MessageReceived would otherwise never render, since buffers
+    // are push-fed and never refetched after their first load.
+    bridge.messagesToReturn['rf'] = [_msg('rf', 'a')];
+    await store.ensureMessages('rf');
+    expect(store.messages['rf']!.map((m) => m.messageId), ['a']);
+
+    // 'b' arrived engine-side but its push was dropped by the lag.
+    bridge.messagesToReturn['rf'] = [_msg('rf', 'a'), _msg('rf', 'b')];
+    pushes.add(const Resynced());
+    await pumpEventQueue();
+
+    expect(store.messages['rf']!.map((m) => m.messageId), ['a', 'b']);
+    final seqs = store.messages['rf']!.map((m) => m.localSeq).toList();
+    expect(seqs[0], lessThan(seqs[1]), reason: 'buffer order is preserved');
+  });
+
+  test('Resynced push refetches peers, config, and channels, and keeps '
+      'delivery entries', () async {
+    pushes.add(const DeliveryUpdated(
+      'm1',
+      MessageDeliveryStatus(delivered: 1, total: 2, failed: false),
+    ));
+    await pumpEventQueue();
+    bridge.peersToReturn = [_peer('a')];
+    bridge.configToReturn = _cfg(clientName: 'After');
+    bridge.channelsToReturn = [_chan('rf')];
+
+    pushes.add(const Resynced());
+    await pumpEventQueue();
+
+    expect(store.peers.single.peerId, 'a');
+    expect(store.config?.clientName, 'After');
+    expect(store.channels.single.id, 'rf');
+    expect(store.delivery.containsKey('m1'), isTrue,
+        reason: 'a resync must not discard in-flight delivery status');
+  });
+
   test('dropMessages clears a channel buffer and notifies', () async {
     bridge.messagesToReturn['rf'] = [_msg('rf', 'a')];
     await store.ensureMessages('rf');

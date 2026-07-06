@@ -296,6 +296,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case PeerExpired():
       case PeersChanged():
       case PermissionDenied():
+      // Resync is the AppStore's job — everything this screen reads
+      // (config, channels) comes back through the store's refetch.
+      case Resynced():
         break;
     }
   }

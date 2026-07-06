@@ -2683,6 +2683,9 @@ impl SseDecode for crate::api::PatchAppEvent {
                     context: var_context,
                 };
             }
+            11 => {
+                return crate::api::PatchAppEvent::Desynced;
+            }
             _ => {
                 unimplemented!("");
             }
@@ -3266,6 +3269,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::PatchAppEvent {
             crate::api::PatchAppEvent::PermissionDenied { context } => {
                 [10.into_dart(), context.into_into_dart().into_dart()].into_dart()
             }
+            crate::api::PatchAppEvent::Desynced => [11.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -3883,6 +3887,9 @@ impl SseEncode for crate::api::PatchAppEvent {
             crate::api::PatchAppEvent::PermissionDenied { context } => {
                 <i32>::sse_encode(10, serializer);
                 <String>::sse_encode(context, serializer);
+            }
+            crate::api::PatchAppEvent::Desynced => {
+                <i32>::sse_encode(11, serializer);
             }
             _ => {
                 unimplemented!("");

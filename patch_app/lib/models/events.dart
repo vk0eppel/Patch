@@ -100,6 +100,14 @@ class PeersChanged extends PatchEvent {
   const PeersChanged();
 }
 
+/// This client's event stream lagged and dropped engine pushes — everything
+/// fetched (peers, config, channels, loaded message buffers) may be stale and
+/// must be re-read. A dropped [MessageReceived] would otherwise never render:
+/// message buffers are push-fed and never refetched after their first load.
+class Resynced extends PatchEvent {
+  const Resynced();
+}
+
 /// The Channel list changed — refetch channels.
 class ChannelsChanged extends PatchEvent {
   const ChannelsChanged();

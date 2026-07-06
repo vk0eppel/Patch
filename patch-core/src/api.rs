@@ -871,22 +871,42 @@ pub fn delete_show_file(slug: String) -> Result<()> {
 pub async fn subscribe_events(sink: crate::frb_generated::StreamSink<PatchAppEvent>) -> Result<()> {
     let mut rx = engine().state.subscribe();
     tokio::spawn(async move {
-        loop {
-            match rx.recv().await {
-                Ok(ev) => {
-                    if sink.add(PatchAppEvent::from(ev)).is_err() {
-                        // Dart-side stream was closed.
-                        break;
-                    }
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::warn!("FRB event sink lagged by {} events", n);
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+        while let EventForward::Push(ev) = forward_decision(rx.recv().await) {
+            if sink.add(ev).is_err() {
+                break; // Dart-side stream was closed.
             }
         }
     });
     Ok(())
+}
+
+/// What the event-forwarding loop should do with one `recv()` outcome —
+/// extracted from [`subscribe_events`] so the lag-recovery rule is testable
+/// without an FRB sink.
+#[frb(ignore)]
+pub(crate) enum EventForward {
+    Push(PatchAppEvent),
+    Stop,
+}
+
+#[frb(ignore)]
+pub(crate) fn forward_decision(
+    res: std::result::Result<AppEvent, tokio::sync::broadcast::error::RecvError>,
+) -> EventForward {
+    use tokio::sync::broadcast::error::RecvError;
+    match res {
+        Ok(ev) => EventForward::Push(PatchAppEvent::from(ev)),
+        // This subscriber fell behind and `n` events were dropped for it —
+        // possibly including Message events, which the Dart store never
+        // refetches on its own. Tell it to resync rather than losing them
+        // silently. Subscriber-local by design: the lag is per-receiver, so
+        // it must not go out on the broadcast bus.
+        Err(RecvError::Lagged(n)) => {
+            tracing::warn!("FRB event sink lagged by {} events — sending Desynced", n);
+            EventForward::Push(PatchAppEvent::Desynced)
+        }
+        Err(RecvError::Closed) => EventForward::Stop,
+    }
 }
 
 /// Wire-format event delivered to the Flutter UI. Decoupled from the internal
@@ -934,6 +954,11 @@ pub enum PatchAppEvent {
     PermissionDenied {
         context: String,
     },
+    /// This subscriber's event stream lagged and dropped events — fetched
+    /// state (peers, channels, messages) may be stale and must be re-read.
+    /// Never converted from an [`AppEvent`]: it's synthesized per-subscriber
+    /// in [`subscribe_events`] when *that* receiver falls behind.
+    Desynced,
 }
 
 impl From<AppEvent> for PatchAppEvent {
@@ -993,6 +1018,17 @@ impl From<AppEvent> for PatchAppEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lagged_event_subscriber_is_told_to_resync_not_silently_skipped() {
+        use tokio::sync::broadcast::error::RecvError;
+        // The dropped events may include MessageReceived, which the Dart
+        // store never refetches on its own — the subscriber must be told.
+        assert!(matches!(
+            forward_decision(Err(RecvError::Lagged(3))),
+            EventForward::Push(PatchAppEvent::Desynced)
+        ));
+    }
 
     #[test]
     fn resolve_network_interface_blocked_when_multiple_candidates() {

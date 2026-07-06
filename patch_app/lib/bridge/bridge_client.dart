@@ -380,6 +380,8 @@ PatchEvent? patchEventFromRust(rust.PatchAppEvent event) => switch (event) {
       rust.PatchAppEvent_ChannelListUpdated() => const ChannelsChanged(),
       // Intentionally not surfaced — no UI consumer reads the per-Peer ack.
       rust.PatchAppEvent_MessageAcked() => null,
+      // This subscriber lagged and lost events — the store must refetch.
+      rust.PatchAppEvent_Desynced() => const Resynced(),
     };
 
 // Inverse of the fromRust factories on the Dart model classes — rebuilds the

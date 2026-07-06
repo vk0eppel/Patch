@@ -15,9 +15,9 @@ import 'state/show_file.dart';
 import 'transport.dart';
 part 'api.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `csv_escape`, `dispatch_message`, `dispatch_osc`, `init_tracing`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `EngineHandle`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
+// These functions are ignored because they are not marked as `pub`: `forward_decision`, `init_tracing`, `resolve_network_interface`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `EngineHandle`, `EventForward`, `InterfaceResolution`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `engine`
 
 /// Initialize the engine. Idempotent — subsequent calls are no-ops.
@@ -518,6 +518,12 @@ sealed class PatchAppEvent with _$PatchAppEvent {
   /// The OS denied network access (iOS/macOS Local Network permission).
   const factory PatchAppEvent.permissionDenied({required String context}) =
       PatchAppEvent_PermissionDenied;
+
+  /// This subscriber's event stream lagged and dropped events — fetched
+  /// state (peers, channels, messages) may be stale and must be re-read.
+  /// Never converted from an [`AppEvent`]: it's synthesized per-subscriber
+  /// in [`subscribe_events`] when *that* receiver falls behind.
+  const factory PatchAppEvent.desynced() = PatchAppEvent_Desynced;
 }
 
 /// A [`crate::state::peer::Peer`] plus its display [`PeerStatus`] (Online /

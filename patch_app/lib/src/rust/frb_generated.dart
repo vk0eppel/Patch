@@ -2439,6 +2439,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return PatchAppEvent_PermissionDenied(
           context: dco_decode_String(raw[1]),
         );
+      case 11:
+        return PatchAppEvent_Desynced();
       default:
         throw Exception("unreachable");
     }
@@ -3100,6 +3102,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 10:
         var var_context = sse_decode_String(deserializer);
         return PatchAppEvent_PermissionDenied(context: var_context);
+      case 11:
+        return PatchAppEvent_Desynced();
       default:
         throw UnimplementedError('');
     }
@@ -3718,6 +3722,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case PatchAppEvent_PermissionDenied(context: final context):
         sse_encode_i_32(10, serializer);
         sse_encode_String(context, serializer);
+      case PatchAppEvent_Desynced():
+        sse_encode_i_32(11, serializer);
     }
   }
 

@@ -74,6 +74,11 @@ void main() {
       expect(f.senderName, 'FOH');
     });
 
+    test('Desynced → Resynced (lagged subscriber must refetch)', () {
+      final ev = patchEventFromRust(const rust.PatchAppEvent.desynced());
+      expect(ev, isA<Resynced>());
+    });
+
     test('PeerExpired → PeerExpired carrying the peer id', () {
       final ev =
           patchEventFromRust(rust.PatchAppEvent.peerExpired(peerId: 'peer-9'));
