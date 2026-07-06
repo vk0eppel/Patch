@@ -6,6 +6,11 @@
 //! derives its own key from the sender id ([`DmThreadKey::for_peer`]). Because
 //! `:` is outside the channel-id slug charset, a DM key can never collide with
 //! (or be smuggled in as) a Channel id — `valid_channel_id` rejects it.
+//!
+//! CONTEXT.md's "DM thread key contract" documents this as a named
+//! cross-language invariant — `patch_app/lib/models/dm_thread.dart`'s
+//! `DmThread` implements the identical `dm:{peer_id}` shape independently on
+//! the Dart side (no compiler check spans the FFI boundary).
 
 use uuid::Uuid;
 

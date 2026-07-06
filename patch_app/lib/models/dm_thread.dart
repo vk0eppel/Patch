@@ -4,7 +4,12 @@
 /// thread by the *other* Operator's Peer, and the `dm:` prefix never crosses
 /// the wire (the engine derives it locally on receive). DM keys are never
 /// valid Channel ids and are excluded from ALL and channel selection; this
-/// type is the one place that knows the key shape.
+/// type is the one place *on the Dart side* that knows the key shape.
+///
+/// CONTEXT.md's "DM thread key contract" documents this as a named
+/// cross-language invariant — `patch-core/src/dm.rs`'s `DmThreadKey`
+/// implements the identical `dm:{peer_id}` shape independently in Rust (no
+/// compiler check spans the FFI boundary).
 final class DmThread {
   final String peerId;
   const DmThread(this.peerId);

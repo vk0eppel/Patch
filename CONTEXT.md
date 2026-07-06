@@ -52,6 +52,8 @@ _Avoid_: Show, gig, event, job
 A 1:1 message thread between the local Operator and a specific Peer — outside of any Channel. Keyed per peer; persists while the app is open.
 _Avoid_: Private message, private line, whisper, DM thread
 
+**DM thread key contract** (cross-language invariant): a Direct Message thread is buffered locally under `dm:{peer_id}` — never sent over the wire, each side derives it locally from the peer id it already knows. Implemented independently on both sides of the FFI boundary since the convention can't be shared code: `DmThreadKey` in `patch-core/src/dm.rs` (Rust) and `DmThread` in `patch_app/lib/models/dm_thread.dart` (Dart). A change to the `dm:` prefix or key shape must update both — there is no compiler check across the boundary, only this documented contract and each side's own test that a DM key is never a valid Channel id.
+
 **ALL**:
 A one-shot send to all channels simultaneously — not a persistent selection. Snaps back to the previous channel state after sending.
 _Avoid_: All-call, broadcast, global send
