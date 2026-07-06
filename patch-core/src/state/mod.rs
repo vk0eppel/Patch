@@ -5,18 +5,19 @@ pub mod channel;
 pub mod config;
 pub(crate) mod export;
 mod message;
+mod network_policy;
 pub mod peer;
 pub mod show_file;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::time::Instant;
-use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
 
 use channel::ChannelRegistry;
 use config::ConfigStore;
 use message::MessageBuffer;
+use network_policy::{MessageDedup, NetworkAdmission};
 use peer::PeerRegistry;
 
 use crate::osc::types::{ChannelFlash, PatchMessage, PeerPresence};
@@ -95,17 +96,9 @@ struct Inner {
     /// Event bus — clone a receiver to subscribe
     pub events: broadcast::Sender<AppEvent>,
     /// Global receive-side dedup cache — message IDs seen in the last 10 s.
-    /// Prevents duplicate processing when a message arrives on multiple paths.
-    seen_messages: Mutex<HashMap<Uuid, Instant>>,
-    /// The Pinned Network's IPv4 (address, netmask), cached so the per-packet
-    /// admission check (ADR-0010) never enumerates interfaces. None when no
-    /// pin is configured — or when the pinned interface has no usable IPv4
-    /// (then only Static Peers are admitted: fail-closed). Recomputed on
-    /// construction and on `set_network_interface`. std Mutex: set from the
-    /// sync constructor, read for nanoseconds per packet.
-    pinned_subnet: std::sync::Mutex<Option<(std::net::Ipv4Addr, std::net::Ipv4Addr)>>,
-    /// Rate limit for the "dropped off-pin source" log — last warn per source.
-    dropped_source_log: Mutex<HashMap<std::net::IpAddr, Instant>>,
+    seen_messages: MessageDedup,
+    /// Pinned Network admission (ADR-0010) and its rate-limited drop log.
+    network_admission: NetworkAdmission,
 }
 
 /// True when `id` is our own client_id — every event/discovery loop that
@@ -136,9 +129,8 @@ impl AppState {
             selected: RwLock::new(Vec::new()),
             dm_target: RwLock::new(None),
             events: tx,
-            seen_messages: Mutex::new(HashMap::new()),
-            pinned_subnet: std::sync::Mutex::new(pinned_subnet),
-            dropped_source_log: Mutex::new(HashMap::new()),
+            seen_messages: MessageDedup::new(),
+            network_admission: NetworkAdmission::new(pinned_subnet),
         }))
     }
 
@@ -212,9 +204,11 @@ impl AppState {
             .await;
         // Recompute the cached Pinned Network for the per-packet admission
         // check (ADR-0010) — the one place besides construction it changes.
-        *self.0.pinned_subnet.lock().unwrap() = iface
-            .as_deref()
-            .and_then(crate::transport::pinned_ipv4_subnet);
+        self.0.network_admission.set_pinned_subnet(
+            iface
+                .as_deref()
+                .and_then(crate::transport::pinned_ipv4_subnet),
+        );
         // Only clear dynamic peers when switching TO a pinned interface. The
         // per-address prune window handles dead paths without a full clear.
         if iface.is_some() {
@@ -522,12 +516,7 @@ impl AppState {
     /// without skipping the best-effort send itself (they might still be
     /// there despite a missed heartbeat).
     pub async fn offline_addresses(&self, heartbeat_secs: u64) -> HashSet<std::net::SocketAddr> {
-        self.get_peers()
-            .await
-            .iter()
-            .filter(|p| p.looks_offline(heartbeat_secs))
-            .flat_map(|p| p.all_addrs())
-            .collect()
+        network_policy::offline_addresses(&self.get_peers().await, heartbeat_secs)
     }
 
     /// Resolved addresses of every known peer except ourselves, deduped by
@@ -536,14 +525,7 @@ impl AppState {
     /// `/patch/say` relay (queued via `send_tx`) — same target list, two
     /// different ways of actually sending to it.
     pub async fn reachable_peer_addrs(&self, client_id: Uuid) -> Vec<std::net::SocketAddr> {
-        let mut seen = HashSet::new();
-        self.get_peers()
-            .await
-            .into_iter()
-            .filter(|p| p.peer_id != client_id)
-            .flat_map(|p| p.all_addrs())
-            .filter(|addr| seen.insert(*addr))
-            .collect()
+        network_policy::reachable_peer_addrs(&self.get_peers().await, client_id)
     }
 
     /// Like `reachable_peer_addrs` but grouped by peer_id — used by `track_critical`
@@ -552,12 +534,7 @@ impl AppState {
         &self,
         client_id: Uuid,
     ) -> Vec<(Uuid, Vec<std::net::SocketAddr>)> {
-        self.get_peers()
-            .await
-            .into_iter()
-            .filter(|p| p.peer_id != client_id && p.has_address())
-            .map(|p| (p.peer_id, p.all_addrs()))
-            .collect()
+        network_policy::reachable_peers_with_addrs(&self.get_peers().await, client_id)
     }
 
     // ── Per-address prune ────────────────────────────────────────────────────
@@ -573,49 +550,14 @@ impl AppState {
 
     // ── Source admission (ADR-0010, Pinned Network) ──────────────────────────
 
-    /// Whether an inbound packet from `source` may be processed at all.
-    /// True when no pin is configured, when the source is on the Pinned
-    /// Network, or when it matches a configured Static Peer address (the
-    /// deliberate exemption for routed networks). Everything else is dropped
-    /// whole at the protocol boundary — a denial logs the ignored source,
-    /// rate-limited to one line per source per 5 minutes.
+    /// Whether an inbound packet from `source` may be processed at all. See
+    /// `network_policy::NetworkAdmission::admits_source`.
     pub async fn admits_source(&self, source: std::net::IpAddr) -> bool {
         let config = self.config().await;
-        if config.network_interface.is_none() {
-            return config
-                .static_peers
-                .iter()
-                .any(|p| p.address.parse::<std::net::IpAddr>() == Ok(source));
-        }
-        let on_pinned_network = match (*self.0.pinned_subnet.lock().unwrap(), source) {
-            (Some((iface_ip, mask)), std::net::IpAddr::V4(v4)) => {
-                crate::transport::in_pinned_subnet(v4, iface_ip, mask)
-            }
-            // Pinned but no usable IPv4 on the pinned interface (or an IPv6
-            // source): fail closed — only Static Peers get through.
-            _ => false,
-        };
-        if on_pinned_network
-            || config
-                .static_peers
-                .iter()
-                .any(|p| p.address.parse::<std::net::IpAddr>() == Ok(source))
-        {
-            return true;
-        }
-        const LOG_EVERY: std::time::Duration = std::time::Duration::from_secs(300);
-        let mut log = self.0.dropped_source_log.lock().await;
-        let now = Instant::now();
-        log.retain(|_, t| now.duration_since(*t) < LOG_EVERY);
-        if let std::collections::hash_map::Entry::Vacant(e) = log.entry(source) {
-            e.insert(now);
-            tracing::warn!(
-                "packet from {} ignored — outside the pinned network (ADR-0010); \
-                 add a static peer to reach hosts beyond it",
-                source
-            );
-        }
-        false
+        self.0
+            .network_admission
+            .admits_source(source, &config)
+            .await
     }
 
     /// Test override for the cached Pinned Network — CI has no real interface
@@ -626,7 +568,7 @@ impl AppState {
         &self,
         subnet: Option<(std::net::Ipv4Addr, std::net::Ipv4Addr)>,
     ) {
-        *self.0.pinned_subnet.lock().unwrap() = subnet;
+        self.0.network_admission.set_pinned_subnet(subnet);
     }
 
     // ── Receive dedup ────────────────────────────────────────────────────────
@@ -635,16 +577,7 @@ impl AppState {
     /// (a duplicate from multi-path delivery). Inserts it on first call and
     /// prunes expired entries.
     pub async fn is_message_duplicate(&self, message_id: Uuid) -> bool {
-        use std::time::Duration;
-        const TTL: Duration = Duration::from_secs(10);
-        let now = Instant::now();
-        let mut seen = self.0.seen_messages.lock().await;
-        seen.retain(|_, t| now.duration_since(*t) < TTL);
-        if seen.contains_key(&message_id) {
-            return true;
-        }
-        seen.insert(message_id, now);
-        false
+        self.0.seen_messages.is_duplicate(message_id).await
     }
 
     // ── Channels & macros ────────────────────────────────────────────────────
