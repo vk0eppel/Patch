@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../bridge/bridge_client.dart';
+import '../src/rust/api.dart' as rust;
 import '../models/channel.dart';
 import '../models/config.dart';
 import '../models/dm_thread.dart';
@@ -198,7 +199,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   void _fireMacro(ChannelMacro cm) {
     runGuarded(
         context,
-        () => widget.bridge.fireMacro(
+        () => rust.fireMacro(
               channelId: cm.channelId.isEmpty ? null : cm.channelId,
               label: cm.macro.label,
             ));
@@ -358,7 +359,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
     final bound = _aggregatedMacros.any((cs) => cs.macro.keyBinding == label) ||
         _globalMacros.any((gm) => gm.keyBinding == label);
     if (!bound) return false;
-    runGuarded(context, () => widget.bridge.fireKeyBinding(label));
+    runGuarded(context, () => rust.fireKeyBinding(label: label));
     if (_selection.isDmMode) _warnIfDmPeerOffline();
     return true; // consumed
   }
@@ -376,8 +377,8 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
         currentName: currentName,
         // setClientName is push-driven (ClientNameChanged → store); setRole has
         // no push, so refetch config via the store after it (#56).
-        onSaveName: (name) =>
-            runGuarded(context, () => widget.bridge.setClientName(name)),
+        onSaveName: (name) => runGuarded(
+            context, () => rust.setClientName(name: name)),
         onSaveRole: (role) {
           final store = AppStoreScope.read(context);
           runGuarded(context, () async {
@@ -866,16 +867,16 @@ class _ChannelViewState extends State<_ChannelView> {
     switch (_target) {
       case DmTarget(:final peerId):
         runGuarded(context,
-            () => widget.bridge.sendDirectMessage(peerId: peerId, payload: text));
+            () => rust.sendDirectMessage(peerId: peerId, payload: text, priority: 1));
         widget.onDmSent();
       case AllTarget():
         runGuarded(context,
-            () => widget.bridge.sendMessage(channelId: kAllChannelId, payload: text));
+            () => rust.sendMessage(channelId: kAllChannelId, payload: text, priority: 1));
         widget.onOneShotSent?.call();
       case ChannelsTarget(:final channels):
         for (final ch in channels) {
           runGuarded(context,
-              () => widget.bridge.sendMessage(channelId: ch.id, payload: text));
+              () => rust.sendMessage(channelId: ch.id, payload: text, priority: 1));
         }
     }
   }
@@ -883,21 +884,21 @@ class _ChannelViewState extends State<_ChannelView> {
   void _sendFlash() {
     switch (_target) {
       case DmTarget(:final peerId):
-        runGuarded(context, () => widget.bridge.sendDmFlash(peerId));
+        runGuarded(context, () => rust.sendDmFlash(peerId: peerId));
         widget.onDmSent();
       case AllTarget():
-        runGuarded(context, () => widget.bridge.sendFlash(kAllChannelId));
+        runGuarded(context, () => rust.sendFlash(channelId: kAllChannelId));
         widget.onOneShotSent?.call();
       case ChannelsTarget(:final channels):
         for (final ch in channels) {
-          runGuarded(context, () => widget.bridge.sendFlash(ch.id));
+          runGuarded(context, () => rust.sendFlash(channelId: ch.id));
         }
     }
   }
 
   void _clear(String? channelId) {
     runGuarded(context, () async {
-      await widget.bridge.clearMessages(channelId: channelId);
+      await rust.clearMessages(channelId: channelId);
       widget.onMessagesCleared(channelId);
     });
   }
@@ -912,7 +913,7 @@ class _ChannelViewState extends State<_ChannelView> {
     );
     if (path == null || !mounted) return;
     runGuarded(context,
-        () => widget.bridge.exportMessages(channelId: target.exportKey, path: path));
+        () => rust.exportMessages(channelId: target.exportKey, path: path));
   }
 
   void _confirmClear(BuildContext context) {

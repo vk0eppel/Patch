@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../bridge/bridge_client.dart';
+import '../../src/rust/api.dart' as rust;
 import '../../models/channel.dart';
 import '../../presenters/settings/macros_section_presenter.dart';
 import '../../presenters/settings/save_result.dart';
@@ -107,7 +108,7 @@ class ChannelsMacrosSection extends StatelessWidget {
             SettingsResetButton(
               section: 'Channels & Macros',
               onReset: () =>
-                  runGuarded(context, () => bridge.resetChannels()),
+                  runGuarded(context, () => rust.resetChannels()),
             ),
           ],
         ),
@@ -208,9 +209,10 @@ class _ChannelMacroEditor extends StatelessWidget {
         if (context.mounted) _showSaveError(context, result);
       }),
       onDelete: (m) => runGuarded(
-          context, () => bridge.deleteMacro(channelId: channel.id, label: m.label)),
+          context, () => rust.deleteMacro(channelId: channel.id, label: m.label)),
       onReorder: (labels) =>
-          runGuarded(context, () => bridge.reorderMacros(channel.id, labels)),
+          runGuarded(context,
+              () => rust.reorderMacros(channelId: channel.id, orderedLabels: labels)),
       trailingActions: [
         IconButton(
           icon: const Icon(Icons.edit_outlined, size: 16, color: PatchTheme.textMuted),
@@ -257,8 +259,8 @@ class _ChannelMacroEditor extends StatelessWidget {
               ),
               value: channel.flashOnMessage,
               activeThumbColor: PatchTheme.accent,
-              onChanged: (val) => runGuarded(
-                  context, () => bridge.setChannelFlash(channel.id, flashOnMessage: val)),
+              onChanged: (val) => runGuarded(context,
+                  () => rust.setChannelFlash(channelId: channel.id, flashOnMessage: val)),
             ),
             SwitchListTile(
               dense: true,
@@ -272,8 +274,8 @@ class _ChannelMacroEditor extends StatelessWidget {
               ),
               value: channel.flashOnCritical,
               activeThumbColor: PatchTheme.accent,
-              onChanged: (val) => runGuarded(
-                  context, () => bridge.setChannelFlash(channel.id, flashOnCritical: val)),
+              onChanged: (val) => runGuarded(context,
+                  () => rust.setChannelFlash(channelId: channel.id, flashOnCritical: val)),
             ),
             const SizedBox(height: 4),
             Row(
@@ -292,8 +294,8 @@ class _ChannelMacroEditor extends StatelessWidget {
                   value: channel.flashCount,
                   onChanged: (val) => runGuarded(
                       context,
-                      () => bridge.setChannelFlash(
-                            channel.id,
+                      () => rust.setChannelFlash(
+                            channelId: channel.id,
                             // 0 signals "clear override" to the Rust side
                             flashCount: val ?? 0,
                           )),
@@ -755,12 +757,12 @@ class _GlobalMacrosEditor extends StatelessWidget {
       }),
       onDelete: (m) => runGuarded(context, () async {
         final store = AppStoreScope.read(context);
-        await bridge.deleteGlobalMacro(m.label);
+        await rust.deleteGlobalMacro(label: m.label);
         await store.refreshConfig();
       }),
       onReorder: (labels) => runGuarded(context, () async {
         final store = AppStoreScope.read(context);
-        await bridge.reorderGlobalMacros(labels);
+        await rust.reorderGlobalMacros(orderedLabels: labels);
         await store.refreshConfig();
       }),
     );
@@ -1087,7 +1089,8 @@ void _showChannelDialog(
                   setDialogState(() => error = 'A channel with ID "$id" already exists.');
                   return;
                 }
-                runGuarded(context, () => bridge.upsertChannel(id, name, _colorToHex(color)));
+                runGuarded(context,
+                    () => rust.upsertChannel(id: id, displayName: name, color: _colorToHex(color)));
                 Navigator.pop(ctx);
               },
               child: const Text('Save'),
