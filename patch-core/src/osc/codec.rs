@@ -334,6 +334,46 @@ fn decode_message(msg: OscMessage) -> Result<PatchEvent> {
 /// operational messages are short, while a UDP datagram can carry ~64 KB.
 const MAX_PAYLOAD_LEN: usize = 4096;
 
+/// Maximum accepted length for an inbound display name (sender/peer) or role.
+/// These land in the peer registry, ride every `PeerUpdated` publish, and
+/// render in the peers panel — a ~64 KB datagram must not plant a 60 KB name.
+const MAX_NAME_LEN: usize = 256;
+
+/// Maximum accepted length for a presence packet's channels JSON. A real
+/// subscription list is a few hundred bytes; this bounds a hostile one the
+/// same way `MAX_CHANNELS_JSON` bounds an announce.
+const MAX_PRESENCE_CHANNELS_JSON: usize = 8 * 1024;
+
+/// Parse an OSC string arg that is a display name or role — same as
+/// [`parse_string`] but bounded by [`MAX_NAME_LEN`].
+fn parse_name(t: &OscType) -> Result<String> {
+    let s = parse_string(t)?;
+    if s.len() > MAX_NAME_LEN {
+        bail!(
+            "Rejected: name/role {} bytes exceeds max {}",
+            s.len(),
+            MAX_NAME_LEN
+        );
+    }
+    Ok(s)
+}
+
+/// Extract the channel id from a channel-scoped address of the **exact**
+/// shape `/patch/channel/{id}/{leaf}`. Extra path segments are rejected
+/// rather than silently aliasing onto a shorter channel id
+/// (`/patch/channel/rf/x/message` must not post to `rf`).
+fn channel_id_from_addr(addr: &str) -> Result<String> {
+    let parts: Vec<&str> = addr.split('/').collect();
+    if parts.len() != 5 {
+        bail!("Rejected: malformed channel address {:?}", addr);
+    }
+    let channel_id = parts[3].to_string();
+    if !valid_channel_id(&channel_id) {
+        bail!("Rejected: invalid channel id {:?}", channel_id);
+    }
+    Ok(channel_id)
+}
+
 /// Channel ids must match this slug rule everywhere they can reach an OSC
 /// address: inbound packets (`decode_*`), the UI (`api::upsert_channel`), and
 /// loaded/imported show files (`AppState::apply_show_file`). Keeps a remote sender
@@ -349,11 +389,7 @@ pub(crate) fn valid_channel_id(id: &str) -> bool {
 
 fn decode_patch_message(msg: OscMessage) -> Result<PatchEvent> {
     // Channel id lives in the address: /patch/channel/{id}/message
-    let parts: Vec<&str> = msg.addr.split('/').collect();
-    let channel_id = parts.get(3).copied().unwrap_or("unknown").to_string();
-    if !valid_channel_id(&channel_id) {
-        bail!("Rejected message: invalid channel id {:?}", channel_id);
-    }
+    let channel_id = channel_id_from_addr(&msg.addr)?;
     let args = msg.args;
     if args.len() < 6 {
         bail!(
@@ -362,7 +398,7 @@ fn decode_patch_message(msg: OscMessage) -> Result<PatchEvent> {
         );
     }
     let sender_id = parse_uuid(&args[0])?;
-    let sender_name = parse_string(&args[1])?;
+    let sender_name = parse_name(&args[1])?;
     let message_id = parse_uuid(&args[2])?;
     let ts_ms = parse_long(&args[3])?;
     let priority = Priority::try_from(parse_int(&args[4])?)?;
@@ -397,11 +433,7 @@ fn decode_patch_message(msg: OscMessage) -> Result<PatchEvent> {
 /// QLab can send any). Lenient on priority: missing or out-of-range → Info, so a
 /// fat-fingered cue still posts the message rather than being dropped.
 fn decode_say(msg: OscMessage) -> Result<PatchEvent> {
-    let parts: Vec<&str> = msg.addr.split('/').collect();
-    let channel_id = parts.get(3).copied().unwrap_or("unknown").to_string();
-    if !valid_channel_id(&channel_id) {
-        bail!("Rejected say: invalid channel id {:?}", channel_id);
-    }
+    let channel_id = channel_id_from_addr(&msg.addr)?;
     let args = msg.args;
     if args.is_empty() {
         bail!("Expected at least 1 arg (payload) for .../say");
@@ -434,7 +466,7 @@ fn decode_dm(msg: OscMessage) -> Result<PatchEvent> {
         bail!("Expected 7 args for /patch/dm, got {}", args.len());
     }
     let sender_id = parse_uuid(&args[0])?;
-    let sender_name = parse_string(&args[1])?;
+    let sender_name = parse_name(&args[1])?;
     let target_id = parse_uuid(&args[2])?;
     let message_id = parse_uuid(&args[3])?;
     let ts_ms = parse_long(&args[4])?;
@@ -476,7 +508,7 @@ fn decode_dm_flash(msg: OscMessage) -> Result<PatchEvent> {
     }
     Ok(PatchEvent::DirectFlash {
         sender_id: parse_uuid(&args[0])?,
-        sender_name: parse_string(&args[1])?,
+        sender_name: parse_name(&args[1])?,
         target_id: parse_uuid(&args[2])?,
     })
 }
@@ -498,13 +530,22 @@ fn decode_presence(msg: OscMessage) -> Result<PatchEvent> {
         bail!("Expected 4 args for /patch/presence, got {}", args.len());
     }
     let peer_id = parse_uuid(&args[0])?;
-    let peer_name = parse_string(&args[1])?;
-    let channels: Vec<String> = serde_json::from_str(&parse_string(&args[2])?)?;
+    let peer_name = parse_name(&args[1])?;
+    let channels_json = parse_string(&args[2])?;
+    if channels_json.len() > MAX_PRESENCE_CHANNELS_JSON {
+        bail!(
+            "presence channels payload {} bytes exceeds max {}",
+            channels_json.len(),
+            MAX_PRESENCE_CHANNELS_JSON
+        );
+    }
+    let channels: Vec<String> = serde_json::from_str(&channels_json)?;
     let ts_ms = parse_long(&args[3])?;
     // arg 4 (optional): role. Absent from older 4-arg peers → None; an empty
-    // string (role explicitly cleared) also normalises to None.
+    // string (role explicitly cleared) also normalises to None. Oversized
+    // roles are dropped to None rather than rejecting the whole heartbeat.
     let role = if args.len() >= 5 {
-        match parse_string(&args[4]) {
+        match parse_name(&args[4]) {
             Ok(s) if !s.is_empty() => Some(s),
             _ => None,
         }
@@ -554,7 +595,7 @@ fn decode_channels_announce(msg: OscMessage) -> Result<PatchEvent> {
         );
     }
     let peer_id = parse_uuid(&args[0])?;
-    let peer_name = parse_string(&args[1])?;
+    let peer_name = parse_name(&args[1])?;
     let channels_json = parse_string(&args[2])?;
     if channels_json.len() > MAX_CHANNELS_JSON {
         bail!(
@@ -592,7 +633,7 @@ fn decode_macros_announce(msg: OscMessage) -> Result<PatchEvent> {
         );
     }
     let peer_id = parse_uuid(&args[0])?;
-    let peer_name = parse_string(&args[1])?;
+    let peer_name = parse_name(&args[1])?;
     let macros_json = parse_string(&args[2])?;
     if macros_json.len() > MAX_MACROS_JSON {
         bail!(
@@ -610,11 +651,7 @@ fn decode_macros_announce(msg: OscMessage) -> Result<PatchEvent> {
 
 fn decode_flash(msg: OscMessage) -> Result<PatchEvent> {
     // addr is /patch/channel/{id}/flash
-    let parts: Vec<&str> = msg.addr.split('/').collect();
-    let channel_id = parts.get(3).copied().unwrap_or("unknown").to_string();
-    if !valid_channel_id(&channel_id) {
-        bail!("Rejected flash: invalid channel id {:?}", channel_id);
-    }
+    let channel_id = channel_id_from_addr(&msg.addr)?;
     let args = msg.args;
     if args.len() < 2 {
         bail!("Expected 2 args for .../flash, got {}", args.len());
@@ -1177,6 +1214,87 @@ mod tests {
         // Exactly at the limit is accepted.
         let ok = "x".repeat(MAX_PAYLOAD_LEN);
         assert!(decode_message(message_with("/patch/channel/rf/message", &ok)).is_ok());
+    }
+
+    #[test]
+    fn rejects_extra_address_segments_rather_than_aliasing() {
+        // `/patch/channel/rf/x/message` must not post to channel "rf".
+        assert!(decode_message(message_with("/patch/channel/rf/x/message", "hi")).is_err());
+        assert!(decode_message(OscMessage {
+            addr: "/patch/channel/rf/x/say".into(),
+            args: vec![OscType::String("hi".into())],
+        })
+        .is_err());
+        assert!(decode_message(OscMessage {
+            addr: "/patch/channel/rf/x/flash".into(),
+            args: vec![
+                OscType::String(Uuid::new_v4().to_string()),
+                OscType::String("LD".into()),
+            ],
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn rejects_oversized_sender_name() {
+        let big = "x".repeat(MAX_NAME_LEN + 1);
+        let msg = OscMessage {
+            addr: "/patch/channel/rf/message".to_string(),
+            args: vec![
+                OscType::String(Uuid::new_v4().to_string()),
+                OscType::String(big),
+                OscType::String(Uuid::new_v4().to_string()),
+                OscType::Long(0),
+                OscType::Int(1),
+                OscType::String("hi".into()),
+            ],
+        };
+        assert!(decode_message(msg).is_err());
+    }
+
+    #[test]
+    fn presence_rejects_oversized_name_and_channels_but_tolerates_big_role() {
+        let peer_id = Uuid::new_v4().to_string();
+        // Oversized peer name → rejected.
+        assert!(decode_message(OscMessage {
+            addr: addresses::PRESENCE.to_string(),
+            args: vec![
+                OscType::String(peer_id.clone()),
+                OscType::String("x".repeat(MAX_NAME_LEN + 1)),
+                OscType::String("[]".into()),
+                OscType::Long(0),
+            ],
+        })
+        .is_err());
+        // Oversized channels JSON → rejected.
+        let big_channels = format!("[{}]", r#""rf","#.repeat(2048).trim_end_matches(','));
+        assert!(big_channels.len() > MAX_PRESENCE_CHANNELS_JSON);
+        assert!(decode_message(OscMessage {
+            addr: addresses::PRESENCE.to_string(),
+            args: vec![
+                OscType::String(peer_id.clone()),
+                OscType::String("MON".into()),
+                OscType::String(big_channels),
+                OscType::Long(0),
+            ],
+        })
+        .is_err());
+        // Oversized role (optional garnish) → normalised to None, heartbeat kept.
+        match decode_message(OscMessage {
+            addr: addresses::PRESENCE.to_string(),
+            args: vec![
+                OscType::String(peer_id),
+                OscType::String("MON".into()),
+                OscType::String("[]".into()),
+                OscType::Long(0),
+                OscType::String("x".repeat(MAX_NAME_LEN + 1)),
+            ],
+        })
+        .unwrap()
+        {
+            PatchEvent::Presence(p) => assert_eq!(p.role, None),
+            other => panic!("expected Presence, got {other:?}"),
+        }
     }
 
     #[test]

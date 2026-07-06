@@ -163,6 +163,13 @@ async fn handle_direct_message(
     if !is_self(target_id, client_id) {
         return Vec::new();
     }
+    // Our own DM echoed back (e.g. a static peer misconfigured to our own
+    // address) — registering it would put us in our own peers panel and
+    // create a dm:{self} thread. Same is_self rule as every
+    // sender-registering arm (#131, ERRORS.md).
+    if is_self(msg.sender_id, client_id) {
+        return Vec::new();
+    }
     // Drop duplicates from multi-path delivery.
     if state.is_message_duplicate(msg.message_id).await {
         return Vec::new();
@@ -184,6 +191,11 @@ async fn handle_direct_flash(
 ) -> Vec<Outgoing> {
     // Only accept pings addressed to us (unicast — defensive check).
     if !is_self(target_id, client_id) {
+        return Vec::new();
+    }
+    // Our own ping echoed back — same is_self rule as every
+    // sender-registering arm (#131, ERRORS.md).
+    if is_self(sender_id, client_id) {
         return Vec::new();
     }
     // Record the sighting so the DM thread + peers panel show them.
@@ -915,6 +927,67 @@ mod tests {
         assert!(state.get_peers().await.is_empty()); // no self-sighting
         assert!(state.get_messages("rf", 10).await.is_empty()); // no flash log
                                                                 // No ChannelFlash published — a sentinel is the first event observed.
+        state.publish(AppEvent::ChannelListUpdated).await;
+        assert!(matches!(
+            events.recv().await.unwrap(),
+            AppEvent::ChannelListUpdated
+        ));
+    }
+
+    #[tokio::test]
+    async fn dm_from_self_is_ignored_entirely() {
+        // Our own DM echoed back (static peer misconfigured to our own
+        // address) must not register a self-peer, create a dm:{self} thread,
+        // or store the message (#131 invariant: every sender-registering arm
+        // checks is_self).
+        let client_id = Uuid::new_v4();
+        let state = test_state_with_id(client_id);
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+        let self_key = crate::dm::DmThreadKey::for_peer(client_id).local_key();
+        let msg = PatchMessage::new(client_id, "us", self_key.clone(), Priority::Info, "echo");
+
+        let out = handle(
+            PatchEvent::DirectMessage {
+                msg,
+                target_id: client_id,
+            },
+            addr(1),
+            &state,
+            client_id,
+            &reliability,
+        )
+        .await;
+
+        assert!(out.is_empty());
+        assert!(state.get_peers().await.is_empty()); // no self-sighting
+        assert!(state.get_messages(&self_key, 10).await.is_empty()); // no self-thread
+    }
+
+    #[tokio::test]
+    async fn dm_flash_from_self_is_ignored_entirely() {
+        // Same #131 invariant for the DM ping arm: no self-sighting, no
+        // ChannelFlash on our own dm:{self} thread.
+        let client_id = Uuid::new_v4();
+        let state = test_state_with_id(client_id);
+        let mut events = state.subscribe();
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+
+        let out = handle(
+            PatchEvent::DirectFlash {
+                sender_id: client_id,
+                sender_name: "us".into(),
+                target_id: client_id,
+            },
+            addr(1),
+            &state,
+            client_id,
+            &reliability,
+        )
+        .await;
+
+        assert!(out.is_empty());
+        assert!(state.get_peers().await.is_empty()); // no self-sighting
+                                                     // No ChannelFlash published — a sentinel is the first event observed.
         state.publish(AppEvent::ChannelListUpdated).await;
         assert!(matches!(
             events.recv().await.unwrap(),
