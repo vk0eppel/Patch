@@ -66,6 +66,25 @@ class MacroOsc {
       );
 }
 
+/// [MacroOsc]'s fields flattened to the bridge's 5 flat named OSC
+/// parameters — the one place that mapping is decided, shared by every
+/// macro-save call site.
+typedef FlatMacroOsc = ({
+  String? address,
+  int? port,
+  String? path,
+  String? arg,
+  MacroOscArgType argType,
+});
+
+FlatMacroOsc flattenMacroOsc(MacroOsc? osc) => (
+      address: osc?.address,
+      port: osc?.port,
+      path: osc?.path,
+      arg: osc?.arg,
+      argType: osc?.argType ?? MacroOscArgType.string,
+    );
+
 class MacroMessage {
   final String label;
   final String payload;

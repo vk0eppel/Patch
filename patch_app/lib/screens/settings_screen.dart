@@ -90,22 +90,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
       midiNote,
       midiCc,
       osc,
-    }) =>
-        widget.bridge.upsertMacro(
-          channelId: channelId,
-          originalLabel: originalLabel,
-          label: label,
-          payload: payload,
-          keyBinding: keyBinding,
-          priority: priority,
-          midiNote: midiNote,
-          midiCc: midiCc,
-          oscAddress: osc?.address,
-          oscPort: osc?.port,
-          oscPath: osc?.path,
-          oscArg: osc?.arg,
-          oscArgType: osc?.argType ?? MacroOscArgType.string,
-        ),
+    }) {
+      final flatOsc = flattenMacroOsc(osc);
+      return widget.bridge.upsertMacro(
+        channelId: channelId,
+        originalLabel: originalLabel,
+        label: label,
+        payload: payload,
+        keyBinding: keyBinding,
+        priority: priority,
+        midiNote: midiNote,
+        midiCc: midiCc,
+        oscAddress: flatOsc.address,
+        oscPort: flatOsc.port,
+        oscPath: flatOsc.path,
+        oscArg: flatOsc.arg,
+        oscArgType: flatOsc.argType,
+      );
+    },
     upsertGlobalMacro: ({
       originalLabel,
       required label,
@@ -115,21 +117,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
       midiNote,
       midiCc,
       osc,
-    }) =>
-        widget.bridge.upsertGlobalMacro(
-          originalLabel: originalLabel,
-          label: label,
-          payload: payload,
-          keyBinding: keyBinding,
-          priority: priority,
-          midiNote: midiNote,
-          midiCc: midiCc,
-          oscAddress: osc?.address,
-          oscPort: osc?.port,
-          oscPath: osc?.path,
-          oscArg: osc?.arg,
-          oscArgType: osc?.argType ?? MacroOscArgType.string,
-        ),
+    }) {
+      final flatOsc = flattenMacroOsc(osc);
+      return widget.bridge.upsertGlobalMacro(
+        originalLabel: originalLabel,
+        label: label,
+        payload: payload,
+        keyBinding: keyBinding,
+        priority: priority,
+        midiNote: midiNote,
+        midiCc: midiCc,
+        oscAddress: flatOsc.address,
+        oscPort: flatOsc.port,
+        oscPath: flatOsc.path,
+        oscArg: flatOsc.arg,
+        oscArgType: flatOsc.argType,
+      );
+    },
   );
 
   // Channels are owned by the AppStore (#57).
