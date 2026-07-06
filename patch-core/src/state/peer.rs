@@ -284,8 +284,13 @@ impl PeerRegistry {
                             new_peer.add_address(SocketAddr::new(ip, port), now);
                         }
                     }
-                    // Backdate past the UI's stale threshold so the dot starts grey.
-                    new_peer.last_seen = now - chrono::Duration::seconds(60);
+                    // Backdate past the Offline threshold (5× heartbeat) so the
+                    // dot starts grey. The interval is clamped to 1–60 s
+                    // (`api::set_heartbeat_interval`, the beacon loop), so 301 s
+                    // clears 5× the largest legal interval — a fixed 60 s left
+                    // an unproven mDNS-only peer reading Online for intervals
+                    // over 30 s.
+                    new_peer.last_seen = now - chrono::Duration::seconds(301);
                     peers.insert(presence.peer_id, new_peer);
                     presence
                 }
@@ -619,8 +624,10 @@ mod tests {
         )
         .await;
         let p = &reg.list().await[0];
-        // Backdated 60s — already past a typical (e.g. 7s) 5x-heartbeat window.
-        assert!(p.is_stale(35));
+        // Backdated past 5x the *largest* legal heartbeat interval (60s) —
+        // an mDNS-only peer must start Offline at any configured cadence.
+        assert!(p.is_stale(35)); // default-ish 7s interval
+        assert!(p.is_stale(300)); // max 60s interval
     }
 
     #[tokio::test]

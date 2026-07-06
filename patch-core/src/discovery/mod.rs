@@ -46,6 +46,11 @@ impl Discovery {
             props.insert("peer_name".to_string(), client_name.clone());
             props.insert("version".to_string(), "0.1.0".to_string());
 
+            // The advertised port is fixed at registration. A live OSC-port
+            // change (`api::set_osc_port`) rebinds the socket and moves the
+            // heartbeat beacon, but this mDNS record keeps the old port until
+            // restart — peers still converge via the OSC presence beacon,
+            // whose sightings carry the live source address/port.
             let service =
                 ServiceInfo::new(service_type, instance_name, &host_name, "", osc_port, props)?;
 
@@ -97,13 +102,10 @@ impl Discovery {
                                         "mDNS resolved: {} ({}) @ {:?}:{}",
                                         peer_name, peer_id, addrs, port
                                     );
-                                    if addrs.is_empty() {
-                                        // No usable address (e.g. pinned to a subnet with
-                                        // no match) — record without an address so the peer
-                                        // shows up in the panel; OSC presence will fill it in.
+                                    for addr in addrs {
                                         let presence = PeerPresence {
                                             peer_id,
-                                            peer_name,
+                                            peer_name: peer_name.clone(),
                                             channels: Vec::new(),
                                             role: None,
                                             timestamp: Utc::now(),
@@ -111,27 +113,10 @@ impl Discovery {
                                         browse_state
                                             .record_sighting(
                                                 PeerSighting::Mdns(presence),
-                                                String::new(),
+                                                addr,
                                                 port,
                                             )
                                             .await;
-                                    } else {
-                                        for addr in addrs {
-                                            let presence = PeerPresence {
-                                                peer_id,
-                                                peer_name: peer_name.clone(),
-                                                channels: Vec::new(),
-                                                role: None,
-                                                timestamp: Utc::now(),
-                                            };
-                                            browse_state
-                                                .record_sighting(
-                                                    PeerSighting::Mdns(presence),
-                                                    addr,
-                                                    port,
-                                                )
-                                                .await;
-                                        }
                                     }
                                 }
                             }
@@ -199,16 +184,19 @@ impl Discovery {
                     Ok(bytes) => {
                         debug!(
                             "Heartbeat — presence broadcast + unicast on port {}",
-                            osc_port
+                            cfg.osc_port
                         );
                         // Broadcast so still-undiscovered peers can find us
                         // (subnet-directed + macOS per-NIC, see transport::broadcast_all_paths).
                         // Unresolved (no pin yet) stays fully inert outbound too.
+                        // The target port is re-read from config each tick so a live
+                        // OSC-port change (`api::set_osc_port` rebinds the socket
+                        // without a restart) moves the beacon with it.
                         if crate::transport::should_broadcast(cfg.network_interface.as_deref()) {
                             hb_transport
                                 .broadcast_all_paths(
                                     &bytes,
-                                    osc_port,
+                                    cfg.osc_port,
                                     cfg.network_interface.as_deref(),
                                 )
                                 .await;

@@ -57,8 +57,8 @@ pub enum ResolveOutcome {
     /// addressless peer's OSC presence at the protocol boundary, so recording
     /// it would leave a permanent ghost (#152).
     NoAddressOnPinnedSubnet,
-    /// Record this peer. `addrs` empty means no usable address yet — record
-    /// without one and let OSC presence fill it in.
+    /// Record this peer at these resolved on-subnet addresses. `addrs` is
+    /// never empty — a resolution with none is `NoAddressOnPinnedSubnet`.
     Record {
         peer_id: Uuid,
         peer_name: String,
@@ -107,9 +107,13 @@ impl PeerLifecycle {
             port,
         } = service;
 
+        // A missing/unparsable peer_id TXT record falls back to a UUID derived
+        // from the service fullname — stable across re-resolutions. A random
+        // fallback minted a *new* peer per periodic `mdns-sd` re-resolution,
+        // and peers are never auto-expired, so ghosts accumulated all session.
         let peer_id = peer_id_prop
             .and_then(|p| Uuid::parse_str(p).ok())
-            .unwrap_or_else(Uuid::new_v4);
+            .unwrap_or_else(|| Uuid::new_v5(&Uuid::NAMESPACE_DNS, fullname.as_bytes()));
 
         // Skip our own service — mDNS resolves it too.
         if is_self(peer_id, client_id) {
@@ -311,20 +315,33 @@ mod tests {
     }
 
     #[test]
-    fn missing_peer_id_prop_falls_back_to_a_random_uuid() {
+    fn missing_peer_id_prop_falls_back_to_a_stable_fullname_derived_uuid() {
+        // Re-resolutions of the same fullname must converge on one peer —
+        // a random fallback minted a new ghost entry per re-resolution.
         let mut lifecycle = PeerLifecycle::new();
-        let outcome = lifecycle.on_resolved(
-            ResolvedService {
-                fullname: "peer._patch._udp.local.",
-                peer_id_prop: None,
-                peer_name_prop: Some("Peer"),
-                addresses: &addrs(&["169.254.30.7"]),
-                port: 53000,
-            },
-            Uuid::new_v4(),
-            subnet(),
-        );
-        assert!(matches!(outcome, ResolveOutcome::Record { .. }));
+        let resolve = |lc: &mut PeerLifecycle| {
+            lc.on_resolved(
+                ResolvedService {
+                    fullname: "peer._patch._udp.local.",
+                    peer_id_prop: None,
+                    peer_name_prop: Some("Peer"),
+                    addresses: &addrs(&["169.254.30.7"]),
+                    port: 53000,
+                },
+                Uuid::new_v4(),
+                subnet(),
+            )
+        };
+        let ResolveOutcome::Record { peer_id: first, .. } = resolve(&mut lifecycle) else {
+            panic!("expected Record");
+        };
+        let ResolveOutcome::Record {
+            peer_id: second, ..
+        } = resolve(&mut lifecycle)
+        else {
+            panic!("expected Record");
+        };
+        assert_eq!(first, second);
     }
 
     #[test]
