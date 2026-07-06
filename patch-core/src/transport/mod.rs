@@ -218,8 +218,10 @@ impl Transport {
     /// relay in `protocol::handle`, which sends the same target list a different
     /// way (queued via `send_tx` instead of direct socket send).
     ///
-    /// Returns the addresses actually contacted (used for ACK tracking). If no
-    /// peers are known yet, the packet is silently dropped — no broadcast fallback.
+    /// Returns the resolved target addresses (informational — ACK tracking
+    /// resolves its own peer-grouped targets via
+    /// `AppState::reachable_peers_with_addrs`). If no peers are known yet, the
+    /// packet is silently dropped — no broadcast fallback.
     pub async fn send_to_peers(
         &self,
         bytes: Vec<u8>,

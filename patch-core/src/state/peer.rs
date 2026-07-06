@@ -7,6 +7,13 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::osc::types::PeerPresence;
+use crate::state::config::HEARTBEAT_MAX_SECS;
+
+/// How far a freshly mDNS-discovered peer's `last_seen` is backdated, so the
+/// dot starts grey: past the Offline threshold (5× heartbeat) at the largest
+/// legal interval. Derived from the shared clamp constant so widening the
+/// clamp can't silently leave an unproven mDNS-only peer reading Online.
+const MDNS_BACKDATE_SECS: i64 = 5 * HEARTBEAT_MAX_SECS as i64 + 1;
 
 /// A discovered or manually-added peer on the network.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -218,6 +225,10 @@ impl PeerRegistry {
                     peer.last_seen = now;
                     // A real OSC packet proves liveness — clear any prior departure.
                     peer.departed = false;
+                    // Adopt the name the packet was signed with: a renamed
+                    // peer whose Presence broadcasts are blocked (AP
+                    // isolation) would otherwise keep its old name forever.
+                    peer.peer_name = peer_name;
                     PeerPresence {
                         peer_id: peer.peer_id,
                         peer_name: peer.peer_name.clone(),
@@ -284,13 +295,9 @@ impl PeerRegistry {
                             new_peer.add_address(SocketAddr::new(ip, port), now);
                         }
                     }
-                    // Backdate past the Offline threshold (5× heartbeat) so the
-                    // dot starts grey. The interval is clamped to 1–60 s
-                    // (`api::set_heartbeat_interval`, the beacon loop), so 301 s
-                    // clears 5× the largest legal interval — a fixed 60 s left
-                    // an unproven mDNS-only peer reading Online for intervals
-                    // over 30 s.
-                    new_peer.last_seen = now - chrono::Duration::seconds(301);
+                    // Backdate past the Offline threshold (5× heartbeat) so
+                    // the dot starts grey — see `MDNS_BACKDATE_SECS`.
+                    new_peer.last_seen = now - chrono::Duration::seconds(MDNS_BACKDATE_SECS);
                     peers.insert(presence.peer_id, new_peer);
                     presence
                 }
@@ -568,6 +575,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn record_sighting_heartbeat_adopts_a_renamed_peer_name() {
+        // A renamed peer keeps messaging under its new name. Under AP
+        // isolation its Presence broadcasts may never arrive, so the
+        // Heartbeat sighting (any Message/Flash/DM packet) must carry the
+        // rename — not leave the panel showing the old name indefinitely.
+        let reg = PeerRegistry::default();
+        let id = Uuid::new_v4();
+        reg.record_sighting(
+            PeerSighting::Heartbeat {
+                peer_id: id,
+                peer_name: "FOH".into(),
+            },
+            "10.0.0.1".into(),
+            9000,
+        )
+        .await;
+
+        let presence = reg
+            .record_sighting(
+                PeerSighting::Heartbeat {
+                    peer_id: id,
+                    peer_name: "FOH Audio".into(),
+                },
+                "10.0.0.1".into(),
+                9000,
+            )
+            .await;
+
+        assert_eq!(presence.peer_name, "FOH Audio");
+        assert_eq!(reg.list().await[0].peer_name, "FOH Audio");
+    }
+
+    #[tokio::test]
     async fn record_sighting_mdns_after_presence_keeps_mdns_classification_sticky() {
         let reg = PeerRegistry::default();
         let id = Uuid::new_v4();
@@ -605,6 +645,15 @@ mod tests {
             reg.list().await[0].discovery_mode,
             DiscoveryMode::Mdns
         ));
+    }
+
+    #[test]
+    fn mdns_backdate_clears_five_times_the_largest_legal_heartbeat_interval() {
+        // The backdate must keep an unproven mDNS-only peer past the Offline
+        // threshold (5× heartbeat) at ANY legal interval. Deriving it from
+        // the shared clamp constant makes widening the clamp safe — a fixed
+        // 301 silently broke the moment HEARTBEAT_MAX_SECS grew.
+        assert!(MDNS_BACKDATE_SECS > 5 * crate::state::config::HEARTBEAT_MAX_SECS as i64);
     }
 
     #[tokio::test]

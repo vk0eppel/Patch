@@ -81,7 +81,7 @@ pub(crate) async fn handle(
             peer_id,
         } => handle_ack(message_id, peer_id, state, reliability).await,
         PatchEvent::Presence(p) => handle_presence(p, from, state, client_id).await,
-        PatchEvent::Bye { peer_id } => handle_bye(peer_id, state, client_id).await,
+        PatchEvent::Bye { peer_id } => handle_bye(peer_id, from, state, client_id).await,
         PatchEvent::Flash {
             flash,
             message_id,
@@ -264,14 +264,39 @@ pub(crate) async fn handle_presence(
     Vec::new()
 }
 
-async fn handle_bye(peer_id: Uuid, state: &AppState, client_id: Uuid) -> Vec<Outgoing> {
+async fn handle_bye(
+    peer_id: Uuid,
+    from: SocketAddr,
+    state: &AppState,
+    client_id: Uuid,
+) -> Vec<Outgoing> {
     // Graceful departure — mark the peer offline (grey) immediately
     // instead of waiting out the heartbeat timeout, but keep it in the
     // list so the operator still sees who was connected.
-    if !is_self(peer_id, client_id) {
-        tracing::info!("Received /patch/bye from {} — marking offline", peer_id);
-        state.mark_peer_offline(peer_id).await;
+    if is_self(peer_id, client_id) {
+        return Vec::new();
     }
+    // Only honor a bye arriving from an IP we've actually heard this peer
+    // from — a crafted bye naming another peer's id must not grey them out
+    // (same hardening as the DM handlers). Matched by IP, not full
+    // SocketAddr, so a bye sent right after a live OSC-port rebind (source
+    // port changed, host didn't) still lands. An unverifiable bye just
+    // falls back to the heartbeat timeout.
+    let source_matches_peer = state
+        .get_peers()
+        .await
+        .iter()
+        .find(|p| p.peer_id == peer_id)
+        .is_some_and(|p| p.all_addrs().iter().any(|a| a.ip() == from.ip()));
+    if !source_matches_peer {
+        debug!(
+            "Ignoring /patch/bye for {} from {} — not one of that peer's known addresses",
+            peer_id, from
+        );
+        return Vec::new();
+    }
+    tracing::info!("Received /patch/bye from {} — marking offline", peer_id);
+    state.mark_peer_offline(peer_id).await;
     Vec::new()
 }
 
@@ -1210,6 +1235,39 @@ mod tests {
             .find(|p| p.peer_id == peer_id)
             .unwrap();
         assert!(peer.departed);
+    }
+
+    #[tokio::test]
+    async fn bye_from_an_address_the_peer_was_never_seen_at_is_ignored() {
+        // A crafted /patch/bye naming another peer's id must not grey that
+        // peer out — same crafted-packet hardening as the DM handlers. Only
+        // a bye whose source IP matches an address we've actually heard the
+        // peer from is honored; anything else falls back to the heartbeat
+        // timeout.
+        let state = test_state();
+        let peer_id = Uuid::new_v4();
+        add_known_peer(&state, peer_id, 5).await; // peer lives at 10.0.0.5
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+
+        handle(
+            PatchEvent::Bye { peer_id },
+            addr(6), // admitted source, but not the peer's address
+            &state,
+            Uuid::new_v4(),
+            &reliability,
+        )
+        .await;
+
+        let peer = state
+            .get_peers()
+            .await
+            .into_iter()
+            .find(|p| p.peer_id == peer_id)
+            .unwrap();
+        assert!(
+            !peer.departed,
+            "a bye from a foreign source must not mark the peer departed"
+        );
     }
 
     #[tokio::test]

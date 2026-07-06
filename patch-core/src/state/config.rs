@@ -60,6 +60,14 @@ fn config_path() -> PathBuf {
 /// migration step in [`migrate`].
 pub const CURRENT_CONFIG_VERSION: u32 = 2;
 
+/// Legal presence-heartbeat interval range (seconds). Below the floor floods
+/// the LAN; above the ceiling makes peer detection uselessly slow. Shared by
+/// the Settings setter, the load-time sanitizer, the discovery loop's belt-
+/// and-braces clamp, and the mDNS backdate in `state::peer` (which must clear
+/// 5× the ceiling) — one constant so those four can't drift apart.
+pub const HEARTBEAT_MIN_SECS: u64 = 1;
+pub const HEARTBEAT_MAX_SECS: u64 = 60;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Schema version. Absent in pre-versioning files (loads as 0 via the serde
@@ -272,6 +280,56 @@ impl Config {
         sanitize_loaded_macros(&mut self.global_macros, "global macros");
         sanitize_loaded_static_peers(&mut self.static_peers);
         sanitize_binding_collisions(&mut self.global_macros, &mut self.default_channels);
+        self.sanitize_numeric_ranges();
+    }
+
+    /// Clamp numeric settings to the same ranges their Settings setters
+    /// enforce (`set_heartbeat_interval`, `set_osc_port`, `set_flash_count`,
+    /// `set_macros_columns`) — a hand-edited value outside them otherwise
+    /// bypasses validation entirely: `heartbeat_interval_secs = 0` makes
+    /// `prune_peer_addresses` shed every peer address each tick and
+    /// `looks_offline` misclassify every dynamic peer.
+    fn sanitize_numeric_ranges(&mut self) {
+        let clamped = self
+            .heartbeat_interval_secs
+            .clamp(HEARTBEAT_MIN_SECS, HEARTBEAT_MAX_SECS);
+        if clamped != self.heartbeat_interval_secs {
+            tracing::warn!(
+                "patch.toml: heartbeat_interval_secs {} out of range {}–{} — clamped to {}",
+                self.heartbeat_interval_secs,
+                HEARTBEAT_MIN_SECS,
+                HEARTBEAT_MAX_SECS,
+                clamped
+            );
+            self.heartbeat_interval_secs = clamped;
+        }
+        if self.osc_port < 1024 {
+            // No sensible clamp target inside the privileged range — fall back
+            // to the default port instead (u16 caps the upper bound already).
+            tracing::warn!(
+                "patch.toml: osc_port {} needs root to bind — reset to 9000",
+                self.osc_port
+            );
+            self.osc_port = 9000;
+        }
+        let clamped = self.flash_count.clamp(3, 7);
+        if clamped != self.flash_count {
+            tracing::warn!(
+                "patch.toml: flash_count {} out of range 3–7 — clamped to {}",
+                self.flash_count,
+                clamped
+            );
+            self.flash_count = clamped;
+        }
+        let clamped = self.macros_columns.clamp(1, 3);
+        if clamped != self.macros_columns {
+            tracing::warn!(
+                "patch.toml: macros_columns {} out of range 1–3 — clamped to {}",
+                self.macros_columns,
+                clamped
+            );
+            self.macros_columns = clamped;
+        }
     }
 
     pub fn save(&self) -> Result<()> {
@@ -677,6 +735,56 @@ path = "/cue/2/start"
 
         let global_labels: Vec<_> = cfg.global_macros.iter().map(|m| m.label.as_str()).collect();
         assert_eq!(global_labels, vec!["GOOD GLOBAL"]);
+    }
+
+    /// A hand-edited `patch.toml` with out-of-range numeric settings —
+    /// `sanitize` must clamp each to the same range its Settings setter
+    /// enforces (ADR-0006: drop-and-warn, never refuse to start). A raw
+    /// `heartbeat_interval_secs = 0` otherwise flows into
+    /// `prune_peer_addresses(0)` (every peer address pruned each tick) and
+    /// `looks_offline(0)` (every dynamic peer misclassified offline).
+    #[test]
+    fn sanitize_clamps_out_of_range_numeric_settings() {
+        let mut cfg = Config {
+            heartbeat_interval_secs: 0,
+            osc_port: 80,
+            flash_count: 100,
+            macros_columns: 0,
+            ..Config::default()
+        };
+        cfg.sanitize();
+        assert_eq!(cfg.heartbeat_interval_secs, 1);
+        assert_eq!(cfg.osc_port, 9000); // out-of-range port → default, not a clamp to a privileged bound
+        assert_eq!(cfg.flash_count, 7);
+        assert_eq!(cfg.macros_columns, 1);
+
+        let mut cfg = Config {
+            heartbeat_interval_secs: 100_000,
+            flash_count: 0,
+            macros_columns: 100,
+            ..Config::default()
+        };
+        cfg.sanitize();
+        assert_eq!(cfg.heartbeat_interval_secs, 60);
+        assert_eq!(cfg.flash_count, 3);
+        assert_eq!(cfg.macros_columns, 3);
+    }
+
+    /// In-range values must load untouched.
+    #[test]
+    fn sanitize_leaves_in_range_numeric_settings_alone() {
+        let mut cfg = Config {
+            heartbeat_interval_secs: 30,
+            osc_port: 9100,
+            flash_count: 5,
+            macros_columns: 2,
+            ..Config::default()
+        };
+        cfg.sanitize();
+        assert_eq!(cfg.heartbeat_interval_secs, 30);
+        assert_eq!(cfg.osc_port, 9100);
+        assert_eq!(cfg.flash_count, 5);
+        assert_eq!(cfg.macros_columns, 2);
     }
 
     /// A hand-edited `patch.toml` with a key-binding collision between two

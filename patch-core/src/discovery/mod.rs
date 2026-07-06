@@ -221,9 +221,12 @@ impl Discovery {
                 // whole session. The Flutter side uses lastSeen to show green/gray.
 
                 // Wait the *currently configured* interval before the next beat.
-                // `api::set_heartbeat_interval` validates 1–60; clamp here too so
-                // a hand-edited patch.toml can't busy-loop (0) or stall forever.
-                let secs = cfg.heartbeat_interval_secs.clamp(1, 60);
+                // The setter validates and config load sanitizes; clamp here
+                // too so no path can busy-loop (0) or stall forever.
+                let secs = cfg.heartbeat_interval_secs.clamp(
+                    crate::state::config::HEARTBEAT_MIN_SECS,
+                    crate::state::config::HEARTBEAT_MAX_SECS,
+                );
                 tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
             }
         });

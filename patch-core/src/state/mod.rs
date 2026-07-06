@@ -291,8 +291,14 @@ impl AppState {
     /// the discovery heartbeat loop re-reads it at the end of each cycle, so the
     /// new cadence takes effect on the next beat with no restart.
     pub async fn set_heartbeat_interval(&self, secs: u64) -> anyhow::Result<()> {
-        if !(1..=60).contains(&secs) {
-            anyhow::bail!("heartbeat interval must be 1–60 seconds (got {})", secs);
+        use config::{HEARTBEAT_MAX_SECS, HEARTBEAT_MIN_SECS};
+        if !(HEARTBEAT_MIN_SECS..=HEARTBEAT_MAX_SECS).contains(&secs) {
+            anyhow::bail!(
+                "heartbeat interval must be {}–{} seconds (got {})",
+                HEARTBEAT_MIN_SECS,
+                HEARTBEAT_MAX_SECS,
+                secs
+            );
         }
         self.0
             .config
