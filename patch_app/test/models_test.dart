@@ -149,30 +149,4 @@ void main() {
       expect(c.macros[1].priority, 2);
     });
   });
-
-  group('flattenMacroOsc', () {
-    test('a null MacroOsc flattens to all-null fields and the string arg type', () {
-      final flat = flattenMacroOsc(null);
-      expect(flat.address, isNull);
-      expect(flat.port, isNull);
-      expect(flat.path, isNull);
-      expect(flat.arg, isNull);
-      expect(flat.argType, MacroOscArgType.string);
-    });
-
-    test('a MacroOsc flattens to its own fields', () {
-      final flat = flattenMacroOsc(const MacroOsc(
-        address: '10.0.0.9',
-        port: 53000,
-        path: '/cue/1/start',
-        arg: '42',
-        argType: MacroOscArgType.int,
-      ));
-      expect(flat.address, '10.0.0.9');
-      expect(flat.port, 53000);
-      expect(flat.path, '/cue/1/start');
-      expect(flat.arg, '42');
-      expect(flat.argType, MacroOscArgType.int);
-    });
-  });
 }

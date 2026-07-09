@@ -92,13 +92,5 @@ class MacrosSectionPresenter {
 /// ADR-0002: a live UI edit rejects an invalid OSC target immediately —
 /// before any bridge call. Returned as the `validateThenSave` seam's error
 /// message rather than thrown.
-String? _validateOsc(MacroOsc? osc) {
-  if (osc == null) return null;
-  return validateMacroOscTarget(
-    address: osc.address,
-    port: osc.port,
-    path: osc.path,
-    arg: osc.arg,
-    argType: osc.argType,
-  );
-}
+String? _validateOsc(MacroOsc? osc) =>
+    osc == null ? null : validateMacroOscTarget(osc);

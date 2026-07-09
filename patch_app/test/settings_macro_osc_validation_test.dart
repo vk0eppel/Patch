@@ -1,10 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:patch/models/channel.dart' show MacroOscArgType;
+import 'package:patch/models/channel.dart' show MacroOsc, MacroOscArgType;
 import 'package:patch/presenters/settings/macro_osc_validator.dart';
 
 void main() {
   group('validateMacroOscTarget (ADR-0002: live UI edits reject immediately)',
       () {
+    // #181: the validator takes the MacroOsc object — the same currency the
+    // dialog builds and the bridge sends; no scalar explosion at any seam.
     String? v({
       String address = '10.0.0.9',
       int port = 53000,
@@ -12,13 +14,13 @@ void main() {
       String? arg,
       MacroOscArgType argType = MacroOscArgType.string,
     }) =>
-        validateMacroOscTarget(
+        validateMacroOscTarget(MacroOsc(
           address: address,
           port: port,
           path: path,
           arg: arg,
           argType: argType,
-        );
+        ));
 
     test('a well-formed target passes', () {
       expect(v(), isNull);

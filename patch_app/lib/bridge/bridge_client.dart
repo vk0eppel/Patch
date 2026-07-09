@@ -123,11 +123,7 @@ class BridgeClient {
     int priority = 1,
     int? midiNote,
     int? midiCc,
-    String? oscAddress,
-    int? oscPort,
-    String? oscPath,
-    String? oscArg,
-    MacroOscArgType oscArgType = MacroOscArgType.string,
+    MacroOsc? osc,
   }) =>
       rust.upsertMacro(
         channelId: channelId,
@@ -138,7 +134,7 @@ class BridgeClient {
         keyBinding: keyBinding,
         midiNote: midiNote,
         midiCc: midiCc,
-        osc: _buildOsc(oscAddress, oscPort, oscPath, oscArg, oscArgType),
+        osc: oscTargetFromMacroOsc(osc),
       );
 
   /// Fire an arbitrary OSC message to external gear (the dual-action half of an
@@ -182,11 +178,7 @@ class BridgeClient {
     int priority = 1,
     int? midiNote,
     int? midiCc,
-    String? oscAddress,
-    int? oscPort,
-    String? oscPath,
-    String? oscArg,
-    MacroOscArgType oscArgType = MacroOscArgType.string,
+    MacroOsc? osc,
   }) =>
       rust.upsertGlobalMacro(
         originalLabel: originalLabel,
@@ -196,29 +188,8 @@ class BridgeClient {
         keyBinding: keyBinding,
         midiNote: midiNote,
         midiCc: midiCc,
-        osc: _buildOsc(oscAddress, oscPort, oscPath, oscArg, oscArgType),
+        osc: oscTargetFromMacroOsc(osc),
       );
-
-  /// Build a typed `OscTarget` from flat UI fields — null unless address, port,
-  /// and path are all present (an empty `arg` collapses to null).
-  rust_channel.OscTarget? _buildOsc(
-    String? address,
-    int? port,
-    String? path,
-    String? arg,
-    MacroOscArgType argType,
-  ) {
-    if (address == null || address.isEmpty || port == null || path == null || path.isEmpty) {
-      return null;
-    }
-    return rust_channel.OscTarget(
-      address: address,
-      port: port,
-      path: path,
-      arg: (arg == null || arg.isEmpty) ? null : arg,
-      argType: _toRustArgType(argType),
-    );
-  }
 
   /// Push the UI's current channel selection to the engine so a MIDI-triggered
   /// global macro fires on the same channel(s) as a tap/F-key. Fire-and-forget.
@@ -574,6 +545,24 @@ rust_channel.MacroMessage _macroToRust(MacroMessage s) => rust_channel.MacroMess
       midiCc: s.midiCc,
       osc: s.osc == null ? null : _oscToRust(s.osc!),
     );
+
+/// The one place a `MacroOsc` becomes a wire `OscTarget` (#181). The
+/// empty-collapse rule lives here: a target missing its address, port, or
+/// path is no target at all (null), never a half-built struct; an empty
+/// `arg` collapses to null. The validator rejects such targets before any
+/// save — this is the seam's own guarantee, independent of the caller.
+rust_channel.OscTarget? oscTargetFromMacroOsc(MacroOsc? o) {
+  if (o == null || o.address.isEmpty || o.port == 0 || o.path.isEmpty) {
+    return null;
+  }
+  return rust_channel.OscTarget(
+    address: o.address,
+    port: o.port,
+    path: o.path,
+    arg: (o.arg == null || o.arg!.isEmpty) ? null : o.arg,
+    argType: _toRustArgType(o.argType),
+  );
+}
 
 rust_channel.OscTarget _oscToRust(MacroOsc o) => rust_channel.OscTarget(
       address: o.address,

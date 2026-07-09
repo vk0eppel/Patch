@@ -1,6 +1,6 @@
 import 'dart:io' show InternetAddress;
 
-import '../../models/channel.dart' show MacroOscArgType;
+import '../../models/channel.dart' show MacroOsc, MacroOscArgType;
 
 /// Validate a Macro's OSC dual-action target before any bridge call —
 /// ADR-0002's "live UI edits reject immediately" trust level, mirrored
@@ -9,25 +9,19 @@ import '../../models/channel.dart' show MacroOscArgType;
 /// authority; this is the same check, one seam earlier.
 ///
 /// Returns an operator-facing error message, or null when valid.
-String? validateMacroOscTarget({
-  required String address,
-  required int port,
-  required String path,
-  String? arg,
-  required MacroOscArgType argType,
-}) {
-  if (InternetAddress.tryParse(address.trim()) == null) {
+String? validateMacroOscTarget(MacroOsc osc) {
+  if (InternetAddress.tryParse(osc.address.trim()) == null) {
     return 'OSC address must be an IP address (e.g. 10.0.0.9)';
   }
-  if (port < 1 || port > 65535) {
+  if (osc.port < 1 || osc.port > 65535) {
     return 'OSC port must be 1–65535';
   }
-  if (!path.startsWith('/')) {
+  if (!osc.path.startsWith('/')) {
     return 'OSC path must start with / (e.g. /cue/1/start)';
   }
-  final a = arg;
+  final a = osc.arg;
   if (a != null && a.isNotEmpty) {
-    switch (argType) {
+    switch (osc.argType) {
       case MacroOscArgType.int:
         if (int.tryParse(a) == null) {
           return 'Argument must be a whole number for type Int';

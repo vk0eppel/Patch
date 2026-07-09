@@ -87,7 +87,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       midiCc,
       osc,
     }) {
-      final flatOsc = flattenMacroOsc(osc);
       return widget.bridge.upsertMacro(
         channelId: channelId,
         originalLabel: originalLabel,
@@ -97,11 +96,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         priority: priority,
         midiNote: midiNote,
         midiCc: midiCc,
-        oscAddress: flatOsc.address,
-        oscPort: flatOsc.port,
-        oscPath: flatOsc.path,
-        oscArg: flatOsc.arg,
-        oscArgType: flatOsc.argType,
+        osc: osc,
       );
     },
     upsertGlobalMacro: ({
@@ -114,7 +109,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       midiCc,
       osc,
     }) {
-      final flatOsc = flattenMacroOsc(osc);
       return widget.bridge.upsertGlobalMacro(
         originalLabel: originalLabel,
         label: label,
@@ -123,11 +117,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         priority: priority,
         midiNote: midiNote,
         midiCc: midiCc,
-        oscAddress: flatOsc.address,
-        oscPort: flatOsc.port,
-        oscPath: flatOsc.path,
-        oscArg: flatOsc.arg,
-        oscArgType: flatOsc.argType,
+        osc: osc,
       );
     },
   );
