@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../bridge/bridge_client.dart';
-import '../../src/rust/api.dart' as rust;
 import '../../models/channel.dart';
 import '../../presenters/settings/macros_section_presenter.dart';
 import '../../presenters/settings/save_result.dart';
@@ -108,7 +107,7 @@ class ChannelsMacrosSection extends StatelessWidget {
             SettingsResetButton(
               section: 'Channels & Macros',
               onReset: () =>
-                  runGuarded(context, () => rust.resetChannels()),
+                  runGuarded(context, () => bridge.resetChannels()),
             ),
           ],
         ),
@@ -209,10 +208,10 @@ class _ChannelMacroEditor extends StatelessWidget {
         if (context.mounted) _showSaveError(context, result);
       }),
       onDelete: (m) => runGuarded(
-          context, () => rust.deleteMacro(channelId: channel.id, label: m.label)),
+          context, () => bridge.deleteMacro(channelId: channel.id, label: m.label)),
       onReorder: (labels) =>
           runGuarded(context,
-              () => rust.reorderMacros(channelId: channel.id, orderedLabels: labels)),
+              () => bridge.reorderMacros(channelId: channel.id, orderedLabels: labels)),
       trailingActions: [
         IconButton(
           icon: const Icon(Icons.edit_outlined, size: 16, color: PatchTheme.textMuted),
@@ -260,7 +259,7 @@ class _ChannelMacroEditor extends StatelessWidget {
               value: channel.flashOnMessage,
               activeThumbColor: PatchTheme.accent,
               onChanged: (val) => runGuarded(context,
-                  () => rust.setChannelFlash(channelId: channel.id, flashOnMessage: val)),
+                  () => bridge.setChannelFlash(channelId: channel.id, flashOnMessage: val)),
             ),
             SwitchListTile(
               dense: true,
@@ -275,7 +274,7 @@ class _ChannelMacroEditor extends StatelessWidget {
               value: channel.flashOnCritical,
               activeThumbColor: PatchTheme.accent,
               onChanged: (val) => runGuarded(context,
-                  () => rust.setChannelFlash(channelId: channel.id, flashOnCritical: val)),
+                  () => bridge.setChannelFlash(channelId: channel.id, flashOnCritical: val)),
             ),
             const SizedBox(height: 4),
             Row(
@@ -294,7 +293,7 @@ class _ChannelMacroEditor extends StatelessWidget {
                   value: channel.flashCount,
                   onChanged: (val) => runGuarded(
                       context,
-                      () => rust.setChannelFlash(
+                      () => bridge.setChannelFlash(
                             channelId: channel.id,
                             // 0 signals "clear override" to the Rust side
                             flashCount: val ?? 0,
@@ -757,12 +756,12 @@ class _GlobalMacrosEditor extends StatelessWidget {
       }),
       onDelete: (m) => runGuarded(context, () async {
         final store = AppStoreScope.read(context);
-        await rust.deleteGlobalMacro(label: m.label);
+        await bridge.deleteGlobalMacro(label: m.label);
         await store.refreshConfig();
       }),
       onReorder: (labels) => runGuarded(context, () async {
         final store = AppStoreScope.read(context);
-        await rust.reorderGlobalMacros(orderedLabels: labels);
+        await bridge.reorderGlobalMacros(orderedLabels: labels);
         await store.refreshConfig();
       }),
     );
@@ -1090,7 +1089,7 @@ void _showChannelDialog(
                   return;
                 }
                 runGuarded(context,
-                    () => rust.upsertChannel(id: id, displayName: name, color: _colorToHex(color)));
+                    () => bridge.upsertChannel(id: id, displayName: name, color: _colorToHex(color)));
                 Navigator.pop(ctx);
               },
               child: const Text('Save'),

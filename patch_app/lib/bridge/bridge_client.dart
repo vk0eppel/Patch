@@ -292,6 +292,162 @@ class BridgeClient {
   Future<void> setHeartbeatInterval(int secs) =>
       rust.setHeartbeatInterval(secs: BigInt.from(secs));
 
+  // ── Messaging & flash ───────────────────────────────────────────────────
+
+  /// Send a channel message. Returns the message id; throws on failure.
+  Future<String> sendMessage({
+    required String channelId,
+    required String payload,
+    int priority = 1,
+  }) =>
+      rust.sendMessage(channelId: channelId, payload: payload, priority: priority);
+
+  /// Send a Direct Message to [peerId]. Returns the message id; throws on failure.
+  Future<String> sendDirectMessage({
+    required String peerId,
+    required String payload,
+    int priority = 1,
+  }) =>
+      rust.sendDirectMessage(peerId: peerId, payload: payload, priority: priority);
+
+  /// Flash a Channel (urgent attention signal, no message content).
+  Future<void> sendFlash({required String channelId}) =>
+      rust.sendFlash(channelId: channelId);
+
+  /// Flash a Peer's Direct Message thread.
+  Future<void> sendDmFlash({required String peerId}) =>
+      rust.sendDmFlash(peerId: peerId);
+
+  /// Clear the message buffer for [channelId], or all channels when null.
+  Future<void> clearMessages({String? channelId}) =>
+      rust.clearMessages(channelId: channelId);
+
+  /// Export messages to a CSV file at [path]; all channels when [channelId]
+  /// is null.
+  Future<void> exportMessages({String? channelId, required String path}) =>
+      rust.exportMessages(channelId: channelId, path: path);
+
+  // ── Macro firing (engine-owned routing, ADR-0009) ───────────────────────
+
+  /// Fire an identified Macro — Channel Macro when [channelId] is set, Global
+  /// Macro when null. Routing lives engine-side in `macro_router`.
+  Future<void> fireMacro({String? channelId, required String label}) =>
+      rust.fireMacro(channelId: channelId, label: label);
+
+  /// Fire whatever Macro [label]'s F-key resolves to (engine-owned precedence).
+  Future<bool> fireKeyBinding({required String label}) =>
+      rust.fireKeyBinding(label: label);
+
+  // ── Identity & behavior settings ────────────────────────────────────────
+
+  Future<void> setClientName({required String name}) =>
+      rust.setClientName(name: name);
+
+  Future<void> setFlashOnCritical({required bool enabled}) =>
+      rust.setFlashOnCritical(enabled: enabled);
+
+  Future<void> setFlashOnMessage({required bool enabled}) =>
+      rust.setFlashOnMessage(enabled: enabled);
+
+  Future<void> setFlashCount({required int count}) =>
+      rust.setFlashCount(count: count);
+
+  Future<void> setMacrosColumns({required int columns}) =>
+      rust.setMacrosColumns(columns: columns);
+
+  Future<void> setHideKeyboard({required bool enabled}) =>
+      rust.setHideKeyboard(enabled: enabled);
+
+  Future<void> setAudibleAlert({required bool enabled}) =>
+      rust.setAudibleAlert(enabled: enabled);
+
+  Future<void> setFlashWholeScreen({required bool enabled}) =>
+      rust.setFlashWholeScreen(enabled: enabled);
+
+  // ── Network settings ────────────────────────────────────────────────────
+
+  /// Pin Patch to interface [name] (ADR-0011 — mandatory pinning).
+  Future<void> setInterface({String? name}) => rust.setInterface(name: name);
+
+  Future<void> setOscPort({required int port}) => rust.setOscPort(port: port);
+
+  Future<void> addStaticPeer({
+    required String address,
+    required int port,
+    String? label,
+  }) =>
+      rust.addStaticPeer(address: address, port: port, label: label);
+
+  Future<void> removeStaticPeer({required String address, required int port}) =>
+      rust.removeStaticPeer(address: address, port: port);
+
+  // ── Channel & Macro CRUD ────────────────────────────────────────────────
+
+  Future<void> upsertChannel({
+    required String id,
+    String? displayName,
+    String? color,
+  }) =>
+      rust.upsertChannel(id: id, displayName: displayName, color: color);
+
+  Future<void> deleteChannel({required String id}) => rust.deleteChannel(id: id);
+
+  /// Per-channel flash overrides; null fields are left unchanged.
+  Future<void> setChannelFlash({
+    required String channelId,
+    bool? flashOnCritical,
+    bool? flashOnMessage,
+    int? flashCount,
+  }) =>
+      rust.setChannelFlash(
+        channelId: channelId,
+        flashOnCritical: flashOnCritical,
+        flashOnMessage: flashOnMessage,
+        flashCount: flashCount,
+      );
+
+  /// Restore the default channel set (destructive; confirmed by the UI).
+  Future<void> resetChannels() => rust.resetChannels();
+
+  Future<void> deleteMacro({required String channelId, required String label}) =>
+      rust.deleteMacro(channelId: channelId, label: label);
+
+  /// Reorder a channel's macros to match [orderedLabels] (drag-to-reorder).
+  Future<void> reorderMacros({
+    required String channelId,
+    required List<String> orderedLabels,
+  }) =>
+      rust.reorderMacros(channelId: channelId, orderedLabels: orderedLabels);
+
+  Future<void> deleteGlobalMacro({required String label}) =>
+      rust.deleteGlobalMacro(label: label);
+
+  Future<void> resetGlobalMacros() => rust.resetGlobalMacros();
+
+  Future<void> reorderGlobalMacros({required List<String> orderedLabels}) =>
+      rust.reorderGlobalMacros(orderedLabels: orderedLabels);
+
+  // ── Peer channel/macro exchange ─────────────────────────────────────────
+
+  /// Ask a Peer for its Channel layout — replies arrive as a ChannelsOffered
+  /// push; nothing is auto-applied.
+  Future<void> requestChannels({required String peerId}) =>
+      rust.requestChannels(peerId: peerId);
+
+  /// Ask a Peer for its Global Macros — replies arrive as a
+  /// GlobalMacrosOffered push; nothing is auto-applied.
+  Future<void> requestGlobalMacros({required String peerId}) =>
+      rust.requestGlobalMacros(peerId: peerId);
+
+  // ── Show files ──────────────────────────────────────────────────────────
+
+  /// Export the current layout as a show file to an arbitrary [path].
+  Future<void> exportLayout({required String path, required String name}) =>
+      rust.exportLayout(path: path, name: name);
+
+  Future<void> deleteShowFile({required String slug}) =>
+      rust.deleteShowFile(slug: slug);
+
   /// Announce departure so peers drop us promptly (best-effort). Safe to call
   /// more than once and before/without a full [dispose].
   Future<void> shutdown() async {

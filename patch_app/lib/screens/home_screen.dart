@@ -9,7 +9,6 @@ import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../bridge/bridge_client.dart';
-import '../src/rust/api.dart' as rust;
 import '../models/channel.dart';
 import '../models/config.dart';
 import '../models/dm_thread.dart';
@@ -199,7 +198,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   void _fireMacro(ChannelMacro cm) {
     runGuarded(
         context,
-        () => rust.fireMacro(
+        () => widget.bridge.fireMacro(
               channelId: cm.channelId.isEmpty ? null : cm.channelId,
               label: cm.macro.label,
             ));
@@ -359,7 +358,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
     final bound = _aggregatedMacros.any((cs) => cs.macro.keyBinding == label) ||
         _globalMacros.any((gm) => gm.keyBinding == label);
     if (!bound) return false;
-    runGuarded(context, () => rust.fireKeyBinding(label: label));
+    runGuarded(context, () => widget.bridge.fireKeyBinding(label: label));
     if (_selection.isDmMode) _warnIfDmPeerOffline();
     return true; // consumed
   }
@@ -378,7 +377,7 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
         // setClientName is push-driven (ClientNameChanged → store); setRole has
         // no push, so refetch config via the store after it (#56).
         onSaveName: (name) => runGuarded(
-            context, () => rust.setClientName(name: name)),
+            context, () => widget.bridge.setClientName(name: name)),
         onSaveRole: (role) {
           final store = AppStoreScope.read(context);
           runGuarded(context, () async {
@@ -867,16 +866,16 @@ class _ChannelViewState extends State<_ChannelView> {
     switch (_target) {
       case DmTarget(:final peerId):
         runGuarded(context,
-            () => rust.sendDirectMessage(peerId: peerId, payload: text, priority: 1));
+            () => widget.bridge.sendDirectMessage(peerId: peerId, payload: text, priority: 1));
         widget.onDmSent();
       case AllTarget():
         runGuarded(context,
-            () => rust.sendMessage(channelId: kAllChannelId, payload: text, priority: 1));
+            () => widget.bridge.sendMessage(channelId: kAllChannelId, payload: text, priority: 1));
         widget.onOneShotSent?.call();
       case ChannelsTarget(:final channels):
         for (final ch in channels) {
           runGuarded(context,
-              () => rust.sendMessage(channelId: ch.id, payload: text, priority: 1));
+              () => widget.bridge.sendMessage(channelId: ch.id, payload: text, priority: 1));
         }
     }
   }
@@ -884,21 +883,21 @@ class _ChannelViewState extends State<_ChannelView> {
   void _sendFlash() {
     switch (_target) {
       case DmTarget(:final peerId):
-        runGuarded(context, () => rust.sendDmFlash(peerId: peerId));
+        runGuarded(context, () => widget.bridge.sendDmFlash(peerId: peerId));
         widget.onDmSent();
       case AllTarget():
-        runGuarded(context, () => rust.sendFlash(channelId: kAllChannelId));
+        runGuarded(context, () => widget.bridge.sendFlash(channelId: kAllChannelId));
         widget.onOneShotSent?.call();
       case ChannelsTarget(:final channels):
         for (final ch in channels) {
-          runGuarded(context, () => rust.sendFlash(channelId: ch.id));
+          runGuarded(context, () => widget.bridge.sendFlash(channelId: ch.id));
         }
     }
   }
 
   void _clear(String? channelId) {
     runGuarded(context, () async {
-      await rust.clearMessages(channelId: channelId);
+      await widget.bridge.clearMessages(channelId: channelId);
       widget.onMessagesCleared(channelId);
     });
   }
@@ -913,7 +912,7 @@ class _ChannelViewState extends State<_ChannelView> {
     );
     if (path == null || !mounted) return;
     runGuarded(context,
-        () => rust.exportMessages(channelId: target.exportKey, path: path));
+        () => widget.bridge.exportMessages(channelId: target.exportKey, path: path));
   }
 
   void _confirmClear(BuildContext context) {

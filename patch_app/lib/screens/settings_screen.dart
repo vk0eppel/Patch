@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../bridge/bridge_client.dart';
-import '../src/rust/api.dart' as rust;
 import '../models/channel.dart';
 import '../models/config.dart';
 import '../models/events.dart';
@@ -45,41 +44,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Section presenters (#140): each owns its validate→save→refetch loops;
   // the section widgets own presentation only (ADR-0005).
   late final _identityPresenter = IdentityPresenter(
-    setClientName: (name) => rust.setClientName(name: name),
+    setClientName: (name) => widget.bridge.setClientName(name: name),
     setRole: widget.bridge.setRole,
     refreshConfig: () => AppStoreScope.read(context).refreshConfig(),
   );
   late final _behaviorPresenter = BehaviorPresenter(
-    setFlashOnMessage: (enabled) => rust.setFlashOnMessage(enabled: enabled),
-    setFlashOnCritical: (enabled) => rust.setFlashOnCritical(enabled: enabled),
-    setAudibleAlert: (enabled) => rust.setAudibleAlert(enabled: enabled),
+    setFlashOnMessage: (enabled) => widget.bridge.setFlashOnMessage(enabled: enabled),
+    setFlashOnCritical: (enabled) => widget.bridge.setFlashOnCritical(enabled: enabled),
+    setAudibleAlert: (enabled) => widget.bridge.setAudibleAlert(enabled: enabled),
     setFlashWholeScreen: (enabled) =>
-        rust.setFlashWholeScreen(enabled: enabled),
-    setHideKeyboard: (enabled) => rust.setHideKeyboard(enabled: enabled),
-    setFlashCount: (count) => rust.setFlashCount(count: count),
-    setMacrosColumns: (columns) => rust.setMacrosColumns(columns: columns),
+        widget.bridge.setFlashWholeScreen(enabled: enabled),
+    setHideKeyboard: (enabled) => widget.bridge.setHideKeyboard(enabled: enabled),
+    setFlashCount: (count) => widget.bridge.setFlashCount(count: count),
+    setMacrosColumns: (columns) => widget.bridge.setMacrosColumns(columns: columns),
     refreshConfig: () => AppStoreScope.read(context).refreshConfig(),
   );
   late final _staticPeersPresenter = StaticPeersPresenter(
     addStaticPeer: (a, port, label) =>
-        rust.addStaticPeer(address: a, port: port, label: label),
+        widget.bridge.addStaticPeer(address: a, port: port, label: label),
     removeStaticPeer: (address, port) =>
-        rust.removeStaticPeer(address: address, port: port),
+        widget.bridge.removeStaticPeer(address: address, port: port),
     refreshConfig: () => AppStoreScope.read(context).refreshConfig(),
     refreshPeers: () => AppStoreScope.read(context).refreshPeers(),
   );
   late final _networkPresenter = NetworkPresenter(
-    setInterface: (name) => rust.setInterface(name: name),
+    setInterface: (name) => widget.bridge.setInterface(name: name),
     setHeartbeatInterval: widget.bridge.setHeartbeatInterval,
-    setOscPort: (port) => rust.setOscPort(port: port),
+    setOscPort: (port) => widget.bridge.setOscPort(port: port),
     refreshConfig: () => AppStoreScope.read(context).refreshConfig(),
     getInterfaces: widget.bridge.getInterfaces,
   );
   late final _channelsImportPresenter = ChannelsImportPresenter(
-    requestChannels: (peerId) => rust.requestChannels(peerId: peerId),
+    requestChannels: (peerId) => widget.bridge.requestChannels(peerId: peerId),
   );
   late final _macrosImportPresenter = MacrosImportPresenter(
-    requestGlobalMacros: (peerId) => rust.requestGlobalMacros(peerId: peerId),
+    requestGlobalMacros: (peerId) => widget.bridge.requestGlobalMacros(peerId: peerId),
     previewGlobalMacros: widget.bridge.previewGlobalMacros,
   );
   late final _macrosSectionPresenter = MacrosSectionPresenter(
@@ -678,7 +677,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: PatchTheme.critical),
             onPressed: () {
-              runGuarded(context, () => rust.deleteChannel(id: channel.id));
+              runGuarded(context, () => widget.bridge.deleteChannel(id: channel.id));
               Navigator.pop(context);
             },
             child: const Text('Delete', style: TextStyle(color: Colors.white)),
@@ -794,7 +793,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               globalMacros: _globalMacros,
               onImportFromPeer: _showImportMacrosFromPeer,
               onReset: () =>
-                  _applyConfigChange(() => rust.resetGlobalMacros()),
+                  _applyConfigChange(() => widget.bridge.resetGlobalMacros()),
             ),
           ),
 

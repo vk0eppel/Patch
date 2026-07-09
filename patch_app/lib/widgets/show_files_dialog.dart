@@ -4,7 +4,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../bridge/bridge_client.dart';
-import '../src/rust/api.dart' as rust;
 import '../models/message.dart';
 import '../theme/patch_theme.dart';
 import '../util/run_guarded.dart';
@@ -74,7 +73,7 @@ class _ShowFilesDialogState extends State<ShowFilesDialog> {
       type: FileType.custom,
     );
     if (path == null || !mounted) return;
-    await runGuarded(context, () => rust.exportLayout(path: path, name: name));
+    await runGuarded(context, () => widget.bridge.exportLayout(path: path, name: name));
   }
 
   Future<void> _saveNew() async {
@@ -301,7 +300,7 @@ class _ShowFileRow extends StatelessWidget {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: PatchTheme.critical),
             onPressed: () {
-              runGuarded(context, () => rust.deleteShowFile(slug: showFile.slug));
+              runGuarded(context, () => bridge.deleteShowFile(slug: showFile.slug));
               Navigator.pop(context);
             },
             child: const Text('Delete', style: TextStyle(color: Colors.white)),
