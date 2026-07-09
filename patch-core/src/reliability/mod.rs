@@ -201,9 +201,7 @@ pub async fn track_critical(
     let trackable: Vec<(Uuid, Vec<SocketAddr>)> = targets
         .into_iter()
         .filter(|(peer_id, _)| {
-            peers
-                .iter()
-                .find(|p| p.peer_id == *peer_id)
+            crate::state::peer::find_peer(&peers, *peer_id)
                 .map(|p| !p.looks_offline(heartbeat_secs))
                 .unwrap_or(true) // unknown peer → track anyway
         })
@@ -247,9 +245,7 @@ async fn resolve_peer_names(state: &AppState, peer_ids: &[Uuid]) -> Vec<String> 
     peer_ids
         .iter()
         .map(|id| {
-            peers
-                .iter()
-                .find(|p| p.peer_id == *id)
+            crate::state::peer::find_peer(&peers, *id)
                 .map(|p| p.peer_name.clone())
                 .unwrap_or_else(|| id.to_string())
         })

@@ -163,6 +163,14 @@ pub enum PeerSighting {
     Mdns(PeerPresence),
 }
 
+/// The one Peer-by-id scan (#184), over a snapshot of the merged view
+/// `get_peers` serves (dynamic + Static Peers). Batch callers holding a
+/// snapshot use this directly; single-target callers go through
+/// `AppState::peer_by_id`.
+pub(crate) fn find_peer(peers: &[Peer], peer_id: Uuid) -> Option<&Peer> {
+    peers.iter().find(|p| p.peer_id == peer_id)
+}
+
 /// Pure peer-domain logic — no `AppEvent`/broadcast-channel dependency. Per
 /// ADR-0003, `AppState` decides what (if anything) to publish based on what
 /// these methods return, and owns any cross-domain orchestration (e.g. the

@@ -283,10 +283,8 @@ async fn handle_bye(
     // port changed, host didn't) still lands. An unverifiable bye just
     // falls back to the heartbeat timeout.
     let source_matches_peer = state
-        .get_peers()
+        .peer_by_id(peer_id)
         .await
-        .iter()
-        .find(|p| p.peer_id == peer_id)
         .is_some_and(|p| p.all_addrs().iter().any(|a| a.ip() == from.ip()));
     if !source_matches_peer {
         debug!(

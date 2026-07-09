@@ -162,10 +162,8 @@ pub(crate) async fn dispatch_dm(
         payload,
     );
     let peer = state
-        .get_peers()
+        .peer_by_id(peer_id)
         .await
-        .into_iter()
-        .find(|p| p.peer_id == peer_id)
         .ok_or_else(|| anyhow::anyhow!("peer not found"))?;
     if let Some(addr) = peer.best_addr() {
         let bytes = encode_dm(&msg, peer_id)?;
@@ -219,10 +217,8 @@ pub(crate) async fn dispatch_dm_flash(
         sender_name: config.client_name.clone(),
     };
     let peer = state
-        .get_peers()
+        .peer_by_id(target)
         .await
-        .into_iter()
-        .find(|p| p.peer_id == target)
         .ok_or_else(|| anyhow::anyhow!("peer not found"))?;
     if let Some(addr) = peer.best_addr() {
         let bytes = encode_dm_flash(&flash, target)?;
@@ -253,10 +249,8 @@ where
 {
     let pid = Uuid::parse_str(peer_id).map_err(|_| anyhow::anyhow!("invalid peer id"))?;
     let peer = state
-        .get_peers()
+        .peer_by_id(pid)
         .await
-        .into_iter()
-        .find(|p| p.peer_id == pid)
         .ok_or_else(|| anyhow::anyhow!("peer not found"))?;
     let addr = peer.best_addr().ok_or_else(|| {
         anyhow::anyhow!("peer has no resolved address yet — try again once it's online")

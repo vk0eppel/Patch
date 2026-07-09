@@ -433,6 +433,13 @@ impl AppState {
     /// peer that hasn't been heard from dynamically yet. The static-peer merge
     /// is cross-domain (it needs `Config`, not just the peer registry), so it
     /// lives here rather than in `PeerRegistry` — see ADR-0003.
+    /// Resolve one Peer by id from the same merged view [`Self::get_peers`]
+    /// serves (dynamic + Static Peers) — the single-target accessor every
+    /// lookup routes through (#184, ADR-0003).
+    pub async fn peer_by_id(&self, peer_id: Uuid) -> Option<peer::Peer> {
+        peer::find_peer(&self.get_peers().await, peer_id).cloned()
+    }
+
     pub async fn get_peers(&self) -> Vec<peer::Peer> {
         let mut peers: Vec<_> = self.0.peers.list().await;
 
@@ -934,6 +941,40 @@ mod tests {
             flash_on_message: false,
             flash_count: None,
         }
+    }
+
+    #[tokio::test]
+    async fn peer_by_id_sees_the_same_merged_view_as_get_peers() {
+        let st = test_state();
+        let dynamic_id = Uuid::new_v4();
+        st.record_sighting(
+            PeerSighting::Presence(crate::osc::types::PeerPresence {
+                peer_id: dynamic_id,
+                peer_name: "FOH".into(),
+                channels: Vec::new(),
+                role: None,
+                timestamp: chrono::Utc::now(),
+            }),
+            "10.0.0.7".into(),
+            9000,
+        )
+        .await;
+        st.add_static_peer("10.0.0.9".into(), 9000, Some("Booth".into()))
+            .await
+            .unwrap();
+        let static_id = st
+            .get_peers()
+            .await
+            .into_iter()
+            .find(|p| p.peer_name == "Booth")
+            .unwrap()
+            .peer_id;
+
+        assert_eq!(st.peer_by_id(dynamic_id).await.unwrap().peer_name, "FOH");
+        // Static Peers are part of the merged view get_peers serves — the
+        // accessor must resolve them too (protocol's bye check relies on it).
+        assert_eq!(st.peer_by_id(static_id).await.unwrap().peer_name, "Booth");
+        assert!(st.peer_by_id(Uuid::new_v4()).await.is_none());
     }
 
     #[tokio::test]
