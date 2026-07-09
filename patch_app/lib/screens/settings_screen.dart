@@ -11,6 +11,7 @@ import '../models/message.dart';
 import '../store/app_store.dart';
 import '../theme/patch_theme.dart';
 import '../util/run_guarded.dart';
+import '../util/section_scroll_spy.dart';
 import '../presenters/settings/behavior_presenter.dart';
 import '../presenters/settings/identity_presenter.dart';
 import '../presenters/settings/macros_section_presenter.dart';
@@ -119,38 +120,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _viewportKey = GlobalKey();
   final _scrollController = ScrollController();
   int _activeSection = 0;
-  // True while a tap-triggered scroll animation is in flight — alignment: 0
-  // doesn't always land the header at *exactly* the viewport top (sub-pixel
-  // rounding), so the scrollspy below can disagree with the section the user
-  // just tapped for a frame or two. Suppress it until the animation settles.
-  bool _programmaticScroll = false;
+  // The active-section decision (tolerance, indeterminate frames, the
+  // suppression latch around tap-scrolls) lives in SectionScrollSpy (#183);
+  // this widget only reads geometry and applies the result.
+  final _scrollSpy = SectionScrollSpy();
 
-  // Scrollspy: the active section is whichever header has most recently
-  // scrolled past the top of the viewport — sections are in document order,
-  // so the first one that *hasn't* passed yet ends the search.
   void _onScroll() {
-    if (_programmaticScroll) return;
     final viewportBox =
         _viewportKey.currentContext?.findRenderObject() as RenderBox?;
     if (viewportBox == null) return;
-    final viewportTop = viewportBox.localToGlobal(Offset.zero).dy;
-
-    // No default of 0 here — an indeterminate frame (no section's box
-    // resolved yet) must leave the current highlight alone, not jump to
-    // Identity.
-    int? active;
-    for (var i = 0; i < _sectionKeys.length; i++) {
-      final box =
-          _sectionKeys[i].currentContext?.findRenderObject() as RenderBox?;
-      if (box == null) continue;
-      if (box.localToGlobal(Offset.zero).dy <= viewportTop + 1) {
-        active = i;
-      } else {
-        break;
-      }
-    }
+    final active = _scrollSpy.activeFor(
+      sectionTops: [
+        for (final key in _sectionKeys)
+          (key.currentContext?.findRenderObject() as RenderBox?)
+              ?.localToGlobal(Offset.zero)
+              .dy,
+      ],
+      viewportTop: viewportBox.localToGlobal(Offset.zero).dy,
+    );
     if (active != null && active != _activeSection) {
-      setState(() => _activeSection = active!);
+      setState(() => _activeSection = active);
     }
   }
 
@@ -158,17 +147,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final ctx = _sectionKeys[index].currentContext;
     if (ctx == null) return;
     // Set the active section immediately rather than waiting on the scroll
-    // listener — the listener is suppressed for the duration of the
-    // animation below, so this is the only thing driving the highlight.
+    // listener — the spy is suppressed for the duration of the animation
+    // below, so this is the only thing driving the highlight.
     setState(() => _activeSection = index);
-    _programmaticScroll = true;
+    _scrollSpy.suppressed = true;
     await Scrollable.ensureVisible(
       ctx,
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeInOut,
       alignment: 0,
     );
-    _programmaticScroll = false;
+    _scrollSpy.suppressed = false;
   }
 
   @override
