@@ -57,20 +57,8 @@ void main() {
       (tester) async {
     var saveCalled = false;
     final presenter = MacrosSectionPresenter(
-      upsertChannelMacro: ({
-        required channelId,
-        originalLabel,
-        required label,
-        required payload,
-        keyBinding,
-        priority = 1,
-        midiNote,
-        midiCc,
-        osc,
-      }) async {
-        saveCalled = true;
-      },
-      upsertGlobalMacro: ({
+      upsertMacro: ({
+        channelId,
         originalLabel,
         required label,
         required payload,
@@ -101,20 +89,8 @@ void main() {
       (tester) async {
     MacroOsc? savedOsc;
     final presenter = MacrosSectionPresenter(
-      upsertChannelMacro: ({
-        required channelId,
-        originalLabel,
-        required label,
-        required payload,
-        keyBinding,
-        priority = 1,
-        midiNote,
-        midiCc,
-        osc,
-      }) async {
-        savedOsc = osc;
-      },
-      upsertGlobalMacro: ({
+      upsertMacro: ({
+        channelId,
         originalLabel,
         required label,
         required payload,

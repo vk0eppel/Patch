@@ -629,13 +629,49 @@ pub async fn adopt_global_macros(
     engine().state.merge_global_macros(global_macros).await
 }
 
+/// The shared trim → reject-empty-label → validate-OSC → build step for both
+/// Macro homes (#186). ADR-0002's live-edit trust level: an invalid OSC
+/// target rejects immediately, before any state mutation.
+fn build_validated_macro(
+    label: String,
+    payload: String,
+    priority: i32,
+    key_binding: Option<String>,
+    midi_note: Option<u8>,
+    midi_cc: Option<u8>,
+    osc: Option<OscTarget>,
+) -> Result<MacroMessage> {
+    let label = label.trim().to_string();
+    if label.is_empty() {
+        anyhow::bail!("label must be non-empty");
+    }
+    if let Some(o) = &osc {
+        channel::validate_osc_target(o)?;
+    }
+    Ok(MacroMessage {
+        label,
+        payload,
+        key_binding,
+        priority,
+        midi_note,
+        midi_cc,
+        osc,
+    })
+}
+
+/// Upsert a Macro into either home, keyed on `channel_id` (#186): `Some` is a
+/// Channel Macro (stored inside that Channel), `None` is a Global Macro
+/// (stored in config, fired on the current selection) — the same
+/// discriminator macro routing uses (ADR-0009). The engine-side registries
+/// stay split behind this one entry (ADR-0003 lock ownership).
+///
 /// `original_label` is the macro's label before this edit — pass it when
 /// editing an existing macro (even if the label didn't change) so a rename
 /// updates that macro in place instead of appending a new one under the new
 /// label. Omit (`None`) only when creating a brand-new macro.
 #[allow(clippy::too_many_arguments)]
 pub async fn upsert_macro(
-    channel_id: String,
+    channel_id: Option<String>,
     original_label: Option<String>,
     label: String,
     payload: String,
@@ -645,29 +681,29 @@ pub async fn upsert_macro(
     midi_cc: Option<u8>,
     osc: Option<OscTarget>,
 ) -> Result<()> {
-    let label = label.trim().to_string();
-    if label.is_empty() {
-        anyhow::bail!("label must be non-empty");
+    let macro_msg = build_validated_macro(
+        label,
+        payload,
+        priority,
+        key_binding,
+        midi_note,
+        midi_cc,
+        osc,
+    )?;
+    match channel_id {
+        Some(id) => {
+            engine()
+                .state
+                .upsert_macro(&id, original_label.as_deref(), macro_msg)
+                .await
+        }
+        None => {
+            engine()
+                .state
+                .upsert_global_macro(original_label.as_deref(), macro_msg)
+                .await
+        }
     }
-    if let Some(o) = &osc {
-        channel::validate_osc_target(o)?;
-    }
-    engine()
-        .state
-        .upsert_macro(
-            &channel_id,
-            original_label.as_deref(),
-            MacroMessage {
-                label,
-                payload,
-                key_binding,
-                priority,
-                midi_note,
-                midi_cc,
-                osc,
-            },
-        )
-        .await
 }
 
 pub async fn delete_macro(channel_id: String, label: String) -> Result<()> {
@@ -686,46 +722,6 @@ pub async fn reorder_macros(channel_id: String, ordered_labels: Vec<String>) -> 
 //
 // Shown on every channel's macro panel; fired on the currently-selected
 // channel(s) by the UI. Stored on the config, surfaced via `ConfigSnapshot`.
-
-/// `original_label` is the macro's label before this edit — see
-/// [`upsert_macro`]'s doc for the rename contract.
-#[allow(clippy::too_many_arguments)]
-pub async fn upsert_global_macro(
-    original_label: Option<String>,
-    label: String,
-    payload: String,
-    priority: i32,
-    key_binding: Option<String>,
-    midi_note: Option<u8>,
-    midi_cc: Option<u8>,
-    osc: Option<OscTarget>,
-) -> Result<()> {
-    let label = label.trim().to_string();
-    if label.is_empty() {
-        anyhow::bail!("label must be non-empty");
-    }
-    if let Some(o) = &osc {
-        channel::validate_osc_target(o)?;
-    }
-    engine()
-        .state
-        .upsert_global_macro(
-            original_label.as_deref(),
-            MacroMessage {
-                label,
-                payload,
-                key_binding,
-                priority,
-                // A MIDI-triggered global macro fires on the UI's currently-selected
-                // channel(s) — the engine learns that selection via
-                // `set_selected_channels` (pushed from Flutter).
-                midi_note,
-                midi_cc,
-                osc,
-            },
-        )
-        .await
-}
 
 /// Tell the engine which channels the UI currently has selected, so a
 /// MIDI-triggered *global* macro fires on the same channel(s) a tap/F-key would.
@@ -1004,6 +1000,57 @@ impl From<AppEvent> for PatchAppEvent {
 mod tests {
     use super::*;
 
+    fn osc(addr: &str) -> OscTarget {
+        OscTarget {
+            address: addr.into(),
+            port: 53000,
+            path: "/cue/1/start".into(),
+            arg: None,
+            arg_type: crate::osc::types::OscArgKind::String,
+        }
+    }
+
+    /// #186: the trim → reject-empty → validate-OSC → build step exists once,
+    /// shared by the Channel-Macro and Global-Macro targets of `upsert_macro`.
+    #[test]
+    fn build_validated_macro_trims_label_and_carries_fields() {
+        let m = build_validated_macro(
+            "  GO  ".into(),
+            "GO GO GO".into(),
+            3,
+            Some("F1".into()),
+            Some(60),
+            None,
+            Some(osc("10.0.0.9")),
+        )
+        .unwrap();
+        assert_eq!(m.label, "GO");
+        assert_eq!(m.payload, "GO GO GO");
+        assert_eq!(m.priority, 3);
+        assert_eq!(m.key_binding.as_deref(), Some("F1"));
+        assert_eq!(m.midi_note, Some(60));
+        assert!(m.osc.is_some());
+    }
+
+    #[test]
+    fn build_validated_macro_rejects_blank_label_and_invalid_osc() {
+        assert!(
+            build_validated_macro("   ".into(), "x".into(), 1, None, None, None, None).is_err()
+        );
+        // ADR-0002 live-edit trust level: an invalid OSC target rejects
+        // immediately, for both macro homes.
+        assert!(build_validated_macro(
+            "GO".into(),
+            "x".into(),
+            1,
+            None,
+            None,
+            None,
+            Some(osc("not-an-ip"))
+        )
+        .is_err());
+    }
+
     #[test]
     fn lagged_event_subscriber_is_told_to_resync_not_silently_skipped() {
         use tokio::sync::broadcast::error::RecvError;
@@ -1098,7 +1145,7 @@ mod tests {
             arg_type: OscArgKind::Float,
         };
         assert!(super::upsert_macro(
-            "rf".into(),
+            Some("rf".into()),
             None,
             "GO".into(),
             "payload".into(),
@@ -1124,7 +1171,8 @@ mod tests {
             arg: Some("loud".into()),
             arg_type: OscArgKind::Int,
         };
-        assert!(super::upsert_global_macro(
+        assert!(super::upsert_macro(
+            None,
             None,
             "GO".into(),
             "payload".into(),

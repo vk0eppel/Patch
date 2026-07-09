@@ -194,7 +194,7 @@ class _ChannelMacroEditor extends StatelessWidget {
       // Channel-macro CRUD refreshes the screens via the ChannelsChanged push
       // (no config refetch needed); runGuarded surfaces failures (ADR-0004).
       onUpsert: (ol, l, p, k, pr, mn, mc, osc) => runGuarded(context, () async {
-        final result = await presenter.saveChannelMacro(
+        final result = await presenter.saveMacro(
           channelId: channel.id,
           originalLabel: ol,
           label: l,
@@ -738,7 +738,7 @@ class _GlobalMacrosEditor extends StatelessWidget {
       // each mutation so both screens reflect the change (#56).
       onUpsert: (ol, l, p, k, pr, mn, mc, osc) => runGuarded(context, () async {
         final store = AppStoreScope.read(context);
-        final result = await presenter.saveGlobalMacro(
+        final result = await presenter.saveMacro(
           originalLabel: ol,
           label: l,
           payload: p,

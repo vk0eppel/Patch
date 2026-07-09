@@ -10,8 +10,8 @@ void main() {
   setUp(() {
     calls = [];
     p = MacrosSectionPresenter(
-      upsertChannelMacro: ({
-        required channelId,
+      upsertMacro: ({
+        channelId,
         originalLabel,
         required label,
         required payload,
@@ -21,87 +21,61 @@ void main() {
         midiCc,
         osc,
       }) async {
-        calls.add('upsertChannelMacro:$channelId:$label');
-      },
-      upsertGlobalMacro: ({
-        originalLabel,
-        required label,
-        required payload,
-        keyBinding,
-        priority = 1,
-        midiNote,
-        midiCc,
-        osc,
-      }) async {
-        calls.add('upsertGlobalMacro:$label');
+        calls.add('upsertMacro:${channelId ?? '<global>'}:$label');
       },
     );
   });
 
-  group('MacrosSectionPresenter', () {
-    test('saveChannelMacro calls the bridge with a valid OSC target',
-        () async {
-      final result = await p.saveChannelMacro(
+  const validOsc = MacroOsc(
+    address: '10.0.0.9',
+    port: 53000,
+    path: '/cue/1/start',
+    argType: MacroOscArgType.string,
+  );
+
+  group('MacrosSectionPresenter (#186: one save path keyed on channelId)', () {
+    test('a Channel Macro save carries its channel id', () async {
+      final result = await p.saveMacro(
         channelId: 'rf',
         label: 'GO',
         payload: 'go',
-        osc: const MacroOsc(
-          address: '10.0.0.9',
-          port: 53000,
-          path: '/cue/1/start',
-          argType: MacroOscArgType.string,
-        ),
+        osc: validOsc,
       );
       expect(result, isA<SaveOk>());
-      expect(calls, ['upsertChannelMacro:rf:GO']);
+      expect(calls, ['upsertMacro:rf:GO']);
     });
 
-    test('saveChannelMacro rejects an invalid OSC target before any bridge call',
+    test('a Global Macro save carries no channel id', () async {
+      final result = await p.saveMacro(label: 'Standby', payload: 'standby');
+      expect(result, isA<SaveOk>());
+      expect(calls, ['upsertMacro:<global>:Standby']);
+    });
+
+    test('an invalid OSC target rejects before any bridge call — both homes',
         () async {
-      final result = await p.saveChannelMacro(
-        channelId: 'rf',
-        label: 'GO',
-        payload: 'go',
-        osc: const MacroOsc(
-          address: 'not-an-ip',
-          port: 53000,
-          path: '/cue/1/start',
-          argType: MacroOscArgType.string,
-        ),
+      const badOsc = MacroOsc(
+        address: 'not-an-ip',
+        port: 53000,
+        path: '/cue/1/start',
+        argType: MacroOscArgType.string,
       );
-      expect(result, isA<SaveError>());
+      expect(
+        await p.saveMacro(
+            channelId: 'rf', label: 'GO', payload: 'go', osc: badOsc),
+        isA<SaveError>(),
+      );
+      expect(
+        await p.saveMacro(label: 'Standby', payload: 's', osc: badOsc),
+        isA<SaveError>(),
+      );
       expect(calls, isEmpty);
     });
 
-    test('saveChannelMacro with no OSC target skips the guard', () async {
+    test('no OSC target skips the guard', () async {
       final result =
-          await p.saveChannelMacro(channelId: 'rf', label: 'GO', payload: 'go');
+          await p.saveMacro(channelId: 'rf', label: 'GO', payload: 'go');
       expect(result, isA<SaveOk>());
-      expect(calls, ['upsertChannelMacro:rf:GO']);
-    });
-
-    test('saveGlobalMacro calls the bridge with a valid OSC target',
-        () async {
-      final result =
-          await p.saveGlobalMacro(label: 'Standby', payload: 'standby');
-      expect(result, isA<SaveOk>());
-      expect(calls, ['upsertGlobalMacro:Standby']);
-    });
-
-    test('saveGlobalMacro rejects an invalid OSC target before any bridge call',
-        () async {
-      final result = await p.saveGlobalMacro(
-        label: 'Standby',
-        payload: 'standby',
-        osc: const MacroOsc(
-          address: '10.0.0.9',
-          port: 0,
-          path: '/cue/1/start',
-          argType: MacroOscArgType.string,
-        ),
-      );
-      expect(result, isA<SaveError>());
-      expect(calls, isEmpty);
+      expect(calls, ['upsertMacro:rf:GO']);
     });
   });
 }

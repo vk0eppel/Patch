@@ -71,7 +71,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -1994420256;
+  int get rustContentHash => 1368108664;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -234,19 +234,8 @@ abstract class RustLibApi extends BaseApi {
     String? color,
   });
 
-  Future<void> crateApiUpsertGlobalMacro({
-    String? originalLabel,
-    required String label,
-    required String payload,
-    required int priority,
-    String? keyBinding,
-    int? midiNote,
-    int? midiCc,
-    OscTarget? osc,
-  });
-
   Future<void> crateApiUpsertMacro({
-    required String channelId,
+    String? channelId,
     String? originalLabel,
     required String label,
     required String payload,
@@ -1781,7 +1770,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
-  Future<void> crateApiUpsertGlobalMacro({
+  Future<void> crateApiUpsertMacro({
+    String? channelId,
     String? originalLabel,
     required String label,
     required String payload,
@@ -1795,6 +1785,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_opt_String(channelId, serializer);
           sse_encode_opt_String(originalLabel, serializer);
           sse_encode_String(label, serializer);
           sse_encode_String(payload, serializer);
@@ -1807,72 +1798,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             generalizedFrbRustBinding,
             serializer,
             funcId: 51,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiUpsertGlobalMacroConstMeta,
-        argValues: [
-          originalLabel,
-          label,
-          payload,
-          priority,
-          keyBinding,
-          midiNote,
-          midiCc,
-          osc,
-        ],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiUpsertGlobalMacroConstMeta => const TaskConstMeta(
-    debugName: "upsert_global_macro",
-    argNames: [
-      "originalLabel",
-      "label",
-      "payload",
-      "priority",
-      "keyBinding",
-      "midiNote",
-      "midiCc",
-      "osc",
-    ],
-  );
-
-  @override
-  Future<void> crateApiUpsertMacro({
-    required String channelId,
-    String? originalLabel,
-    required String label,
-    required String payload,
-    required int priority,
-    String? keyBinding,
-    int? midiNote,
-    int? midiCc,
-    OscTarget? osc,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(channelId, serializer);
-          sse_encode_opt_String(originalLabel, serializer);
-          sse_encode_String(label, serializer);
-          sse_encode_String(payload, serializer);
-          sse_encode_i_32(priority, serializer);
-          sse_encode_opt_String(keyBinding, serializer);
-          sse_encode_opt_box_autoadd_u_8(midiNote, serializer);
-          sse_encode_opt_box_autoadd_u_8(midiCc, serializer);
-          sse_encode_opt_box_autoadd_osc_target(osc, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 52,
             port: port_,
           );
         },

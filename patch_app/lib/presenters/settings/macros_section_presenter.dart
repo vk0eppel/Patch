@@ -11,12 +11,14 @@ import 'save_result.dart';
 /// ADR-0005.
 class MacrosSectionPresenter {
   MacrosSectionPresenter({
-    required this.upsertChannelMacro,
-    required this.upsertGlobalMacro,
+    required this.upsertMacro,
   });
 
+  /// The one macro-save command (#186), keyed on [channelId]: non-null is a
+  /// Channel Macro, null is a Global Macro — the same discriminator macro
+  /// routing uses (ADR-0009).
   final Future<void> Function({
-    required String channelId,
+    String? channelId,
     String? originalLabel,
     required String label,
     required String payload,
@@ -25,21 +27,10 @@ class MacrosSectionPresenter {
     int? midiNote,
     int? midiCc,
     MacroOsc? osc,
-  }) upsertChannelMacro;
+  }) upsertMacro;
 
-  final Future<void> Function({
-    String? originalLabel,
-    required String label,
-    required String payload,
-    String? keyBinding,
-    int priority,
-    int? midiNote,
-    int? midiCc,
-    MacroOsc? osc,
-  }) upsertGlobalMacro;
-
-  Future<SaveResult> saveChannelMacro({
-    required String channelId,
+  Future<SaveResult> saveMacro({
+    String? channelId,
     String? originalLabel,
     required String label,
     required String payload,
@@ -51,32 +42,8 @@ class MacrosSectionPresenter {
   }) =>
       validateThenSave(
         validate: () => _validateOsc(osc),
-        save: () => upsertChannelMacro(
+        save: () => upsertMacro(
           channelId: channelId,
-          originalLabel: originalLabel,
-          label: label,
-          payload: payload,
-          keyBinding: keyBinding,
-          priority: priority,
-          midiNote: midiNote,
-          midiCc: midiCc,
-          osc: osc,
-        ),
-      );
-
-  Future<SaveResult> saveGlobalMacro({
-    String? originalLabel,
-    required String label,
-    required String payload,
-    String? keyBinding,
-    int priority = 1,
-    int? midiNote,
-    int? midiCc,
-    MacroOsc? osc,
-  }) =>
-      validateThenSave(
-        validate: () => _validateOsc(osc),
-        save: () => upsertGlobalMacro(
           originalLabel: originalLabel,
           label: label,
           payload: payload,

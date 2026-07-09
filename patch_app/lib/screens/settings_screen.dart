@@ -76,50 +76,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     previewGlobalMacros: widget.bridge.previewGlobalMacros,
   );
   late final _macrosSectionPresenter = MacrosSectionPresenter(
-    upsertChannelMacro: ({
-      required channelId,
-      originalLabel,
-      required label,
-      required payload,
-      keyBinding,
-      priority = 1,
-      midiNote,
-      midiCc,
-      osc,
-    }) {
-      return widget.bridge.upsertMacro(
-        channelId: channelId,
-        originalLabel: originalLabel,
-        label: label,
-        payload: payload,
-        keyBinding: keyBinding,
-        priority: priority,
-        midiNote: midiNote,
-        midiCc: midiCc,
-        osc: osc,
-      );
-    },
-    upsertGlobalMacro: ({
-      originalLabel,
-      required label,
-      required payload,
-      keyBinding,
-      priority = 1,
-      midiNote,
-      midiCc,
-      osc,
-    }) {
-      return widget.bridge.upsertGlobalMacro(
-        originalLabel: originalLabel,
-        label: label,
-        payload: payload,
-        keyBinding: keyBinding,
-        priority: priority,
-        midiNote: midiNote,
-        midiCc: midiCc,
-        osc: osc,
-      );
-    },
+    upsertMacro: widget.bridge.upsertMacro,
   );
 
   // Channels are owned by the AppStore (#57).

@@ -15,7 +15,7 @@ import 'state/show_file.dart';
 import 'transport.dart';
 part 'api.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `forward_decision`, `init_tracing`, `resolve_network_interface`
+// These functions are ignored because they are not marked as `pub`: `build_validated_macro`, `forward_decision`, `init_tracing`, `resolve_network_interface`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `EngineHandle`, `EventForward`, `InterfaceResolution`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `engine`
@@ -257,12 +257,18 @@ Future<List<MacroImportOutcome>> adoptGlobalMacros({
 }) =>
     RustLib.instance.api.crateApiAdoptGlobalMacros(globalMacros: globalMacros);
 
+/// Upsert a Macro into either home, keyed on `channel_id` (#186): `Some` is a
+/// Channel Macro (stored inside that Channel), `None` is a Global Macro
+/// (stored in config, fired on the current selection) — the same
+/// discriminator macro routing uses (ADR-0009). The engine-side registries
+/// stay split behind this one entry (ADR-0003 lock ownership).
+///
 /// `original_label` is the macro's label before this edit — pass it when
 /// editing an existing macro (even if the label didn't change) so a rename
 /// updates that macro in place instead of appending a new one under the new
 /// label. Omit (`None`) only when creating a brand-new macro.
 Future<void> upsertMacro({
-  required String channelId,
+  String? channelId,
   String? originalLabel,
   required String label,
   required String payload,
@@ -296,28 +302,6 @@ Future<void> reorderMacros({
 }) => RustLib.instance.api.crateApiReorderMacros(
   channelId: channelId,
   orderedLabels: orderedLabels,
-);
-
-/// `original_label` is the macro's label before this edit — see
-/// [`upsert_macro`]'s doc for the rename contract.
-Future<void> upsertGlobalMacro({
-  String? originalLabel,
-  required String label,
-  required String payload,
-  required int priority,
-  String? keyBinding,
-  int? midiNote,
-  int? midiCc,
-  OscTarget? osc,
-}) => RustLib.instance.api.crateApiUpsertGlobalMacro(
-  originalLabel: originalLabel,
-  label: label,
-  payload: payload,
-  priority: priority,
-  keyBinding: keyBinding,
-  midiNote: midiNote,
-  midiCc: midiCc,
-  osc: osc,
 );
 
 /// Tell the engine which channels the UI currently has selected, so a

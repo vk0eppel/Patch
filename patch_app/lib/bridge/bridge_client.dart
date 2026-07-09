@@ -114,8 +114,10 @@ class BridgeClient {
   /// editing an existing macro (even if the label didn't change) so a rename
   /// updates that macro in place instead of creating a new one. Omit (null)
   /// only when creating a brand-new macro.
+  /// Upsert a Macro into either home, keyed on [channelId] (#186): non-null
+  /// is a Channel Macro, null is a Global Macro.
   Future<void> upsertMacro({
-    required String channelId,
+    String? channelId,
     String? originalLabel,
     required String label,
     required String payload,
@@ -167,29 +169,6 @@ class BridgeClient {
   }
 
   // ── Global macros (shown on every channel; fired on the current channel) ────
-
-  /// [originalLabel] is the macro's label before this edit — see
-  /// [upsertMacro]'s doc for the rename contract.
-  Future<void> upsertGlobalMacro({
-    String? originalLabel,
-    required String label,
-    required String payload,
-    String? keyBinding,
-    int priority = 1,
-    int? midiNote,
-    int? midiCc,
-    MacroOsc? osc,
-  }) =>
-      rust.upsertGlobalMacro(
-        originalLabel: originalLabel,
-        label: label,
-        payload: payload,
-        priority: priority,
-        keyBinding: keyBinding,
-        midiNote: midiNote,
-        midiCc: midiCc,
-        osc: oscTargetFromMacroOsc(osc),
-      );
 
   /// Push the UI's current channel selection to the engine so a MIDI-triggered
   /// global macro fires on the same channel(s) as a tap/F-key. Fire-and-forget.
