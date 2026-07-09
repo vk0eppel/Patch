@@ -146,6 +146,11 @@ Future<void> setInterface({String? name}) =>
 Future<void> patchConfig({required ConfigPatch patch}) =>
     RustLib.instance.api.crateApiPatchConfig(patch: patch);
 
+/// Restore the scalar behavior settings to their factory defaults — the
+/// engine owns the default values (issue #180); the UI sends no literals.
+Future<void> resetBehaviorConfig() =>
+    RustLib.instance.api.crateApiResetBehaviorConfig();
+
 Future<void> setHeartbeatInterval({required BigInt secs}) =>
     RustLib.instance.api.crateApiSetHeartbeatInterval(secs: secs);
 

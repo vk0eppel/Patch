@@ -50,6 +50,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   );
   late final _behaviorPresenter = BehaviorPresenter(
     patch: widget.bridge.patchConfig,
+    resetBehavior: widget.bridge.resetBehaviorConfig,
     refreshConfig: () => AppStoreScope.read(context).refreshConfig(),
   );
   late final _staticPeersPresenter = StaticPeersPresenter(

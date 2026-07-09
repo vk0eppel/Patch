@@ -18,11 +18,16 @@ typedef BehaviorPatchFn = Future<void> Function({
 class BehaviorPresenter {
   BehaviorPresenter({
     required this.patch,
+    required this.resetBehavior,
     required this.refreshConfig,
   });
 
   /// One command for every behavior save — a single-field patch per toggle.
   final BehaviorPatchFn patch;
+
+  /// The engine's factory-defaults reset (#180) — the presenter carries no
+  /// default values; the engine owns them.
+  final Future<void> Function() resetBehavior;
   final Future<void> Function() refreshConfig;
 
   /// The pulse counts the picker offers.
@@ -51,16 +56,9 @@ class BehaviorPresenter {
     return true;
   }
 
-  /// Factory defaults for every Behavior setting — one patch, one refetch.
-  Future<void> resetDefaults() => _save(() => patch(
-        flashOnMessage: false,
-        flashOnCritical: true,
-        audibleAlert: false,
-        flashWholeScreen: false,
-        hideKeyboard: true,
-        flashCount: 4,
-        macrosColumns: 1,
-      ));
+  /// Factory defaults for every Behavior setting — one engine command, one
+  /// refetch. The default values live engine-side only.
+  Future<void> resetDefaults() => _save(resetBehavior);
 
   Future<void> _save(Future<void> Function() action) async {
     await action();

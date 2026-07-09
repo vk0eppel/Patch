@@ -478,6 +478,12 @@ pub async fn patch_config(patch: crate::state::ConfigPatch) -> Result<()> {
     engine().state.patch_config(patch).await
 }
 
+/// Restore the scalar behavior settings to their factory defaults — the
+/// engine owns the default values (issue #180); the UI sends no literals.
+pub async fn reset_behavior_config() -> Result<()> {
+    engine().state.reset_behavior_config().await
+}
+
 pub async fn set_heartbeat_interval(secs: u64) -> Result<()> {
     engine().state.set_heartbeat_interval(secs).await
 }

@@ -277,6 +277,13 @@ impl AppState {
         Ok(())
     }
 
+    /// Restore every scalar behavior setting to its factory default
+    /// (`ConfigPatch::behavior_defaults()`) in one persisted mutation.
+    pub async fn reset_behavior_config(&self) -> anyhow::Result<()> {
+        self.patch_config(config::ConfigPatch::behavior_defaults())
+            .await
+    }
+
     /// Update per-channel flash flags. `None` means "leave unchanged".
     pub async fn set_channel_flash(
         &self,
@@ -2182,6 +2189,37 @@ mod tests {
             let cfg = st.config().await;
             assert!(check(&cfg), "case {i} did not apply");
         }
+    }
+
+    /// Reset restores every scalar behavior field to the `Config::default()`
+    /// values — derived, not restated, so a changed default can't drift.
+    #[tokio::test]
+    async fn reset_behavior_config_restores_config_defaults() {
+        let st = test_state();
+        // Drive every behavior field away from its default first.
+        let d = Config::default();
+        st.patch_config(ConfigPatch {
+            flash_on_critical: Some(!d.flash_on_critical),
+            flash_on_message: Some(!d.flash_on_message),
+            flash_count: Some(if d.flash_count == 7 { 3 } else { 7 }),
+            macros_columns: Some(if d.macros_columns == 3 { 1 } else { 3 }),
+            hide_keyboard: Some(!d.hide_keyboard),
+            audible_alert: Some(!d.audible_alert),
+            flash_whole_screen: Some(!d.flash_whole_screen),
+        })
+        .await
+        .unwrap();
+
+        st.reset_behavior_config().await.unwrap();
+
+        let cfg = st.config().await;
+        assert_eq!(cfg.flash_on_critical, d.flash_on_critical);
+        assert_eq!(cfg.flash_on_message, d.flash_on_message);
+        assert_eq!(cfg.flash_count, d.flash_count);
+        assert_eq!(cfg.macros_columns, d.macros_columns);
+        assert_eq!(cfg.hide_keyboard, d.hide_keyboard);
+        assert_eq!(cfg.audible_alert, d.audible_alert);
+        assert_eq!(cfg.flash_whole_screen, d.flash_whole_screen);
     }
 
     /// An all-`None` patch is a no-op — nothing changes, nothing errors.

@@ -368,6 +368,10 @@ class BridgeClient {
         ),
       );
 
+  /// Restore the scalar behavior settings to their factory defaults — the
+  /// engine owns the default values (#180); no literals cross the seam.
+  Future<void> resetBehaviorConfig() => rust.resetBehaviorConfig();
+
   // ── Network settings ────────────────────────────────────────────────────
 
   /// Pin Patch to interface [name] (ADR-0011 — mandatory pinning).

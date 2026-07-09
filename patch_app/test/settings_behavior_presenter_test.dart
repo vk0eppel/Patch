@@ -28,6 +28,7 @@ void main() {
         ];
         calls.add('patch(${fields.join(',')})');
       },
+      resetBehavior: () async => calls.add('resetBehavior'),
       refreshConfig: () async => calls.add('refreshConfig'),
     );
   });
@@ -56,24 +57,10 @@ void main() {
       expect(calls, ['patch(macrosColumns:2)', 'refreshConfig']);
     });
 
-    test('reset restores every default in one patch and one refetch',
-        () async {
+    test('reset issues the engine reset command — no values cross the seam, '
+        'the engine owns the defaults (#180)', () async {
       await p.resetDefaults();
-      expect(calls, hasLength(2));
-      expect(calls.last, 'refreshConfig');
-      final patch = calls.first;
-      expect(
-        patch,
-        stringContainsInOrder([
-          'flashOnMessage:false',
-          'flashOnCritical:true',
-          'audibleAlert:false',
-          'flashWholeScreen:false',
-          'hideKeyboard:true',
-          'flashCount:4',
-          'macrosColumns:1',
-        ]),
-      );
+      expect(calls, ['resetBehavior', 'refreshConfig']);
     });
   });
 }

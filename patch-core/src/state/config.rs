@@ -247,6 +247,22 @@ pub struct ConfigPatch {
 }
 
 impl ConfigPatch {
+    /// The factory values for every scalar behavior field, derived from
+    /// `Config::default()` — the engine-side single source of truth the UI's
+    /// Reset button applies (issue #180). Dart holds no default values.
+    pub fn behavior_defaults() -> Self {
+        let d = Config::default();
+        Self {
+            flash_on_critical: Some(d.flash_on_critical),
+            flash_on_message: Some(d.flash_on_message),
+            flash_count: Some(d.flash_count),
+            macros_columns: Some(d.macros_columns),
+            hide_keyboard: Some(d.hide_keyboard),
+            audible_alert: Some(d.audible_alert),
+            flash_whole_screen: Some(d.flash_whole_screen),
+        }
+    }
+
     /// True when every field is `None` — callers skip the persist entirely.
     pub fn is_empty(&self) -> bool {
         matches!(
