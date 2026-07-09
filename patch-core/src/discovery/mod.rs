@@ -155,84 +155,95 @@ impl Discovery {
         };
 
         // ── Heartbeat + beacon task ───────────────────────────────────────────
-        let hb_state = state.clone();
-        let hb_transport = transport.clone();
-        tokio::spawn(async move {
-            // First heartbeat fires immediately (like interval's first tick);
-            // the cadence is re-read from config at the end of each iteration so
-            // a Settings change to the interval applies on the next cycle with no
-            // restart.
-            loop {
-                // Broadcast our presence so every peer on the LAN can discover us.
-                let channels = hb_state
-                    .get_channels()
-                    .await
-                    .iter()
-                    .map(|c| c.id.clone())
-                    .collect();
-                // Re-read config every tick so a rename (or a NIC change)
-                // propagates within one heartbeat without a restart.
-                let cfg = hb_state.config().await;
-                let presence = PeerPresence {
-                    peer_id: client_id,
-                    peer_name: cfg.client_name.clone(),
-                    channels,
-                    role: cfg.role.clone(), // re-read each tick → role changes propagate ≤1 interval
-                    timestamp: Utc::now(),
-                };
-                match encode_presence(&presence) {
-                    Ok(bytes) => {
-                        debug!(
-                            "Heartbeat — presence broadcast + unicast on port {}",
-                            cfg.osc_port
-                        );
-                        // Broadcast so still-undiscovered peers can find us
-                        // (subnet-directed + macOS per-NIC, see transport::broadcast_all_paths).
-                        // Unresolved (no pin yet) stays fully inert outbound too.
-                        // The target port is re-read from config each tick so a live
-                        // OSC-port change (`api::set_osc_port` rebinds the socket
-                        // without a restart) moves the beacon with it.
-                        if crate::transport::should_broadcast(cfg.network_interface.as_deref()) {
-                            hb_transport
-                                .broadcast_all_paths(
-                                    &bytes,
-                                    cfg.osc_port,
-                                    cfg.network_interface.as_deref(),
-                                )
-                                .await;
-                        }
-                        // Also unicast to peers we already know (dynamic + static):
-                        // a peer we can see learns about us even when our broadcast
-                        // can't reach them (asymmetric routing / AP isolation).
-                        // Unicast routes per-subnet, ignoring a bad default route.
-                        let _ = hb_transport.send_to_peers(bytes, &hb_state, &cfg).await;
-                    }
-                    Err(e) => warn!("Failed to encode presence: {}", e),
-                }
-
-                // Shed dead per-peer address paths at 3× heartbeat interval
-                // without expiring the peer itself — liveness classification
-                // is driven by last_seen, not by which addresses remain.
-                hb_state
-                    .prune_peer_addresses(cfg.heartbeat_interval_secs)
-                    .await;
-
-                // Peers are never auto-expired — they stay in the list for the
-                // whole session. The Flutter side uses lastSeen to show green/gray.
-
-                // Wait the *currently configured* interval before the next beat.
-                // The setter validates and config load sanitizes; clamp here
-                // too so no path can busy-loop (0) or stall forever.
-                let secs = cfg.heartbeat_interval_secs.clamp(
-                    crate::state::config::HEARTBEAT_MIN_SECS,
-                    crate::state::config::HEARTBEAT_MAX_SECS,
-                );
-                tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
-            }
-        });
+        spawn_heartbeat_loop(client_id, state, transport);
 
         Ok(Self { _mdns: mdns })
     }
+}
+
+/// The presence heartbeat/beacon loop, extracted from `Discovery::new` so the
+/// beacon cadence and path decisions are drivable in a test (mirrors
+/// `reliability::spawn_retransmit_loop`).
+pub(crate) fn spawn_heartbeat_loop(
+    client_id: uuid::Uuid,
+    state: AppState,
+    transport: Arc<Transport>,
+) -> tokio::task::JoinHandle<()> {
+    let hb_state = state;
+    let hb_transport = transport;
+    tokio::spawn(async move {
+        // First heartbeat fires immediately (like interval's first tick);
+        // the cadence is re-read from config at the end of each iteration so
+        // a Settings change to the interval applies on the next cycle with no
+        // restart.
+        loop {
+            // Broadcast our presence so every peer on the LAN can discover us.
+            let channels = hb_state
+                .get_channels()
+                .await
+                .iter()
+                .map(|c| c.id.clone())
+                .collect();
+            // Re-read config every tick so a rename (or a NIC change)
+            // propagates within one heartbeat without a restart.
+            let cfg = hb_state.config().await;
+            let presence = PeerPresence {
+                peer_id: client_id,
+                peer_name: cfg.client_name.clone(),
+                channels,
+                role: cfg.role.clone(), // re-read each tick → role changes propagate ≤1 interval
+                timestamp: Utc::now(),
+            };
+            match encode_presence(&presence) {
+                Ok(bytes) => {
+                    debug!(
+                        "Heartbeat — presence broadcast + unicast on port {}",
+                        cfg.osc_port
+                    );
+                    // Broadcast so still-undiscovered peers can find us
+                    // (subnet-directed + macOS per-NIC, see transport::broadcast_all_paths).
+                    // Unresolved (no pin yet) stays fully inert outbound too.
+                    // The target port is re-read from config each tick so a live
+                    // OSC-port change (`api::set_osc_port` rebinds the socket
+                    // without a restart) moves the beacon with it.
+                    if crate::transport::should_broadcast(cfg.network_interface.as_deref()) {
+                        hb_transport
+                            .broadcast_all_paths(
+                                &bytes,
+                                cfg.osc_port,
+                                cfg.network_interface.as_deref(),
+                            )
+                            .await;
+                    }
+                    // Also unicast to peers we already know (dynamic + static):
+                    // a peer we can see learns about us even when our broadcast
+                    // can't reach them (asymmetric routing / AP isolation).
+                    // Unicast routes per-subnet, ignoring a bad default route.
+                    let _ = hb_transport.send_to_peers(bytes, &hb_state, &cfg).await;
+                }
+                Err(e) => warn!("Failed to encode presence: {}", e),
+            }
+
+            // Shed dead per-peer address paths at 3× heartbeat interval
+            // without expiring the peer itself — liveness classification
+            // is driven by last_seen, not by which addresses remain.
+            hb_state
+                .prune_peer_addresses(cfg.heartbeat_interval_secs)
+                .await;
+
+            // Peers are never auto-expired — they stay in the list for the
+            // whole session. The Flutter side uses lastSeen to show green/gray.
+
+            // Wait the *currently configured* interval before the next beat.
+            // The setter validates and config load sanitizes; clamp here
+            // too so no path can busy-loop (0) or stall forever.
+            let secs = cfg.heartbeat_interval_secs.clamp(
+                crate::state::config::HEARTBEAT_MIN_SECS,
+                crate::state::config::HEARTBEAT_MAX_SECS,
+            );
+            tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
+        }
+    })
 }
 
 /// Best-effort hostname for the mDNS host record. Looked up in-process rather
@@ -262,4 +273,93 @@ fn gethostname() -> String {
         }
     }
     "patch-node".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::osc::codec::{decode_packet, PatchEvent};
+    use uuid::Uuid;
+
+    /// The heartbeat loop's first beat fires immediately and unicasts our
+    /// presence to every known peer — driven here against a loopback socket
+    /// standing in for a peer, with no pin resolved (unicast to known peers
+    /// is not gated by the pin; broadcast is, via `should_broadcast`).
+    #[tokio::test]
+    async fn spawn_heartbeat_loop_unicasts_presence_to_a_known_peer() {
+        let config = Config {
+            client_name: "hb-test".into(),
+            default_channels: Vec::new(),
+            heartbeat_interval_secs: 1, // fastest legal cadence, for the second-beat assertion
+            ..Config::default()
+        };
+        let client_id = config.client_id;
+        let state = AppState::new(config.clone());
+        let reliability = std::sync::Arc::new(tokio::sync::Mutex::new(
+            crate::reliability::ReliabilityManager::new(),
+        ));
+        let transport = Arc::new(
+            Transport::new(
+                &Config {
+                    osc_port: 0,
+                    ..config
+                },
+                state.clone(),
+                reliability,
+            )
+            .await
+            .unwrap(),
+        );
+
+        // A loopback listener standing in for an already-known peer.
+        let listener = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let listener_addr = listener.local_addr().unwrap();
+        state
+            .record_sighting(
+                PeerSighting::Presence(PeerPresence {
+                    peer_id: Uuid::new_v4(),
+                    peer_name: "listener-peer".into(),
+                    channels: Vec::new(),
+                    role: None,
+                    timestamp: Utc::now(),
+                }),
+                listener_addr.ip().to_string(),
+                listener_addr.port(),
+            )
+            .await;
+
+        let handle = spawn_heartbeat_loop(client_id, state, transport);
+
+        let mut buf = [0u8; 4096];
+        let (n, _) = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            listener.recv_from(&mut buf),
+        )
+        .await
+        .expect("expected a presence heartbeat within 2s")
+        .unwrap();
+
+        match decode_packet(&buf[..n]).unwrap() {
+            PatchEvent::Presence(p) => {
+                assert_eq!(p.peer_id, client_id);
+                assert_eq!(p.peer_name, "hb-test");
+            }
+            other => panic!("expected Presence, got {other:?}"),
+        }
+
+        // Cadence: a second beat follows within the configured interval
+        // (plus slack) — the loop keeps ticking, it isn't a one-shot.
+        let (n, _) = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            listener.recv_from(&mut buf),
+        )
+        .await
+        .expect("expected a second heartbeat within the configured cadence")
+        .unwrap();
+        assert!(matches!(
+            decode_packet(&buf[..n]).unwrap(),
+            PatchEvent::Presence(_)
+        ));
+        handle.abort();
+    }
 }
