@@ -12,15 +12,15 @@ import '../store/app_store.dart';
 import '../theme/patch_theme.dart';
 import '../util/run_guarded.dart';
 import '../presenters/settings/behavior_presenter.dart';
-import '../presenters/settings/channels_import_presenter.dart';
 import '../presenters/settings/identity_presenter.dart';
-import '../presenters/settings/macros_import_presenter.dart';
 import '../presenters/settings/macros_section_presenter.dart';
+import '../presenters/settings/peer_request_gate.dart';
 import '../presenters/settings/network_presenter.dart';
 import '../presenters/settings/static_peers_presenter.dart';
 import '../widgets/settings/behavior_section.dart';
 import '../widgets/settings/identity_section.dart';
 import '../widgets/settings/macros_sections.dart';
+import '../widgets/peer_picker_dialog.dart';
 import '../widgets/settings/network_section.dart';
 import '../widgets/settings/static_peers_section.dart';
 import 'help_screen.dart';
@@ -68,12 +68,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     refreshConfig: () => AppStoreScope.read(context).refreshConfig(),
     getInterfaces: widget.bridge.getInterfaces,
   );
-  late final _channelsImportPresenter = ChannelsImportPresenter(
-    requestChannels: (peerId) => widget.bridge.requestChannels(peerId: peerId),
+  // Each import flow owns its own gate so two in-flight requests can't
+  // cross-trigger each other's dialog (#182).
+  late final _channelsGate = PeerRequestGate(
+    sendRequest: (peerId) => widget.bridge.requestChannels(peerId: peerId),
   );
-  late final _macrosImportPresenter = MacrosImportPresenter(
-    requestGlobalMacros: (peerId) => widget.bridge.requestGlobalMacros(peerId: peerId),
-    previewGlobalMacros: widget.bridge.previewGlobalMacros,
+  late final _macrosGate = PeerRequestGate(
+    sendRequest: (peerId) => widget.bridge.requestGlobalMacros(peerId: peerId),
   );
   late final _macrosSectionPresenter = MacrosSectionPresenter(
     upsertMacro: widget.bridge.upsertMacro,
@@ -219,15 +220,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case ChannelsChanged():
         break;
       case ChannelsOffered(:final fromName, :final channels):
-        final fresh = _channelsImportPresenter.handleOffer(
-          offered: channels,
-          existing: _channels,
-        );
+        final fresh = _channelsGate.admitOffer(
+            () => freshChannels(offered: channels, existing: _channels));
         if (fresh != null && mounted) {
           _showOfferDialog(fromName, channels, fresh);
         }
       case GlobalMacrosOffered(:final fromName, :final globalMacros):
-        if (!_macrosImportPresenter.handleOffer()) break;
+        if (_macrosGate.admitOffer(() => true) == null) break;
         if (mounted) _showMacrosOfferDialog(fromName, globalMacros);
       // Not consumed by settings — handled on the home screen.
       case MessageReceived():
@@ -259,59 +258,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// Pick a peer (with a resolved address) to request a channel layout from.
   void _showImportFromPeer() {
     AppStoreScope.read(context).refreshPeers(); // refresh before showing it
-    final candidates =
-        _peers.where((p) => p.address.isNotEmpty && p.oscPort > 0).toList();
+    final peers = _peers;
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Import channels from…'),
-        content: SizedBox(
-          width: double.infinity,
-          child: candidates.isEmpty
-              ? const Text(
-                  'No peers with a known address are online yet. Wait for a peer '
-                  'to appear in the peers panel, then try again.',
-                  style: TextStyle(color: PatchTheme.textSecondary),
-                )
-              : Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "Pick a peer to copy their channel layout from. Only channels "
-                      "you don't already have are added — your channels are kept.",
-                      style: TextStyle(
-                        color: PatchTheme.textSecondary,
-                        fontSize: PatchTheme.fontSizeSmall,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    ...candidates.map((p) => ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          leading: const Icon(Icons.person_outline, size: 18),
-                          title: Text(p.peerName),
-                          subtitle: Text(p.address),
-                          onTap: () {
-                            Navigator.pop(ctx);
-                            _requestFromPeer(p.peerId, p.peerName);
-                          },
-                        )),
-                  ],
-                ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-        ],
+      builder: (_) => PeerPickerDialog(
+        title: 'Import channels from…',
+        blurb: "Pick a peer to copy their channel layout from. Only channels "
+            "you don't already have are added — your channels are kept.",
+        peers: peers,
+        onPick: _requestFromPeer,
       ),
     );
   }
 
   void _requestFromPeer(String peerId, String name) {
-    runGuarded(context, () => _channelsImportPresenter.request(peerId));
+    runGuarded(context, () => _channelsGate.request(peerId));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Requesting channels from $name…'),
@@ -320,7 +281,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     // Clear the flag if no offer arrives (peer offline / not a Patch node), so a
     // later unsolicited announce can't pop a stale dialog.
-    Future.delayed(const Duration(seconds: 6), _channelsImportPresenter.timeout);
+    Future.delayed(const Duration(seconds: 6), _channelsGate.timeout);
   }
 
   /// Preview a peer's offered channels ([fresh] — the ones we're missing,
@@ -420,63 +381,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // ── Import global macros from a peer over the network ─────────────────────
 
   /// Pick a peer (with a resolved address) to request global macros from.
-  /// Same peer filter as [_showImportFromPeer] — not restricted to
-  /// online-only; an unreachable peer simply times out.
+  /// Same picker as [_showImportFromPeer]; an unreachable peer simply times
+  /// out at the gate.
   void _showImportMacrosFromPeer() {
     AppStoreScope.read(context).refreshPeers(); // refresh before showing it
-    final candidates =
-        _peers.where((p) => p.address.isNotEmpty && p.oscPort > 0).toList();
+    final peers = _peers;
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Import macros from…'),
-        content: SizedBox(
-          width: double.infinity,
-          child: candidates.isEmpty
-              ? const Text(
-                  'No peers with a known address are online yet. Wait for a peer '
-                  'to appear in the peers panel, then try again.',
-                  style: TextStyle(color: PatchTheme.textSecondary),
-                )
-              : Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "Pick a peer to copy their global macros from. Macros you "
-                      "already have, exactly, are skipped — yours are kept.",
-                      style: TextStyle(
-                        color: PatchTheme.textSecondary,
-                        fontSize: PatchTheme.fontSizeSmall,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    ...candidates.map((p) => ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          leading: const Icon(Icons.person_outline, size: 18),
-                          title: Text(p.peerName),
-                          subtitle: Text(p.address),
-                          onTap: () {
-                            Navigator.pop(ctx);
-                            _requestMacrosFromPeer(p.peerId, p.peerName);
-                          },
-                        )),
-                  ],
-                ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-        ],
+      builder: (_) => PeerPickerDialog(
+        title: 'Import macros from…',
+        blurb: "Pick a peer to copy their global macros from. Macros you "
+            "already have, exactly, are skipped — yours are kept.",
+        peers: peers,
+        onPick: _requestMacrosFromPeer,
       ),
     );
   }
 
   void _requestMacrosFromPeer(String peerId, String name) {
-    runGuarded(context, () => _macrosImportPresenter.request(peerId));
+    runGuarded(context, () => _macrosGate.request(peerId));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Requesting macros from $name…'),
@@ -487,7 +410,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // doesn't speak the macros-import protocol), so a later unsolicited
     // announce can't pop a stale dialog.
     Future.delayed(const Duration(seconds: 6), () {
-      if (mounted && _macrosImportPresenter.timeout()) {
+      if (mounted && _macrosGate.timeout()) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -509,7 +432,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       builder: (ctx) => FutureBuilder<List<MacroImportOutcome>>(
-        future: _macrosImportPresenter.preview(offered),
+        future: widget.bridge.previewGlobalMacros(offered),
         builder: (ctx, snapshot) {
           if (!snapshot.hasData) {
             return const AlertDialog(
