@@ -52,6 +52,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChannelFlash dco_decode_box_autoadd_channel_flash(dynamic raw);
 
   @protected
+  ConfigPatch dco_decode_box_autoadd_config_patch(dynamic raw);
+
+  @protected
   MacroMessage dco_decode_box_autoadd_macro_message(dynamic raw);
 
   @protected
@@ -71,6 +74,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ChannelFlash dco_decode_channel_flash(dynamic raw);
+
+  @protected
+  ConfigPatch dco_decode_config_patch(dynamic raw);
 
   @protected
   ConfigSnapshot dco_decode_config_snapshot(dynamic raw);
@@ -218,6 +224,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ConfigPatch sse_decode_box_autoadd_config_patch(SseDeserializer deserializer);
+
+  @protected
   MacroMessage sse_decode_box_autoadd_macro_message(
     SseDeserializer deserializer,
   );
@@ -243,6 +252,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ChannelFlash sse_decode_channel_flash(SseDeserializer deserializer);
+
+  @protected
+  ConfigPatch sse_decode_config_patch(SseDeserializer deserializer);
 
   @protected
   ConfigSnapshot sse_decode_config_snapshot(SseDeserializer deserializer);
@@ -411,6 +423,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_config_patch(
+    ConfigPatch self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_macro_message(
     MacroMessage self,
     SseSerializer serializer,
@@ -442,6 +460,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_channel_flash(ChannelFlash self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_config_patch(ConfigPatch self, SseSerializer serializer);
 
   @protected
   void sse_encode_config_snapshot(

@@ -140,20 +140,11 @@ Future<void> setRole({String? role}) =>
 Future<void> setInterface({String? name}) =>
     RustLib.instance.api.crateApiSetInterface(name: name);
 
-Future<void> setFlashOnCritical({required bool enabled}) =>
-    RustLib.instance.api.crateApiSetFlashOnCritical(enabled: enabled);
-
-Future<void> setFlashOnMessage({required bool enabled}) =>
-    RustLib.instance.api.crateApiSetFlashOnMessage(enabled: enabled);
-
-Future<void> setFlashCount({required int count}) =>
-    RustLib.instance.api.crateApiSetFlashCount(count: count);
-
-Future<void> setMacrosColumns({required int columns}) =>
-    RustLib.instance.api.crateApiSetMacrosColumns(columns: columns);
-
-Future<void> setHideKeyboard({required bool enabled}) =>
-    RustLib.instance.api.crateApiSetHideKeyboard(enabled: enabled);
+/// Apply a partial update of the scalar behavior settings — one command for
+/// any subset of them, `None` fields untouched (issue #179, ADR-0003-compatible:
+/// `AppState` stays the facade, just one deep method instead of seven shallow).
+Future<void> patchConfig({required ConfigPatch patch}) =>
+    RustLib.instance.api.crateApiPatchConfig(patch: patch);
 
 Future<void> setHeartbeatInterval({required BigInt secs}) =>
     RustLib.instance.api.crateApiSetHeartbeatInterval(secs: secs);
@@ -164,12 +155,6 @@ Future<void> setHeartbeatInterval({required BigInt secs}) =>
 /// untouched); only on success is the new port saved.
 Future<void> setOscPort({required int port}) =>
     RustLib.instance.api.crateApiSetOscPort(port: port);
-
-Future<void> setAudibleAlert({required bool enabled}) =>
-    RustLib.instance.api.crateApiSetAudibleAlert(enabled: enabled);
-
-Future<void> setFlashWholeScreen({required bool enabled}) =>
-    RustLib.instance.api.crateApiSetFlashWholeScreen(enabled: enabled);
 
 Future<void> setChannelFlash({
   required String channelId,

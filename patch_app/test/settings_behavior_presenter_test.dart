@@ -8,21 +8,34 @@ void main() {
   setUp(() {
     calls = [];
     p = BehaviorPresenter(
-      setFlashOnMessage: (v) async => calls.add('flashOnMessage:$v'),
-      setFlashOnCritical: (v) async => calls.add('flashOnCritical:$v'),
-      setAudibleAlert: (v) async => calls.add('audibleAlert:$v'),
-      setFlashWholeScreen: (v) async => calls.add('flashWholeScreen:$v'),
-      setHideKeyboard: (v) async => calls.add('hideKeyboard:$v'),
-      setFlashCount: (v) async => calls.add('flashCount:$v'),
-      setMacrosColumns: (v) async => calls.add('macrosColumns:$v'),
+      patch: ({
+        bool? flashOnMessage,
+        bool? flashOnCritical,
+        bool? audibleAlert,
+        bool? flashWholeScreen,
+        bool? hideKeyboard,
+        int? flashCount,
+        int? macrosColumns,
+      }) async {
+        final fields = <String>[
+          if (flashOnMessage != null) 'flashOnMessage:$flashOnMessage',
+          if (flashOnCritical != null) 'flashOnCritical:$flashOnCritical',
+          if (audibleAlert != null) 'audibleAlert:$audibleAlert',
+          if (flashWholeScreen != null) 'flashWholeScreen:$flashWholeScreen',
+          if (hideKeyboard != null) 'hideKeyboard:$hideKeyboard',
+          if (flashCount != null) 'flashCount:$flashCount',
+          if (macrosColumns != null) 'macrosColumns:$macrosColumns',
+        ];
+        calls.add('patch(${fields.join(',')})');
+      },
       refreshConfig: () async => calls.add('refreshConfig'),
     );
   });
 
   group('BehaviorPresenter', () {
-    test('a toggle saves then refetches', () async {
+    test('a toggle saves one single-field patch then refetches', () async {
       await p.saveFlashOnMessage(true);
-      expect(calls, ['flashOnMessage:true', 'refreshConfig']);
+      expect(calls, ['patch(flashOnMessage:true)', 'refreshConfig']);
     });
 
     test('flash count outside the picker options is rejected before any '
@@ -31,7 +44,7 @@ void main() {
       expect(await p.saveFlashCount(8), isFalse);
       expect(calls, isEmpty);
       expect(await p.saveFlashCount(4), isTrue);
-      expect(calls, ['flashCount:4', 'refreshConfig']);
+      expect(calls, ['patch(flashCount:4)', 'refreshConfig']);
     });
 
     test('macros columns outside 1–3 is rejected before any bridge call',
@@ -40,21 +53,24 @@ void main() {
       expect(await p.saveMacrosColumns(4), isFalse);
       expect(calls, isEmpty);
       expect(await p.saveMacrosColumns(2), isTrue);
-      expect(calls, ['macrosColumns:2', 'refreshConfig']);
+      expect(calls, ['patch(macrosColumns:2)', 'refreshConfig']);
     });
 
-    test('reset restores every default with a single refetch', () async {
+    test('reset restores every default in one patch and one refetch',
+        () async {
       await p.resetDefaults();
+      expect(calls, hasLength(2));
       expect(calls.last, 'refreshConfig');
-      expect(calls.where((c) => c == 'refreshConfig'), hasLength(1));
+      final patch = calls.first;
       expect(
-        calls,
-        containsAll([
-          'flashOnCritical:true',
+        patch,
+        stringContainsInOrder([
           'flashOnMessage:false',
-          'flashCount:4',
-          'hideKeyboard:true',
+          'flashOnCritical:true',
           'audibleAlert:false',
+          'flashWholeScreen:false',
+          'hideKeyboard:true',
+          'flashCount:4',
           'macrosColumns:1',
         ]),
       );

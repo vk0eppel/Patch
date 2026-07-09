@@ -71,7 +71,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 1892693962;
+  int get rustContentHash => 1342065904;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -147,6 +147,8 @@ abstract class RustLibApi extends BaseApi {
 
   Future<ShowFileLoaded> crateApiLoadShowFile({required String slug});
 
+  Future<void> crateApiPatchConfig({required ConfigPatch patch});
+
   Future<List<MacroImportOutcome>> crateApiPreviewGlobalMacros({
     required List<MacroMessage> globalMacros,
   });
@@ -199,8 +201,6 @@ abstract class RustLibApi extends BaseApi {
     required OscArgKind argType,
   });
 
-  Future<void> crateApiSetAudibleAlert({required bool enabled});
-
   Future<void> crateApiSetChannelFlash({
     required String channelId,
     bool? flashOnCritical,
@@ -212,21 +212,9 @@ abstract class RustLibApi extends BaseApi {
 
   Future<void> crateApiSetDmTarget({String? peerId});
 
-  Future<void> crateApiSetFlashCount({required int count});
-
-  Future<void> crateApiSetFlashOnCritical({required bool enabled});
-
-  Future<void> crateApiSetFlashOnMessage({required bool enabled});
-
-  Future<void> crateApiSetFlashWholeScreen({required bool enabled});
-
   Future<void> crateApiSetHeartbeatInterval({required BigInt secs});
 
-  Future<void> crateApiSetHideKeyboard({required bool enabled});
-
   Future<void> crateApiSetInterface({String? name});
-
-  Future<void> crateApiSetMacrosColumns({required int columns});
 
   Future<void> crateApiSetOscPort({required int port});
 
@@ -958,6 +946,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "load_show_file", argNames: ["slug"]);
 
   @override
+  Future<void> crateApiPatchConfig({required ConfigPatch patch}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_config_patch(patch, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 24,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiPatchConfigConstMeta,
+        argValues: [patch],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPatchConfigConstMeta =>
+      const TaskConstMeta(debugName: "patch_config", argNames: ["patch"]);
+
+  @override
   Future<List<MacroImportOutcome>> crateApiPreviewGlobalMacros({
     required List<MacroMessage> globalMacros,
   }) {
@@ -969,7 +985,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 24,
+            funcId: 25,
             port: port_,
           );
         },
@@ -1004,7 +1020,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 25,
+            funcId: 26,
             port: port_,
           );
         },
@@ -1036,7 +1052,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 26,
+            funcId: 27,
             port: port_,
           );
         },
@@ -1071,7 +1087,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 27,
+            funcId: 28,
             port: port_,
           );
         },
@@ -1101,7 +1117,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 28,
+            funcId: 29,
             port: port_,
           );
         },
@@ -1129,7 +1145,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 29,
+            funcId: 30,
             port: port_,
           );
         },
@@ -1159,7 +1175,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 30,
+            funcId: 31,
             port: port_,
           );
         },
@@ -1186,7 +1202,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 31,
+            funcId: 32,
             port: port_,
           );
         },
@@ -1214,7 +1230,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 32,
+            funcId: 33,
             port: port_,
           );
         },
@@ -1248,7 +1264,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 33,
+            funcId: 34,
             port: port_,
           );
         },
@@ -1278,7 +1294,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 34,
+            funcId: 35,
             port: port_,
           );
         },
@@ -1306,7 +1322,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 35,
+            funcId: 36,
             port: port_,
           );
         },
@@ -1340,7 +1356,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 36,
+            funcId: 37,
             port: port_,
           );
         },
@@ -1380,7 +1396,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 37,
+            funcId: 38,
             port: port_,
           );
         },
@@ -1398,36 +1414,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSendOscMacroConstMeta => const TaskConstMeta(
     debugName: "send_osc_macro",
     argNames: ["address", "port", "path", "arg", "argType"],
-  );
-
-  @override
-  Future<void> crateApiSetAudibleAlert({required bool enabled}) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_bool(enabled, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 38,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiSetAudibleAlertConstMeta,
-        argValues: [enabled],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiSetAudibleAlertConstMeta => const TaskConstMeta(
-    debugName: "set_audible_alert",
-    argNames: ["enabled"],
   );
 
   @override
@@ -1525,125 +1511,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "set_dm_target", argNames: ["peerId"]);
 
   @override
-  Future<void> crateApiSetFlashCount({required int count}) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_u_8(count, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 42,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiSetFlashCountConstMeta,
-        argValues: [count],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiSetFlashCountConstMeta =>
-      const TaskConstMeta(debugName: "set_flash_count", argNames: ["count"]);
-
-  @override
-  Future<void> crateApiSetFlashOnCritical({required bool enabled}) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_bool(enabled, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 43,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiSetFlashOnCriticalConstMeta,
-        argValues: [enabled],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiSetFlashOnCriticalConstMeta => const TaskConstMeta(
-    debugName: "set_flash_on_critical",
-    argNames: ["enabled"],
-  );
-
-  @override
-  Future<void> crateApiSetFlashOnMessage({required bool enabled}) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_bool(enabled, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 44,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiSetFlashOnMessageConstMeta,
-        argValues: [enabled],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiSetFlashOnMessageConstMeta => const TaskConstMeta(
-    debugName: "set_flash_on_message",
-    argNames: ["enabled"],
-  );
-
-  @override
-  Future<void> crateApiSetFlashWholeScreen({required bool enabled}) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_bool(enabled, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 45,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiSetFlashWholeScreenConstMeta,
-        argValues: [enabled],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiSetFlashWholeScreenConstMeta =>
-      const TaskConstMeta(
-        debugName: "set_flash_whole_screen",
-        argNames: ["enabled"],
-      );
-
-  @override
   Future<void> crateApiSetHeartbeatInterval({required BigInt secs}) {
     return handler.executeNormal(
       NormalTask(
@@ -1653,7 +1520,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 46,
+            funcId: 42,
             port: port_,
           );
         },
@@ -1675,36 +1542,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<void> crateApiSetHideKeyboard({required bool enabled}) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_bool(enabled, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 47,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiSetHideKeyboardConstMeta,
-        argValues: [enabled],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiSetHideKeyboardConstMeta => const TaskConstMeta(
-    debugName: "set_hide_keyboard",
-    argNames: ["enabled"],
-  );
-
-  @override
   Future<void> crateApiSetInterface({String? name}) {
     return handler.executeNormal(
       NormalTask(
@@ -1714,7 +1551,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 48,
+            funcId: 43,
             port: port_,
           );
         },
@@ -1733,36 +1570,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "set_interface", argNames: ["name"]);
 
   @override
-  Future<void> crateApiSetMacrosColumns({required int columns}) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_u_8(columns, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 49,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiSetMacrosColumnsConstMeta,
-        argValues: [columns],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiSetMacrosColumnsConstMeta => const TaskConstMeta(
-    debugName: "set_macros_columns",
-    argNames: ["columns"],
-  );
-
-  @override
   Future<void> crateApiSetOscPort({required int port}) {
     return handler.executeNormal(
       NormalTask(
@@ -1772,7 +1579,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 50,
+            funcId: 44,
             port: port_,
           );
         },
@@ -1800,7 +1607,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 51,
+            funcId: 45,
             port: port_,
           );
         },
@@ -1828,7 +1635,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 52,
+            funcId: 46,
             port: port_,
           );
         },
@@ -1858,7 +1665,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 53,
+            funcId: 47,
             port: port_,
           );
         },
@@ -1888,7 +1695,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 54,
+              funcId: 48,
               port: port_,
             );
           },
@@ -1924,7 +1731,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 55,
+            funcId: 49,
             port: port_,
           );
         },
@@ -1970,7 +1777,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 56,
+            funcId: 50,
             port: port_,
           );
         },
@@ -2036,7 +1843,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 57,
+            funcId: 51,
             port: port_,
           );
         },
@@ -2127,6 +1934,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ConfigPatch dco_decode_box_autoadd_config_patch(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_config_patch(raw);
+  }
+
+  @protected
   MacroMessage dco_decode_box_autoadd_macro_message(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_macro_message(raw);
@@ -2183,6 +1996,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       channelId: dco_decode_String(arr[0]),
       senderId: dco_decode_Uuid(arr[1]),
       senderName: dco_decode_String(arr[2]),
+    );
+  }
+
+  @protected
+  ConfigPatch dco_decode_config_patch(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    return ConfigPatch(
+      flashOnCritical: dco_decode_opt_box_autoadd_bool(arr[0]),
+      flashOnMessage: dco_decode_opt_box_autoadd_bool(arr[1]),
+      flashCount: dco_decode_opt_box_autoadd_u_8(arr[2]),
+      macrosColumns: dco_decode_opt_box_autoadd_u_8(arr[3]),
+      hideKeyboard: dco_decode_opt_box_autoadd_bool(arr[4]),
+      audibleAlert: dco_decode_opt_box_autoadd_bool(arr[5]),
+      flashWholeScreen: dco_decode_opt_box_autoadd_bool(arr[6]),
     );
   }
 
@@ -2657,6 +2487,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ConfigPatch sse_decode_box_autoadd_config_patch(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_config_patch(deserializer));
+  }
+
+  @protected
   MacroMessage sse_decode_box_autoadd_macro_message(
     SseDeserializer deserializer,
   ) {
@@ -2723,6 +2561,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       channelId: var_channelId,
       senderId: var_senderId,
       senderName: var_senderName,
+    );
+  }
+
+  @protected
+  ConfigPatch sse_decode_config_patch(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_flashOnCritical = sse_decode_opt_box_autoadd_bool(deserializer);
+    var var_flashOnMessage = sse_decode_opt_box_autoadd_bool(deserializer);
+    var var_flashCount = sse_decode_opt_box_autoadd_u_8(deserializer);
+    var var_macrosColumns = sse_decode_opt_box_autoadd_u_8(deserializer);
+    var var_hideKeyboard = sse_decode_opt_box_autoadd_bool(deserializer);
+    var var_audibleAlert = sse_decode_opt_box_autoadd_bool(deserializer);
+    var var_flashWholeScreen = sse_decode_opt_box_autoadd_bool(deserializer);
+    return ConfigPatch(
+      flashOnCritical: var_flashOnCritical,
+      flashOnMessage: var_flashOnMessage,
+      flashCount: var_flashCount,
+      macrosColumns: var_macrosColumns,
+      hideKeyboard: var_hideKeyboard,
+      audibleAlert: var_audibleAlert,
+      flashWholeScreen: var_flashWholeScreen,
     );
   }
 
@@ -3338,6 +3197,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_config_patch(
+    ConfigPatch self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_config_patch(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_macro_message(
     MacroMessage self,
     SseSerializer serializer,
@@ -3397,6 +3265,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.channelId, serializer);
     sse_encode_Uuid(self.senderId, serializer);
     sse_encode_String(self.senderName, serializer);
+  }
+
+  @protected
+  void sse_encode_config_patch(ConfigPatch self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_opt_box_autoadd_bool(self.flashOnCritical, serializer);
+    sse_encode_opt_box_autoadd_bool(self.flashOnMessage, serializer);
+    sse_encode_opt_box_autoadd_u_8(self.flashCount, serializer);
+    sse_encode_opt_box_autoadd_u_8(self.macrosColumns, serializer);
+    sse_encode_opt_box_autoadd_bool(self.hideKeyboard, serializer);
+    sse_encode_opt_box_autoadd_bool(self.audibleAlert, serializer);
+    sse_encode_opt_box_autoadd_bool(self.flashWholeScreen, serializer);
   }
 
   @protected

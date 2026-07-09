@@ -229,6 +229,66 @@ fn default_one() -> u8 {
     1
 }
 
+/// A partial update of the scalar behavior settings — the one FFI entry point
+/// for what used to be seven per-field setters (issue #179). `None` fields are
+/// left untouched; `Some` fields are applied (clamped where the old setter
+/// clamped) and persisted in a single `mutate_and_persist`.
+#[derive(Debug, Clone, Default)]
+pub struct ConfigPatch {
+    pub flash_on_critical: Option<bool>,
+    pub flash_on_message: Option<bool>,
+    /// Flash pulses per flash event — clamped to 3–7 on apply.
+    pub flash_count: Option<u8>,
+    /// Macros panel columns — clamped to 1–3 on apply.
+    pub macros_columns: Option<u8>,
+    pub hide_keyboard: Option<bool>,
+    pub audible_alert: Option<bool>,
+    pub flash_whole_screen: Option<bool>,
+}
+
+impl ConfigPatch {
+    /// True when every field is `None` — callers skip the persist entirely.
+    pub fn is_empty(&self) -> bool {
+        matches!(
+            self,
+            ConfigPatch {
+                flash_on_critical: None,
+                flash_on_message: None,
+                flash_count: None,
+                macros_columns: None,
+                hide_keyboard: None,
+                audible_alert: None,
+                flash_whole_screen: None,
+            }
+        )
+    }
+
+    /// Apply the `Some` fields onto `config`, clamping ranged values.
+    pub fn apply(&self, config: &mut Config) {
+        if let Some(v) = self.flash_on_critical {
+            config.flash_on_critical = v;
+        }
+        if let Some(v) = self.flash_on_message {
+            config.flash_on_message = v;
+        }
+        if let Some(v) = self.flash_count {
+            config.flash_count = v.clamp(3, 7);
+        }
+        if let Some(v) = self.macros_columns {
+            config.macros_columns = v.clamp(1, 3);
+        }
+        if let Some(v) = self.hide_keyboard {
+            config.hide_keyboard = v;
+        }
+        if let Some(v) = self.audible_alert {
+            config.audible_alert = v;
+        }
+        if let Some(v) = self.flash_whole_screen {
+            config.flash_whole_screen = v;
+        }
+    }
+}
+
 impl Config {
     /// Load `patch.toml` from the platform data directory, migrating an existing
     /// CWD-local config in place if one exists. Creates defaults if neither is

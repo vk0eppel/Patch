@@ -8,6 +8,7 @@ import '../src/rust/api.dart' as rust;
 import '../src/rust/frb_generated.dart';
 import '../src/rust/osc/types.dart' as rust_osc;
 import '../src/rust/state/channel.dart' as rust_channel;
+import '../src/rust/state/config.dart' as rust_config;
 import '../src/rust/transport.dart' as rust_transport;
 
 /// Façade over the `flutter_rust_bridge`-generated engine API.
@@ -343,26 +344,29 @@ class BridgeClient {
   Future<void> setClientName({required String name}) =>
       rust.setClientName(name: name);
 
-  Future<void> setFlashOnCritical({required bool enabled}) =>
-      rust.setFlashOnCritical(enabled: enabled);
-
-  Future<void> setFlashOnMessage({required bool enabled}) =>
-      rust.setFlashOnMessage(enabled: enabled);
-
-  Future<void> setFlashCount({required int count}) =>
-      rust.setFlashCount(count: count);
-
-  Future<void> setMacrosColumns({required int columns}) =>
-      rust.setMacrosColumns(columns: columns);
-
-  Future<void> setHideKeyboard({required bool enabled}) =>
-      rust.setHideKeyboard(enabled: enabled);
-
-  Future<void> setAudibleAlert({required bool enabled}) =>
-      rust.setAudibleAlert(enabled: enabled);
-
-  Future<void> setFlashWholeScreen({required bool enabled}) =>
-      rust.setFlashWholeScreen(enabled: enabled);
+  /// Apply any subset of the scalar behavior settings in one engine command
+  /// (#179). Null fields are left untouched; the engine clamps ranged values
+  /// and persists once.
+  Future<void> patchConfig({
+    bool? flashOnMessage,
+    bool? flashOnCritical,
+    bool? audibleAlert,
+    bool? flashWholeScreen,
+    bool? hideKeyboard,
+    int? flashCount,
+    int? macrosColumns,
+  }) =>
+      rust.patchConfig(
+        patch: rust_config.ConfigPatch(
+          flashOnCritical: flashOnCritical,
+          flashOnMessage: flashOnMessage,
+          flashCount: flashCount,
+          macrosColumns: macrosColumns,
+          hideKeyboard: hideKeyboard,
+          audibleAlert: audibleAlert,
+          flashWholeScreen: flashWholeScreen,
+        ),
+      );
 
   // ── Network settings ────────────────────────────────────────────────────
 

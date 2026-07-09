@@ -6,6 +6,57 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+/// A partial update of the scalar behavior settings — the one FFI entry point
+/// for what used to be seven per-field setters (issue #179). `None` fields are
+/// left untouched; `Some` fields are applied (clamped where the old setter
+/// clamped) and persisted in a single `mutate_and_persist`.
+class ConfigPatch {
+  final bool? flashOnCritical;
+  final bool? flashOnMessage;
+
+  /// Flash pulses per flash event — clamped to 3–7 on apply.
+  final int? flashCount;
+
+  /// Macros panel columns — clamped to 1–3 on apply.
+  final int? macrosColumns;
+  final bool? hideKeyboard;
+  final bool? audibleAlert;
+  final bool? flashWholeScreen;
+
+  const ConfigPatch({
+    this.flashOnCritical,
+    this.flashOnMessage,
+    this.flashCount,
+    this.macrosColumns,
+    this.hideKeyboard,
+    this.audibleAlert,
+    this.flashWholeScreen,
+  });
+
+  @override
+  int get hashCode =>
+      flashOnCritical.hashCode ^
+      flashOnMessage.hashCode ^
+      flashCount.hashCode ^
+      macrosColumns.hashCode ^
+      hideKeyboard.hashCode ^
+      audibleAlert.hashCode ^
+      flashWholeScreen.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ConfigPatch &&
+          runtimeType == other.runtimeType &&
+          flashOnCritical == other.flashOnCritical &&
+          flashOnMessage == other.flashOnMessage &&
+          flashCount == other.flashCount &&
+          macrosColumns == other.macrosColumns &&
+          hideKeyboard == other.hideKeyboard &&
+          audibleAlert == other.audibleAlert &&
+          flashWholeScreen == other.flashWholeScreen;
+}
+
 class StaticPeer {
   final String address;
   final int port;

@@ -21,7 +21,7 @@ use network_policy::{MessageDedup, NetworkAdmission};
 use peer::PeerRegistry;
 
 use crate::osc::types::{ChannelFlash, PatchMessage, PeerPresence};
-pub use config::Config;
+pub use config::{Config, ConfigPatch};
 pub use peer::PeerSighting;
 
 /// Events broadcast to all internal subscribers (bridge, UI, etc.)
@@ -227,61 +227,17 @@ impl AppState {
         self.0.peers.clear_dynamic().await
     }
 
-    /// Persist the flash-on-critical setting.
-    pub async fn set_flash_on_critical(&self, enabled: bool) -> anyhow::Result<()> {
+    /// Apply a partial update of the scalar behavior settings in one persisted
+    /// mutation — the single entry point replacing the old per-field setters
+    /// (issue #179). Ranged fields are clamped in `ConfigPatch::apply`; an
+    /// empty patch is a no-op (nothing persisted).
+    pub async fn patch_config(&self, patch: config::ConfigPatch) -> anyhow::Result<()> {
+        if patch.is_empty() {
+            return Ok(());
+        }
         self.0
             .config
-            .mutate_and_persist(|c| c.flash_on_critical = enabled)
-            .await;
-        Ok(())
-    }
-
-    /// Persist the flash-on-every-message setting.
-    pub async fn set_flash_on_message(&self, enabled: bool) -> anyhow::Result<()> {
-        self.0
-            .config
-            .mutate_and_persist(|c| c.flash_on_message = enabled)
-            .await;
-        Ok(())
-    }
-
-    /// Persist the global flash pulse count (clamped to 3–7).
-    pub async fn set_flash_count(&self, count: u8) -> anyhow::Result<()> {
-        self.0
-            .config
-            .mutate_and_persist(|c| c.flash_count = count.clamp(3, 7))
-            .await;
-        Ok(())
-    }
-
-    pub async fn set_macros_columns(&self, columns: u8) -> anyhow::Result<()> {
-        self.0
-            .config
-            .mutate_and_persist(|c| c.macros_columns = columns.clamp(1, 3))
-            .await;
-        Ok(())
-    }
-
-    pub async fn set_hide_keyboard(&self, enabled: bool) -> anyhow::Result<()> {
-        self.0
-            .config
-            .mutate_and_persist(|c| c.hide_keyboard = enabled)
-            .await;
-        Ok(())
-    }
-
-    pub async fn set_audible_alert(&self, enabled: bool) -> anyhow::Result<()> {
-        self.0
-            .config
-            .mutate_and_persist(|c| c.audible_alert = enabled)
-            .await;
-        Ok(())
-    }
-
-    pub async fn set_flash_whole_screen(&self, enabled: bool) -> anyhow::Result<()> {
-        self.0
-            .config
-            .mutate_and_persist(|c| c.flash_whole_screen = enabled)
+            .mutate_and_persist(move |c| patch.apply(c))
             .await;
         Ok(())
     }
@@ -2159,6 +2115,113 @@ mod tests {
         assert!(!p.is_stale(35));
     }
 
+    /// One `patch_config` call applies any subset of the scalar behavior
+    /// settings — table-driven over single-field patches, with the out-of-range
+    /// fields clamped the same way the old per-field setters clamped.
+    #[tokio::test]
+    async fn patch_config_applies_each_scalar_behavior_field() {
+        let st = test_state();
+
+        type Check = fn(&Config) -> bool;
+        let cases: Vec<(ConfigPatch, Check)> = vec![
+            (
+                ConfigPatch {
+                    flash_on_critical: Some(false),
+                    ..ConfigPatch::default()
+                },
+                |c| !c.flash_on_critical,
+            ),
+            (
+                ConfigPatch {
+                    flash_on_message: Some(true),
+                    ..ConfigPatch::default()
+                },
+                |c| c.flash_on_message,
+            ),
+            (
+                // 99 clamps to the 3–7 pulse range
+                ConfigPatch {
+                    flash_count: Some(99),
+                    ..ConfigPatch::default()
+                },
+                |c| c.flash_count == 7,
+            ),
+            (
+                // 0 clamps to the 1–3 column range
+                ConfigPatch {
+                    macros_columns: Some(0),
+                    ..ConfigPatch::default()
+                },
+                |c| c.macros_columns == 1,
+            ),
+            (
+                ConfigPatch {
+                    hide_keyboard: Some(false),
+                    ..ConfigPatch::default()
+                },
+                |c| !c.hide_keyboard,
+            ),
+            (
+                ConfigPatch {
+                    audible_alert: Some(true),
+                    ..ConfigPatch::default()
+                },
+                |c| c.audible_alert,
+            ),
+            (
+                ConfigPatch {
+                    flash_whole_screen: Some(true),
+                    ..ConfigPatch::default()
+                },
+                |c| c.flash_whole_screen,
+            ),
+        ];
+
+        for (i, (patch, check)) in cases.into_iter().enumerate() {
+            st.patch_config(patch).await.unwrap();
+            let cfg = st.config().await;
+            assert!(check(&cfg), "case {i} did not apply");
+        }
+    }
+
+    /// An all-`None` patch is a no-op — nothing changes, nothing errors.
+    #[tokio::test]
+    async fn patch_config_empty_patch_is_a_noop() {
+        let st = test_state();
+        let before = st.config().await;
+        st.patch_config(ConfigPatch::default()).await.unwrap();
+        let after = st.config().await;
+        assert_eq!(after.flash_on_critical, before.flash_on_critical);
+        assert_eq!(after.flash_on_message, before.flash_on_message);
+        assert_eq!(after.flash_count, before.flash_count);
+        assert_eq!(after.macros_columns, before.macros_columns);
+        assert_eq!(after.hide_keyboard, before.hide_keyboard);
+        assert_eq!(after.audible_alert, before.audible_alert);
+        assert_eq!(after.flash_whole_screen, before.flash_whole_screen);
+    }
+
+    /// A multi-field patch lands atomically; `None` fields stay untouched.
+    #[tokio::test]
+    async fn patch_config_multi_field_leaves_none_fields_alone() {
+        let st = test_state();
+        let before = st.config().await;
+
+        st.patch_config(ConfigPatch {
+            flash_count: Some(5),
+            audible_alert: Some(true),
+            ..ConfigPatch::default()
+        })
+        .await
+        .unwrap();
+
+        let cfg = st.config().await;
+        assert_eq!(cfg.flash_count, 5);
+        assert!(cfg.audible_alert);
+        assert_eq!(cfg.flash_on_critical, before.flash_on_critical);
+        assert_eq!(cfg.hide_keyboard, before.hide_keyboard);
+        assert_eq!(cfg.macros_columns, before.macros_columns);
+    }
+
     /// Exercises the real save path (`save_config` → `spawn_blocking`) end to end:
     /// mutations must land in the on-disk `patch.toml`. The sole disk-touching
     /// test, so the process-global `set_data_dir` override is unambiguous.
@@ -2170,11 +2233,16 @@ mod tests {
         config::set_data_dir(dir.clone());
 
         let st = test_state();
-        st.set_flash_count(6).await.unwrap();
-        st.set_hide_keyboard(false).await.unwrap();
-        st.set_audible_alert(true).await.unwrap();
-        st.set_flash_whole_screen(true).await.unwrap();
-        st.set_macros_columns(2).await.unwrap();
+        st.patch_config(ConfigPatch {
+            flash_count: Some(6),
+            hide_keyboard: Some(false),
+            audible_alert: Some(true),
+            flash_whole_screen: Some(true),
+            macros_columns: Some(2),
+            ..ConfigPatch::default()
+        })
+        .await
+        .unwrap();
         st.add_static_peer("10.0.0.5".into(), 9000, Some("Booth".into()))
             .await
             .unwrap();

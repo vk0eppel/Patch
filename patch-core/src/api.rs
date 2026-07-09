@@ -471,24 +471,11 @@ pub async fn set_interface(name: Option<String>) -> Result<()> {
     engine().state.set_network_interface(iface).await
 }
 
-pub async fn set_flash_on_critical(enabled: bool) -> Result<()> {
-    engine().state.set_flash_on_critical(enabled).await
-}
-
-pub async fn set_flash_on_message(enabled: bool) -> Result<()> {
-    engine().state.set_flash_on_message(enabled).await
-}
-
-pub async fn set_flash_count(count: u8) -> Result<()> {
-    engine().state.set_flash_count(count).await
-}
-
-pub async fn set_macros_columns(columns: u8) -> Result<()> {
-    engine().state.set_macros_columns(columns).await
-}
-
-pub async fn set_hide_keyboard(enabled: bool) -> Result<()> {
-    engine().state.set_hide_keyboard(enabled).await
+/// Apply a partial update of the scalar behavior settings — one command for
+/// any subset of them, `None` fields untouched (issue #179, ADR-0003-compatible:
+/// `AppState` stays the facade, just one deep method instead of seven shallow).
+pub async fn patch_config(patch: crate::state::ConfigPatch) -> Result<()> {
+    engine().state.patch_config(patch).await
 }
 
 pub async fn set_heartbeat_interval(secs: u64) -> Result<()> {
@@ -508,14 +495,6 @@ pub async fn set_osc_port(port: u16) -> Result<()> {
     config.osc_port = port;
     h.transport.rebind(&config).await?;
     h.state.set_osc_port(port).await
-}
-
-pub async fn set_audible_alert(enabled: bool) -> Result<()> {
-    engine().state.set_audible_alert(enabled).await
-}
-
-pub async fn set_flash_whole_screen(enabled: bool) -> Result<()> {
-    engine().state.set_flash_whole_screen(enabled).await
 }
 
 pub async fn set_channel_flash(

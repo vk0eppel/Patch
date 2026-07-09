@@ -49,14 +49,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     refreshConfig: () => AppStoreScope.read(context).refreshConfig(),
   );
   late final _behaviorPresenter = BehaviorPresenter(
-    setFlashOnMessage: (enabled) => widget.bridge.setFlashOnMessage(enabled: enabled),
-    setFlashOnCritical: (enabled) => widget.bridge.setFlashOnCritical(enabled: enabled),
-    setAudibleAlert: (enabled) => widget.bridge.setAudibleAlert(enabled: enabled),
-    setFlashWholeScreen: (enabled) =>
-        widget.bridge.setFlashWholeScreen(enabled: enabled),
-    setHideKeyboard: (enabled) => widget.bridge.setHideKeyboard(enabled: enabled),
-    setFlashCount: (count) => widget.bridge.setFlashCount(count: count),
-    setMacrosColumns: (columns) => widget.bridge.setMacrosColumns(columns: columns),
+    patch: widget.bridge.patchConfig,
     refreshConfig: () => AppStoreScope.read(context).refreshConfig(),
   );
   late final _staticPeersPresenter = StaticPeersPresenter(

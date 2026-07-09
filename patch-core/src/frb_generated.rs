@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1892693962;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1342065904;
 
 // Section: executor
 
@@ -874,6 +874,42 @@ fn wire__crate__api__load_show_file_impl(
         },
     )
 }
+fn wire__crate__api__patch_config_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "patch_config",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_patch = <crate::state::config::ConfigPatch>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || async move {
+                        let output_ok = crate::api::patch_config(api_patch).await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__preview_global_macros_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1403,42 +1439,6 @@ fn wire__crate__api__send_osc_macro_impl(
         },
     )
 }
-fn wire__crate__api__set_audible_alert_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "set_audible_alert",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_enabled = <bool>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                    (move || async move {
-                        let output_ok = crate::api::set_audible_alert(api_enabled).await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
 fn wire__crate__api__set_channel_flash_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1556,150 +1556,6 @@ fn wire__crate__api__set_dm_target_impl(
         },
     )
 }
-fn wire__crate__api__set_flash_count_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "set_flash_count",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_count = <u8>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                    (move || async move {
-                        let output_ok = crate::api::set_flash_count(api_count).await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
-fn wire__crate__api__set_flash_on_critical_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "set_flash_on_critical",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_enabled = <bool>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                    (move || async move {
-                        let output_ok = crate::api::set_flash_on_critical(api_enabled).await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
-fn wire__crate__api__set_flash_on_message_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "set_flash_on_message",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_enabled = <bool>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                    (move || async move {
-                        let output_ok = crate::api::set_flash_on_message(api_enabled).await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
-fn wire__crate__api__set_flash_whole_screen_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "set_flash_whole_screen",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_enabled = <bool>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                    (move || async move {
-                        let output_ok = crate::api::set_flash_whole_screen(api_enabled).await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
 fn wire__crate__api__set_heartbeat_interval_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1736,42 +1592,6 @@ fn wire__crate__api__set_heartbeat_interval_impl(
         },
     )
 }
-fn wire__crate__api__set_hide_keyboard_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "set_hide_keyboard",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_enabled = <bool>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                    (move || async move {
-                        let output_ok = crate::api::set_hide_keyboard(api_enabled).await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
 fn wire__crate__api__set_interface_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1800,42 +1620,6 @@ fn wire__crate__api__set_interface_impl(
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                     (move || async move {
                         let output_ok = crate::api::set_interface(api_name).await?;
-                        Ok(output_ok)
-                    })()
-                    .await,
-                )
-            }
-        },
-    )
-}
-fn wire__crate__api__set_macros_columns_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "set_macros_columns",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_columns = <u8>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| async move {
-                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
-                    (move || async move {
-                        let output_ok = crate::api::set_macros_columns(api_columns).await?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -2262,6 +2046,28 @@ impl SseDecode for crate::osc::types::ChannelFlash {
             channel_id: var_channelId,
             sender_id: var_senderId,
             sender_name: var_senderName,
+        };
+    }
+}
+
+impl SseDecode for crate::state::config::ConfigPatch {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_flashOnCritical = <Option<bool>>::sse_decode(deserializer);
+        let mut var_flashOnMessage = <Option<bool>>::sse_decode(deserializer);
+        let mut var_flashCount = <Option<u8>>::sse_decode(deserializer);
+        let mut var_macrosColumns = <Option<u8>>::sse_decode(deserializer);
+        let mut var_hideKeyboard = <Option<bool>>::sse_decode(deserializer);
+        let mut var_audibleAlert = <Option<bool>>::sse_decode(deserializer);
+        let mut var_flashWholeScreen = <Option<bool>>::sse_decode(deserializer);
+        return crate::state::config::ConfigPatch {
+            flash_on_critical: var_flashOnCritical,
+            flash_on_message: var_flashOnMessage,
+            flash_count: var_flashCount,
+            macros_columns: var_macrosColumns,
+            hide_keyboard: var_hideKeyboard,
+            audible_alert: var_audibleAlert,
+            flash_whole_screen: var_flashWholeScreen,
         };
     }
 }
@@ -2920,40 +2726,34 @@ fn pde_ffi_dispatcher_primary_impl(
         21 => wire__crate__api__init_impl(port, ptr, rust_vec_len, data_len),
         22 => wire__crate__api__list_show_files_impl(port, ptr, rust_vec_len, data_len),
         23 => wire__crate__api__load_show_file_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__preview_global_macros_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__remove_static_peer_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__reorder_global_macros_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__reorder_macros_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__request_channels_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__request_global_macros_impl(port, ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__reset_channels_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__reset_global_macros_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__save_show_file_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__send_direct_message_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__send_dm_flash_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__send_flash_impl(port, ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__send_message_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__send_osc_macro_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__set_audible_alert_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__patch_config_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__preview_global_macros_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__remove_static_peer_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__reorder_global_macros_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__reorder_macros_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__request_channels_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__request_global_macros_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__reset_channels_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__reset_global_macros_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__save_show_file_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__send_direct_message_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__send_dm_flash_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__send_flash_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__send_message_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__send_osc_macro_impl(port, ptr, rust_vec_len, data_len),
         39 => wire__crate__api__set_channel_flash_impl(port, ptr, rust_vec_len, data_len),
         40 => wire__crate__api__set_client_name_impl(port, ptr, rust_vec_len, data_len),
         41 => wire__crate__api__set_dm_target_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__set_flash_count_impl(port, ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__set_flash_on_critical_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__set_flash_on_message_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__set_flash_whole_screen_impl(port, ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__set_heartbeat_interval_impl(port, ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__set_hide_keyboard_impl(port, ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__set_interface_impl(port, ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__set_macros_columns_impl(port, ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__set_osc_port_impl(port, ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__set_role_impl(port, ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__set_selected_channels_impl(port, ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__shutdown_impl(port, ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__upsert_channel_impl(port, ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__upsert_global_macro_impl(port, ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__upsert_macro_impl(port, ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__set_heartbeat_interval_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__set_interface_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__set_osc_port_impl(port, ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__set_role_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__set_selected_channels_impl(port, ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__shutdown_impl(port, ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__upsert_channel_impl(port, ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__upsert_global_macro_impl(port, ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__upsert_macro_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -3017,6 +2817,32 @@ impl flutter_rust_bridge::IntoIntoDart<crate::osc::types::ChannelFlash>
     for crate::osc::types::ChannelFlash
 {
     fn into_into_dart(self) -> crate::osc::types::ChannelFlash {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::state::config::ConfigPatch {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.flash_on_critical.into_into_dart().into_dart(),
+            self.flash_on_message.into_into_dart().into_dart(),
+            self.flash_count.into_into_dart().into_dart(),
+            self.macros_columns.into_into_dart().into_dart(),
+            self.hide_keyboard.into_into_dart().into_dart(),
+            self.audible_alert.into_into_dart().into_dart(),
+            self.flash_whole_screen.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::state::config::ConfigPatch
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::state::config::ConfigPatch>
+    for crate::state::config::ConfigPatch
+{
+    fn into_into_dart(self) -> crate::state::config::ConfigPatch {
         self
     }
 }
@@ -3542,6 +3368,19 @@ impl SseEncode for crate::osc::types::ChannelFlash {
         <String>::sse_encode(self.channel_id, serializer);
         <uuid::Uuid>::sse_encode(self.sender_id, serializer);
         <String>::sse_encode(self.sender_name, serializer);
+    }
+}
+
+impl SseEncode for crate::state::config::ConfigPatch {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Option<bool>>::sse_encode(self.flash_on_critical, serializer);
+        <Option<bool>>::sse_encode(self.flash_on_message, serializer);
+        <Option<u8>>::sse_encode(self.flash_count, serializer);
+        <Option<u8>>::sse_encode(self.macros_columns, serializer);
+        <Option<bool>>::sse_encode(self.hide_keyboard, serializer);
+        <Option<bool>>::sse_encode(self.audible_alert, serializer);
+        <Option<bool>>::sse_encode(self.flash_whole_screen, serializer);
     }
 }
 
