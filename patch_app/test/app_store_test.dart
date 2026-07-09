@@ -377,11 +377,14 @@ void main() {
     await store.refreshPeers();
     expect(store.peers.single.peerId, 'a');
 
-    // Next fetch throws — the store should swallow and keep the old list.
+    // Next fetch throws — the store should swallow and keep the old list,
+    // and listeners must not be notified for a failed refresh (#185).
+    var notified2 = 0;
     final throwingBridge = _ThrowingBridge(pushes);
-    final store2 = AppStore(throwingBridge)..addListener(() {});
+    final store2 = AppStore(throwingBridge)..addListener(() => notified2++);
     await store2.refreshPeers();
     expect(store2.peers, isEmpty); // unchanged from its initial empty state
+    expect(notified2, 0);
     store2.dispose();
   });
 }

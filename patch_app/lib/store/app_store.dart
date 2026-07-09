@@ -128,34 +128,31 @@ class AppStore extends ChangeNotifier {
   }
 
   /// Refetch the channel list and notify; throws are swallowed.
-  Future<void> refreshChannels() async {
-    try {
-      _channels = await _bridge.getChannels();
-      notifyListeners();
-    } catch (e) {
-      debugPrint('AppStore.refreshChannels failed: $e');
-    }
-  }
+  Future<void> refreshChannels() =>
+      _refresh('refreshChannels', _bridge.getChannels, (v) => _channels = v);
 
   /// Refetch the config and notify; throws are swallowed (keep the last good
   /// config rather than blanking the UI).
-  Future<void> refreshConfig() async {
-    try {
-      _config = await _bridge.getConfig();
-      notifyListeners();
-    } catch (e) {
-      debugPrint('AppStore.refreshConfig failed: $e');
-    }
-  }
+  Future<void> refreshConfig() =>
+      _refresh('refreshConfig', _bridge.getConfig, (v) => _config = v);
 
   /// Refetch the peer list and notify. Failures are non-critical (a background
   /// refresh) — keep the current list and log rather than surfacing an error.
-  Future<void> refreshPeers() async {
+  Future<void> refreshPeers() =>
+      _refresh('refreshPeers', _bridge.getPeers, (v) => _peers = v);
+
+  /// The one fetch → assign → notify body behind the refresh triad (#185).
+  /// A failed fetch keeps the last good value, logs, and does not notify.
+  Future<void> _refresh<T>(
+    String name,
+    Future<T> Function() fetch,
+    void Function(T) assign,
+  ) async {
     try {
-      _peers = await _bridge.getPeers();
+      assign(await fetch());
       notifyListeners();
     } catch (e) {
-      debugPrint('AppStore.refreshPeers failed: $e');
+      debugPrint('AppStore.$name failed: $e');
     }
   }
 
