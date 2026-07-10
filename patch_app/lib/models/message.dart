@@ -60,16 +60,6 @@ class PatchMessage {
         localSeq: seq,
       );
 
-  factory PatchMessage.fromJson(Map<String, dynamic> j) => PatchMessage(
-        messageId: j['message_id'] as String,
-        senderId: j['sender_id'] as String,
-        senderName: j['sender_name'] as String,
-        channelId: j['channel_id'] as String,
-        timestamp: DateTime.parse(j['timestamp'] as String),
-        priority: (j['priority'] as num).toInt(),
-        payload: j['payload'] as String,
-      );
-
   factory PatchMessage.fromRust(rust_osc.PatchMessage m) => PatchMessage(
         messageId: m.messageId.toString(),
         senderId: m.senderId.toString(),
@@ -101,15 +91,6 @@ class MessageDeliveryStatus {
 
   bool get isComplete => !failed && total > 0 && delivered >= total;
   bool get inProgress => !failed && delivered < total;
-
-  factory MessageDeliveryStatus.fromEvent(Map<String, dynamic> e) =>
-      MessageDeliveryStatus(
-        delivered: (e['delivered'] as num).toInt(),
-        total: (e['total'] as num).toInt(),
-        failed: e['failed'] as bool,
-        failedPeers:
-            ((e['failed_peers'] as List<dynamic>?) ?? const []).cast<String>(),
-      );
 }
 
 class ShowFileMeta {
@@ -124,13 +105,6 @@ class ShowFileMeta {
     required this.createdAt,
     required this.channelCount,
   });
-
-  factory ShowFileMeta.fromJson(Map<String, dynamic> j) => ShowFileMeta(
-        slug: j['slug'] as String,
-        name: j['name'] as String,
-        createdAt: DateTime.parse(j['created_at'] as String),
-        channelCount: (j['channel_count'] as num).toInt(),
-      );
 
   factory ShowFileMeta.fromRust(rust_show_file.ShowFileMeta s) => ShowFileMeta(
         slug: s.slug,

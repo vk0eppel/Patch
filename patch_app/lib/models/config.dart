@@ -16,12 +16,6 @@ class StaticPeerInfo {
     this.label,
   });
 
-  factory StaticPeerInfo.fromJson(Map<String, dynamic> j) => StaticPeerInfo(
-        address: j['address'] as String,
-        port: (j['port'] as num).toInt(),
-        label: j['label'] as String?,
-      );
-
   factory StaticPeerInfo.fromRust(rust_config.StaticPeer s) => StaticPeerInfo(
         address: s.address,
         port: s.port,

@@ -18,18 +18,6 @@ enum MacroOscArgType {
         rust_osc.OscArgKind.int => MacroOscArgType.int,
         rust_osc.OscArgKind.float => MacroOscArgType.float,
       };
-
-  factory MacroOscArgType.fromJson(String? j) => switch (j) {
-        'Int' => MacroOscArgType.int,
-        'Float' => MacroOscArgType.float,
-        _ => MacroOscArgType.string,
-      };
-
-  String toJson() => switch (this) {
-        MacroOscArgType.string => 'String',
-        MacroOscArgType.int => 'Int',
-        MacroOscArgType.float => 'Float',
-      };
 }
 
 /// An outbound OSC target attached to a macro — fired alongside the Patch message
@@ -48,14 +36,6 @@ class MacroOsc {
     this.arg,
     this.argType = MacroOscArgType.string,
   });
-
-  factory MacroOsc.fromJson(Map<String, dynamic> j) => MacroOsc(
-        address: j['address'] as String,
-        port: (j['port'] as num).toInt(),
-        path: j['path'] as String,
-        arg: j['arg'] as String?,
-        argType: MacroOscArgType.fromJson(j['arg_type'] as String?),
-      );
 
   factory MacroOsc.fromRust(rust_channel.OscTarget o) => MacroOsc(
         address: o.address,
@@ -91,18 +71,6 @@ class MacroMessage {
     this.osc,
   });
 
-  factory MacroMessage.fromJson(Map<String, dynamic> j) => MacroMessage(
-        label: j['label'] as String,
-        payload: j['payload'] as String,
-        keyBinding: j['key_binding'] as String?,
-        priority: (j['priority'] as num).toInt(),
-        midiNote: (j['midi_note'] as num?)?.toInt(),
-        midiCc: (j['midi_cc'] as num?)?.toInt(),
-        osc: j['osc'] == null
-            ? null
-            : MacroOsc.fromJson(j['osc'] as Map<String, dynamic>),
-      );
-
   factory MacroMessage.fromRust(rust_channel.MacroMessage s) => MacroMessage(
         label: s.label,
         payload: s.payload,
@@ -133,21 +101,6 @@ class PatchChannel {
     this.flashOnMessage = false,
     this.flashCount,
   });
-
-  factory PatchChannel.fromJson(Map<String, dynamic> j) {
-    final colorHex = (j['color'] as String?)?.replaceFirst('#', '') ?? '607D8B';
-    return PatchChannel(
-      id: j['id'] as String,
-      displayName: j['display_name'] as String,
-      color: Color(int.parse('FF$colorHex', radix: 16)),
-      macros: (j['macros'] as List<dynamic>? ?? [])
-          .map((s) => MacroMessage.fromJson(s as Map<String, dynamic>))
-          .toList(),
-      flashOnCritical: (j['flash_on_critical'] as bool?) ?? true,
-      flashOnMessage:  (j['flash_on_message']  as bool?) ?? false,
-      flashCount:      (j['flash_count'] as int?),
-    );
-  }
 
   factory PatchChannel.fromRust(rust_channel.Channel c) => PatchChannel(
         id: c.id,
