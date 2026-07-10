@@ -197,13 +197,15 @@ class _ChannelMacroEditor extends StatelessWidget {
         final result = await presenter.saveMacro(
           channelId: channel.id,
           originalLabel: ol,
-          label: l,
-          payload: p,
-          keyBinding: k,
-          priority: pr,
-          midiNote: mn,
-          midiCc: mc,
-          osc: osc,
+          macro: MacroMessage(
+            label: l,
+            payload: p,
+            keyBinding: k,
+            priority: pr,
+            midiNote: mn,
+            midiCc: mc,
+            osc: osc,
+          ),
         );
         if (context.mounted) _showSaveError(context, result);
       }),
@@ -740,13 +742,15 @@ class _GlobalMacrosEditor extends StatelessWidget {
         final store = AppStoreScope.read(context);
         final result = await presenter.saveMacro(
           originalLabel: ol,
-          label: l,
-          payload: p,
-          keyBinding: k,
-          priority: pr,
-          midiNote: mn,
-          midiCc: mc,
-          osc: osc,
+          macro: MacroMessage(
+            label: l,
+            payload: p,
+            keyBinding: k,
+            priority: pr,
+            midiNote: mn,
+            midiCc: mc,
+            osc: osc,
+          ),
         );
         if (result is SaveError) {
           if (context.mounted) _showSaveError(context, result);

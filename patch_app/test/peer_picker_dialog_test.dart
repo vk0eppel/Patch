@@ -3,19 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:patch/models/message.dart';
 import 'package:patch/widgets/peer_picker_dialog.dart';
 
+import 'support/fake_bridge.dart';
+
 PeerInfo peer(String name, {String address = '10.0.0.5', int port = 9000}) =>
-    PeerInfo(
-      peerId: 'id-$name',
-      peerName: name,
-      role: null,
-      channels: const [],
-      address: address,
-      oscPort: port,
-      lastSeen: DateTime(2026, 7, 9),
-      discoveryMode: 'OscBeacon',
-      status: PeerStatus.online,
-      departed: false,
-    );
+    peerInfo('id-$name', peerName: name, address: address, oscPort: port);
 
 Widget host(PeerPickerDialog dialog) =>
     MaterialApp(home: Scaffold(body: dialog));

@@ -22,37 +22,37 @@ void main() {
     test('request sends and arms the gate', () async {
       await gate.request('peer-1');
       expect(calls, ['request:peer-1']);
-      expect(gate.admitOffer(() => 'offer'), 'offer');
+      expect(gate.admitOffer(), isTrue);
     });
 
     test('an unsolicited offer is refused (never requested)', () {
-      expect(gate.admitOffer(() => 'offer'), isNull);
+      expect(gate.admitOffer(), isFalse);
     });
 
     test('an admitted offer disarms the gate — a second offer is refused',
         () async {
       await gate.request('peer-1');
-      expect(gate.admitOffer(() => 1), 1);
-      expect(gate.admitOffer(() => 2), isNull);
+      expect(gate.admitOffer(), isTrue);
+      expect(gate.admitOffer(), isFalse);
     });
 
     test('timeout disarms and reports it fired, if still awaiting', () async {
       await gate.request('peer-1');
       expect(gate.timeout(), isTrue);
-      expect(gate.admitOffer(() => 'stale'), isNull);
+      expect(gate.admitOffer(), isFalse);
     });
 
     test('timeout is a no-op if an offer already arrived', () async {
       await gate.request('peer-1');
-      gate.admitOffer(() => 'offer');
+      gate.admitOffer();
       expect(gate.timeout(), isFalse);
     });
 
     test('two gates cannot cross-trigger — each flow owns its own', () async {
       final other = PeerRequestGate(sendRequest: (_) async {});
       await gate.request('peer-1');
-      expect(other.admitOffer(() => 'offer'), isNull);
-      expect(gate.admitOffer(() => 'offer'), 'offer');
+      expect(other.admitOffer(), isFalse);
+      expect(gate.admitOffer(), isTrue);
     });
   });
 

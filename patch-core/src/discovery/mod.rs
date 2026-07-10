@@ -219,7 +219,16 @@ pub(crate) fn spawn_heartbeat_loop(
                     // a peer we can see learns about us even when our broadcast
                     // can't reach them (asymmetric routing / AP isolation).
                     // Unicast routes per-subnet, ignoring a bad default route.
-                    let _ = hb_transport.send_to_peers(bytes, &hb_state, &cfg).await;
+                    // While the pin is unresolved, dynamic discovery is fully
+                    // inert (ADR-0011) — presence goes to Static Peers only,
+                    // the deliberate exception.
+                    if cfg.network_interface.is_some() {
+                        let _ = hb_transport.send_to_peers(bytes, &hb_state, &cfg).await;
+                    } else {
+                        for addr in hb_state.static_peer_addrs(cfg.client_id).await {
+                            let _ = hb_transport.send_to(bytes.clone(), addr).await;
+                        }
+                    }
                 }
                 Err(e) => warn!("Failed to encode presence: {}", e),
             }
@@ -281,19 +290,14 @@ mod tests {
     use crate::osc::codec::{decode_packet, PatchEvent};
     use uuid::Uuid;
 
-    /// The heartbeat loop's first beat fires immediately and unicasts our
-    /// presence to every known peer — driven here against a loopback socket
-    /// standing in for a peer, with no pin resolved (unicast to known peers
-    /// is not gated by the pin; broadcast is, via `should_broadcast`).
-    #[tokio::test]
-    async fn spawn_heartbeat_loop_unicasts_presence_to_a_known_peer() {
+    /// Build state + transport + a loopback listener for driving the loop.
+    async fn harness() -> (Config, AppState, Arc<Transport>, tokio::net::UdpSocket) {
         let config = Config {
             client_name: "hb-test".into(),
             default_channels: Vec::new(),
             heartbeat_interval_secs: 1, // fastest legal cadence, for the second-beat assertion
             ..Config::default()
         };
-        let client_id = config.client_id;
         let state = AppState::new(config.clone());
         let reliability = std::sync::Arc::new(tokio::sync::Mutex::new(
             crate::reliability::ReliabilityManager::new(),
@@ -302,7 +306,7 @@ mod tests {
             Transport::new(
                 &Config {
                     osc_port: 0,
-                    ..config
+                    ..config.clone()
                 },
                 state.clone(),
                 reliability,
@@ -310,23 +314,27 @@ mod tests {
             .await
             .unwrap(),
         );
-
-        // A loopback listener standing in for an already-known peer.
         let listener = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        (config, state, transport, listener)
+    }
+
+    /// The heartbeat loop's first beat fires immediately and unicasts our
+    /// presence to a Static Peer even while the pin is unresolved — Static
+    /// Peers are the deliberate exception to unresolved-is-inert (ADR-0011,
+    /// CONTEXT.md "Pinned Network").
+    #[tokio::test]
+    async fn spawn_heartbeat_loop_unicasts_presence_to_a_static_peer() {
+        let (config, state, transport, listener) = harness().await;
+        let client_id = config.client_id;
         let listener_addr = listener.local_addr().unwrap();
         state
-            .record_sighting(
-                PeerSighting::Presence(PeerPresence {
-                    peer_id: Uuid::new_v4(),
-                    peer_name: "listener-peer".into(),
-                    channels: Vec::new(),
-                    role: None,
-                    timestamp: Utc::now(),
-                }),
+            .add_static_peer(
                 listener_addr.ip().to_string(),
                 listener_addr.port(),
+                Some("listener-peer".into()),
             )
-            .await;
+            .await
+            .unwrap();
 
         let handle = spawn_heartbeat_loop(client_id, state, transport);
 
@@ -360,6 +368,51 @@ mod tests {
             decode_packet(&buf[..n]).unwrap(),
             PatchEvent::Presence(_)
         ));
+        handle.abort();
+    }
+
+    /// While the pin is unresolved, dynamic discovery is fully inert in both
+    /// directions (ADR-0011): no broadcast (`should_broadcast`, unit-tested at
+    /// the transport seam) and no unicast presence to dynamic peers. In
+    /// production a dynamic peer can't even exist while unresolved (admission
+    /// drops all inbound); this pins the outbound half at the loop level with
+    /// an artificially injected sighting.
+    #[tokio::test]
+    async fn spawn_heartbeat_loop_is_inert_toward_dynamic_peers_while_unresolved() {
+        let (config, state, transport, listener) = harness().await;
+        assert!(
+            config.network_interface.is_none(),
+            "test premise: unresolved"
+        );
+        let listener_addr = listener.local_addr().unwrap();
+        state
+            .record_sighting(
+                PeerSighting::Presence(PeerPresence {
+                    peer_id: Uuid::new_v4(),
+                    peer_name: "dynamic-peer".into(),
+                    channels: Vec::new(),
+                    role: None,
+                    timestamp: Utc::now(),
+                }),
+                listener_addr.ip().to_string(),
+                listener_addr.port(),
+            )
+            .await;
+
+        let handle = spawn_heartbeat_loop(config.client_id, state, transport);
+
+        // The first beat fires immediately; give it a full interval and slack
+        // to prove silence rather than a race.
+        let mut buf = [0u8; 4096];
+        let got = tokio::time::timeout(
+            std::time::Duration::from_millis(1500),
+            listener.recv_from(&mut buf),
+        )
+        .await;
+        assert!(
+            got.is_err(),
+            "expected no presence unicast to a dynamic peer while unresolved"
+        );
         handle.abort();
     }
 }

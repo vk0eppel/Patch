@@ -30,6 +30,25 @@ pub(crate) fn reachable_peer_addrs(peers: &[Peer], client_id: Uuid) -> Vec<Socke
         .collect()
 }
 
+/// Static Peer addresses only — the unresolved-pin heartbeat target set
+/// (ADR-0011: while unresolved, dynamic discovery is fully inert; Static
+/// Peers are the deliberate exception).
+pub(crate) fn static_peer_addrs(peers: &[Peer], client_id: Uuid) -> Vec<SocketAddr> {
+    let mut seen = HashSet::new();
+    peers
+        .iter()
+        .filter(|p| p.peer_id != client_id)
+        .filter(|p| {
+            matches!(
+                p.discovery_mode,
+                crate::state::peer::DiscoveryMode::ManualIp
+            )
+        })
+        .flat_map(|p| p.all_addrs())
+        .filter(|addr| seen.insert(*addr))
+        .collect()
+}
+
 /// Like `reachable_peer_addrs` but grouped by peer_id — used by `track_critical`
 /// so ACKs can be matched by peer identity rather than socket address.
 pub(crate) fn reachable_peers_with_addrs(

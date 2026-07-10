@@ -209,14 +209,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case ChannelsChanged():
         break;
       case ChannelsOffered(:final fromName, :final channels):
-        final fresh = _channelsGate.admitOffer(
-            () => freshChannels(offered: channels, existing: _channels));
-        if (fresh != null && mounted) {
-          _showOfferDialog(fromName, channels, fresh);
-        }
+        if (!_channelsGate.admitOffer() || !mounted) break;
+        _showOfferDialog(
+            fromName, channels, freshChannels(offered: channels, existing: _channels));
       case GlobalMacrosOffered(:final fromName, :final globalMacros):
-        if (_macrosGate.admitOffer(() => true) == null) break;
-        if (mounted) _showMacrosOfferDialog(fromName, globalMacros);
+        if (!_macrosGate.admitOffer() || !mounted) break;
+        _showMacrosOfferDialog(fromName, globalMacros);
       // Not consumed by settings — handled on the home screen.
       case MessageReceived():
       case DeliveryUpdated():

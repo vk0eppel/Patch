@@ -10,18 +10,8 @@ void main() {
   setUp(() {
     calls = [];
     p = MacrosSectionPresenter(
-      upsertMacro: ({
-        channelId,
-        originalLabel,
-        required label,
-        required payload,
-        keyBinding,
-        priority = 1,
-        midiNote,
-        midiCc,
-        osc,
-      }) async {
-        calls.add('upsertMacro:${channelId ?? '<global>'}:$label');
+      upsertMacro: ({channelId, originalLabel, required macro}) async {
+        calls.add('upsertMacro:${channelId ?? '<global>'}:${macro.label}');
       },
     );
   });
@@ -37,16 +27,15 @@ void main() {
     test('a Channel Macro save carries its channel id', () async {
       final result = await p.saveMacro(
         channelId: 'rf',
-        label: 'GO',
-        payload: 'go',
-        osc: validOsc,
+        macro: const MacroMessage(label: 'GO', payload: 'go', osc: validOsc),
       );
       expect(result, isA<SaveOk>());
       expect(calls, ['upsertMacro:rf:GO']);
     });
 
     test('a Global Macro save carries no channel id', () async {
-      final result = await p.saveMacro(label: 'Standby', payload: 'standby');
+      final result = await p.saveMacro(
+          macro: const MacroMessage(label: 'Standby', payload: 'standby'));
       expect(result, isA<SaveOk>());
       expect(calls, ['upsertMacro:<global>:Standby']);
     });
@@ -61,19 +50,22 @@ void main() {
       );
       expect(
         await p.saveMacro(
-            channelId: 'rf', label: 'GO', payload: 'go', osc: badOsc),
+            channelId: 'rf',
+            macro: const MacroMessage(label: 'GO', payload: 'go', osc: badOsc)),
         isA<SaveError>(),
       );
       expect(
-        await p.saveMacro(label: 'Standby', payload: 's', osc: badOsc),
+        await p.saveMacro(
+            macro:
+                const MacroMessage(label: 'Standby', payload: 's', osc: badOsc)),
         isA<SaveError>(),
       );
       expect(calls, isEmpty);
     });
 
     test('no OSC target skips the guard', () async {
-      final result =
-          await p.saveMacro(channelId: 'rf', label: 'GO', payload: 'go');
+      final result = await p.saveMacro(
+          channelId: 'rf', macro: const MacroMessage(label: 'GO', payload: 'go'));
       expect(result, isA<SaveOk>());
       expect(calls, ['upsertMacro:rf:GO']);
     });

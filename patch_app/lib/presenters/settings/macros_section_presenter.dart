@@ -16,42 +16,25 @@ class MacrosSectionPresenter {
 
   /// The one macro-save command (#186), keyed on [channelId]: non-null is a
   /// Channel Macro, null is a Global Macro — the same discriminator macro
-  /// routing uses (ADR-0009).
+  /// routing uses (ADR-0009). The Macro itself travels as one [MacroMessage],
+  /// not a parameter list.
   final Future<void> Function({
     String? channelId,
     String? originalLabel,
-    required String label,
-    required String payload,
-    String? keyBinding,
-    int priority,
-    int? midiNote,
-    int? midiCc,
-    MacroOsc? osc,
+    required MacroMessage macro,
   }) upsertMacro;
 
   Future<SaveResult> saveMacro({
     String? channelId,
     String? originalLabel,
-    required String label,
-    required String payload,
-    String? keyBinding,
-    int priority = 1,
-    int? midiNote,
-    int? midiCc,
-    MacroOsc? osc,
+    required MacroMessage macro,
   }) =>
       validateThenSave(
-        validate: () => _validateOsc(osc),
+        validate: () => _validateOsc(macro.osc),
         save: () => upsertMacro(
           channelId: channelId,
           originalLabel: originalLabel,
-          label: label,
-          payload: payload,
-          keyBinding: keyBinding,
-          priority: priority,
-          midiNote: midiNote,
-          midiCc: midiCc,
-          osc: osc,
+          macro: macro,
         ),
       );
 }

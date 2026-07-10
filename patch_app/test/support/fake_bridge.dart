@@ -141,12 +141,18 @@ AppConfig cfg({String clientName = 'Me', bool nameIsDefault = false}) =>
       nameIsDefault: nameIsDefault,
     );
 
-PeerInfo peerInfo(String id, {String peerName = ''}) => PeerInfo(
+PeerInfo peerInfo(
+  String id, {
+  String peerName = '',
+  String address = '10.0.0.1',
+  int oscPort = 9000,
+}) =>
+    PeerInfo(
       peerId: id,
       peerName: peerName.isEmpty ? 'peer-$id' : peerName,
       channels: const [],
-      address: '10.0.0.1',
-      oscPort: 9000,
+      address: address,
+      oscPort: oscPort,
       lastSeen: DateTime.utc(2026, 6, 22),
       discoveryMode: 'osc_beacon',
       status: PeerStatus.online,

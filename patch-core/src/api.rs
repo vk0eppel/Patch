@@ -1249,19 +1249,18 @@ mod tests {
         .is_err());
     }
 
-    /// `ConfigSnapshot` has no FFI-generated map — `bridge_client.dart::getConfig()`
-    /// hand-lists every field into a `Map<String, dynamic>`, and Dart's
-    /// `AppConfig.fromJson` hand-lists them again on the way back out (see
-    /// ERRORS.md: a forgotten field there silently resets UI state to its
-    /// default). Rust can't see across the FFI boundary to check Dart directly,
-    /// but it CAN refuse to compile/test silently when a field is added here and
-    /// forgotten everywhere else: `serde` always serializes every field, so if
-    /// this test's hardcoded key list drifts from the struct, the mismatch is a
-    /// hard failure — not a silent reset three hops away in Flutter.
+    /// Dart's `AppConfig.fromRust` hand-lists every `ConfigSnapshot` field
+    /// into the UI model (see ERRORS.md: a forgotten field there silently
+    /// resets UI state to its default). Rust can't see across the FFI boundary
+    /// to check Dart directly, but it CAN refuse to compile/test silently when
+    /// a field is added here and forgotten everywhere else: `serde` always
+    /// serializes every field, so if this test's hardcoded key list drifts
+    /// from the struct, the mismatch is a hard failure — not a silent reset
+    /// three hops away in Flutter.
     ///
-    /// If this test fails after editing `ConfigSnapshot`: update the list below,
-    /// then go update `bridge_client.dart::getConfig()` and
-    /// `patch_app/lib/models/config.dart::AppConfig.fromJson` to match.
+    /// If this test fails after editing `ConfigSnapshot`: update the list
+    /// below, then go update
+    /// `patch_app/lib/models/config.dart::AppConfig.fromRust` to match.
     #[test]
     fn config_snapshot_field_set_is_pinned() {
         use super::{ConfigSnapshot, StaticPeer};

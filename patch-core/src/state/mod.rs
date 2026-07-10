@@ -429,17 +429,18 @@ impl AppState {
         self.0.peers.get_role(peer_id).await
     }
 
-    /// Every known peer, including a synthetic entry per configured static
-    /// peer that hasn't been heard from dynamically yet. The static-peer merge
-    /// is cross-domain (it needs `Config`, not just the peer registry), so it
-    /// lives here rather than in `PeerRegistry` — see ADR-0003.
     /// Resolve one Peer by id from the same merged view [`Self::get_peers`]
     /// serves (dynamic + Static Peers) — the single-target accessor every
-    /// lookup routes through (#184, ADR-0003).
+    /// lookup routes through (#184, ADR-0003). Batch callers holding a
+    /// snapshot use `peer::find_peer` directly instead of re-locking per id.
     pub async fn peer_by_id(&self, peer_id: Uuid) -> Option<peer::Peer> {
         peer::find_peer(&self.get_peers().await, peer_id).cloned()
     }
 
+    /// Every known peer, including a synthetic entry per configured static
+    /// peer that hasn't been heard from dynamically yet. The static-peer merge
+    /// is cross-domain (it needs `Config`, not just the peer registry), so it
+    /// lives here rather than in `PeerRegistry` — see ADR-0003.
     pub async fn get_peers(&self) -> Vec<peer::Peer> {
         let mut peers: Vec<_> = self.0.peers.list().await;
 
@@ -502,6 +503,11 @@ impl AppState {
     /// different ways of actually sending to it.
     pub async fn reachable_peer_addrs(&self, client_id: Uuid) -> Vec<std::net::SocketAddr> {
         network_policy::reachable_peer_addrs(&self.get_peers().await, client_id)
+    }
+
+    /// Static Peer addresses only — see `network_policy::static_peer_addrs`.
+    pub async fn static_peer_addrs(&self, client_id: Uuid) -> Vec<std::net::SocketAddr> {
+        network_policy::static_peer_addrs(&self.get_peers().await, client_id)
     }
 
     /// Like `reachable_peer_addrs` but grouped by peer_id — used by `track_critical`

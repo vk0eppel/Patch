@@ -19,6 +19,13 @@ import '../src/rust/transport.dart' as rust_transport;
 /// the legacy method surface + `Stream<Map<String, dynamic>>` event shape so
 /// `home_screen.dart` and `settings_screen.dart` don't need to change.
 ///
+/// The command seam (#177) is this class's *implicit* Dart interface: UI code
+/// depends on `BridgeClient`, production satisfies it with this FFI-calling
+/// class, and tests with `FakeBridge` (`test/support/fake_bridge.dart`,
+/// `Fake implements BridgeClient`) — two adapters at one seam, no separate
+/// abstract class needed. `command_seam_test.dart` pins that no screen or
+/// widget imports the generated bindings directly.
+///
 /// Lifecycle: construct → `await connect()` → use. `dispose()` to clean up.
 class BridgeClient {
   /// Typed engine-push stream — the sole event channel. Reads return `Future`s
@@ -110,33 +117,29 @@ class BridgeClient {
   Future<void> clearStalePeers({int maxAgeSecs = 60}) =>
       rust.clearStalePeers(maxAgeSecs: BigInt.from(maxAgeSecs));
 
+  /// Upsert a Macro into either home, keyed on [channelId] (#186): non-null
+  /// is a Channel Macro, null is a Global Macro. The Macro travels as one
+  /// [MacroMessage]; this adapter is where it fans out to the FFI arguments.
+  ///
   /// [originalLabel] is the macro's label before this edit — pass it when
   /// editing an existing macro (even if the label didn't change) so a rename
   /// updates that macro in place instead of creating a new one. Omit (null)
   /// only when creating a brand-new macro.
-  /// Upsert a Macro into either home, keyed on [channelId] (#186): non-null
-  /// is a Channel Macro, null is a Global Macro.
   Future<void> upsertMacro({
     String? channelId,
     String? originalLabel,
-    required String label,
-    required String payload,
-    String? keyBinding,
-    int priority = 1,
-    int? midiNote,
-    int? midiCc,
-    MacroOsc? osc,
+    required MacroMessage macro,
   }) =>
       rust.upsertMacro(
         channelId: channelId,
         originalLabel: originalLabel,
-        label: label,
-        payload: payload,
-        priority: priority,
-        keyBinding: keyBinding,
-        midiNote: midiNote,
-        midiCc: midiCc,
-        osc: oscTargetFromMacroOsc(osc),
+        label: macro.label,
+        payload: macro.payload,
+        priority: macro.priority,
+        keyBinding: macro.keyBinding,
+        midiNote: macro.midiNote,
+        midiCc: macro.midiCc,
+        osc: oscTargetFromMacroOsc(macro.osc),
       );
 
   /// Fire an arbitrary OSC message to external gear (the dual-action half of an
@@ -522,7 +525,7 @@ rust_channel.MacroMessage _macroToRust(MacroMessage s) => rust_channel.MacroMess
       priority: s.priority,
       midiNote: s.midiNote,
       midiCc: s.midiCc,
-      osc: s.osc == null ? null : _oscToRust(s.osc!),
+      osc: oscTargetFromMacroOsc(s.osc),
     );
 
 /// The one place a `MacroOsc` becomes a wire `OscTarget` (#181). The
@@ -542,14 +545,6 @@ rust_channel.OscTarget? oscTargetFromMacroOsc(MacroOsc? o) {
     argType: _toRustArgType(o.argType),
   );
 }
-
-rust_channel.OscTarget _oscToRust(MacroOsc o) => rust_channel.OscTarget(
-      address: o.address,
-      port: o.port,
-      path: o.path,
-      arg: o.arg,
-      argType: _toRustArgType(o.argType),
-    );
 
 rust_osc.OscArgKind _toRustArgType(MacroOscArgType t) => switch (t) {
       MacroOscArgType.string => rust_osc.OscArgKind.string,

@@ -19,13 +19,13 @@ class PeerRequestGate {
     await sendRequest(peerId);
   }
 
-  /// Gate an incoming offer: while awaiting, disarms and returns
-  /// `classify()` (the flow's own view of the offer); refuses (null) when
-  /// unsolicited.
-  R? admitOffer<R>(R Function() classify) {
-    if (!_awaiting) return null;
+  /// Gate an incoming offer: while awaiting, disarms and admits (true);
+  /// refuses an unsolicited offer (false). What to do with an admitted
+  /// offer is the caller's business — the gate owns only the race.
+  bool admitOffer() {
+    if (!_awaiting) return false;
     _awaiting = false;
-    return classify();
+    return true;
   }
 
   /// Call when the await window elapses with no offer. Returns whether it
