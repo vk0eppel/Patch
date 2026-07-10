@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:patch/bridge/bridge_client.dart';
 import 'package:patch/models/config.dart';
 import 'package:patch/models/events.dart';
 import 'package:patch/models/channel.dart';
@@ -12,22 +11,17 @@ import 'package:patch/models/selection_controller.dart';
 import 'package:patch/presenters/home_presenter.dart';
 import 'package:patch/store/app_store.dart';
 
-// ── Fakes (same pattern as flash_applicator_test) ─────────────────────────────
+import 'support/fake_bridge.dart';
 
-class _FakeBridge extends BridgeClient {
-  @override
-  Future<void> setSelectedChannels(List<String> ids) async {}
-  @override
-  Future<void> setDmTarget(String? peerId) async {}
-}
+// ── Fakes ──────────────────────────────────────────────────────────────────
 
 class _FakeStore extends AppStore {
-  _FakeStore() : super(_FakeBridge());
+  _FakeStore() : super(FakeBridge());
   @override
   Future<void> ensureMessages(String channelId) async {}
 }
 
-SelectionController _sel() => SelectionController(_FakeStore(), _FakeBridge());
+SelectionController _sel() => SelectionController(_FakeStore(), FakeBridge());
 
 // Push helper — sync controller so events are delivered immediately in tests.
 StreamController<PatchEvent> _pushes() =>

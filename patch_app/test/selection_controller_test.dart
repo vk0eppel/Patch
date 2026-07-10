@@ -4,32 +4,18 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:patch/bridge/bridge_client.dart';
 import 'package:patch/models/channel.dart';
 import 'package:patch/models/message.dart';
 import 'package:patch/models/selection.dart';
 import 'package:patch/models/selection_controller.dart';
 import 'package:patch/store/app_store.dart';
 
+import 'support/fake_bridge.dart';
+
 // ── Fakes ──────────────────────────────────────────────────────────────────
 
-class _FakeBridge extends BridgeClient {
-  final List<List<String>> selectedChannelsCalls = [];
-  final List<String?> dmTargetCalls = [];
-
-  @override
-  Future<void> setSelectedChannels(List<String> ids) async {
-    selectedChannelsCalls.add(List.unmodifiable(ids));
-  }
-
-  @override
-  Future<void> setDmTarget(String? peerId) async {
-    dmTargetCalls.add(peerId);
-  }
-}
-
 class _FakeStore extends AppStore {
-  _FakeStore() : super(_FakeBridge());
+  _FakeStore() : super(FakeBridge());
 
   final List<String> ensuredIds = [];
 
@@ -39,8 +25,8 @@ class _FakeStore extends AppStore {
   }
 }
 
-SelectionController _ctrl({_FakeStore? store, _FakeBridge? bridge}) =>
-    SelectionController(store ?? _FakeStore(), bridge ?? _FakeBridge());
+SelectionController _ctrl({_FakeStore? store, FakeBridge? bridge}) =>
+    SelectionController(store ?? _FakeStore(), bridge ?? FakeBridge());
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -241,7 +227,7 @@ void main() {
   group('side effects — ensureMessages', () {
     test('selectTab(channelId) calls ensureMessages for the selected channel', () {
       final store = _FakeStore();
-      final c = SelectionController(store, _FakeBridge());
+      final c = SelectionController(store, FakeBridge());
 
       c.selectTab('rf');
 
@@ -250,7 +236,7 @@ void main() {
 
     test('selectTab(dm:peer) calls ensureMessages for the dm key', () {
       final store = _FakeStore();
-      final c = SelectionController(store, _FakeBridge());
+      final c = SelectionController(store, FakeBridge());
 
       c.selectTab('dm:p1');
 
@@ -259,7 +245,7 @@ void main() {
 
     test('selectTab(kAllChannelId) calls ensureMessages for the ALL sentinel', () {
       final store = _FakeStore();
-      final c = SelectionController(store, _FakeBridge());
+      final c = SelectionController(store, FakeBridge());
 
       c.selectTab(kAllChannelId);
 
@@ -268,7 +254,7 @@ void main() {
 
     test('openDm calls ensureMessages for the dm key', () {
       final store = _FakeStore();
-      final c = SelectionController(store, _FakeBridge());
+      final c = SelectionController(store, FakeBridge());
 
       c.openDm('p1');
 
@@ -277,7 +263,7 @@ void main() {
 
     test('snapBackFromAll calls ensureMessages for the restored channel ids', () {
       final store = _FakeStore();
-      final c = SelectionController(store, _FakeBridge());
+      final c = SelectionController(store, FakeBridge());
       c.selectTab('rf');
       c.selectTab(kAllChannelId);
       store.ensuredIds.clear();
@@ -289,7 +275,7 @@ void main() {
 
     test('reconcileWithChannels calls ensureMessages for the surviving channel', () {
       final store = _FakeStore();
-      final c = SelectionController(store, _FakeBridge());
+      final c = SelectionController(store, FakeBridge());
       c.selectTab('rf');
       c.selectTab('audio');
       store.ensuredIds.clear();
@@ -302,7 +288,7 @@ void main() {
 
   group('side effects — syncSelection', () {
     test('selectTab(channelId) pushes channelId to setSelectedChannels and null to setDmTarget', () {
-      final bridge = _FakeBridge();
+      final bridge = FakeBridge();
       final c = SelectionController(_FakeStore(), bridge);
 
       c.selectTab('rf');
@@ -312,7 +298,7 @@ void main() {
     });
 
     test('selectTab(dm:peer) pushes empty channel list and peerId to setDmTarget', () {
-      final bridge = _FakeBridge();
+      final bridge = FakeBridge();
       final c = SelectionController(_FakeStore(), bridge);
 
       c.selectTab('dm:p1');
@@ -322,7 +308,7 @@ void main() {
     });
 
     test('selectTab(kAllChannelId) pushes the ALL sentinel to setSelectedChannels and null DM target', () {
-      final bridge = _FakeBridge();
+      final bridge = FakeBridge();
       final c = SelectionController(_FakeStore(), bridge);
 
       c.selectTab(kAllChannelId);
@@ -332,7 +318,7 @@ void main() {
     });
 
     test('openDm pushes empty channel list and peerId to setDmTarget', () {
-      final bridge = _FakeBridge();
+      final bridge = FakeBridge();
       final c = SelectionController(_FakeStore(), bridge);
 
       c.openDm('p2');
@@ -342,7 +328,7 @@ void main() {
     });
 
     test('reconcileWithChannels syncs the post-reconcile selection', () {
-      final bridge = _FakeBridge();
+      final bridge = FakeBridge();
       final c = SelectionController(_FakeStore(), bridge);
       c.selectTab('rf');
       c.selectTab('audio');
