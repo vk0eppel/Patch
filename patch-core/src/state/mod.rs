@@ -533,12 +533,18 @@ impl AppState {
     // ── Source admission (ADR-0010, Pinned Network) ──────────────────────────
 
     /// Whether an inbound packet from `source` may be processed at all. See
-    /// `network_policy::NetworkAdmission::admits_source`.
+    /// `network_policy::NetworkAdmission::admits_source`. Runs per received
+    /// packet, so it reads only the two config fields the decision needs
+    /// instead of snapshotting the whole `Config` (#189).
     pub async fn admits_source(&self, source: std::net::IpAddr) -> bool {
-        let config = self.config().await;
+        let (pin_configured, static_peers) = self
+            .0
+            .config
+            .read(|c| (c.network_interface.is_some(), c.static_peers.clone()))
+            .await;
         self.0
             .network_admission
-            .admits_source(source, &config)
+            .admits_source(source, pin_configured, &static_peers)
             .await
     }
 

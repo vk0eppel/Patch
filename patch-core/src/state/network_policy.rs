@@ -10,7 +10,6 @@ use std::time::Instant;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use super::config::Config;
 use super::peer::Peer;
 
 // ── Reachability (pure — no lock, no I/O) ───────────────────────────────────
@@ -106,15 +105,24 @@ impl NetworkAdmission {
         *self.pinned_subnet.lock().unwrap()
     }
 
-    /// True when no pin is configured, when the source is on the Pinned
-    /// Network, or when it matches a configured Static Peer address (the
-    /// deliberate exemption for routed networks). Everything else is dropped
-    /// whole at the protocol boundary — a denial logs the ignored source,
-    /// rate-limited to one line per source per 5 minutes.
-    pub(crate) async fn admits_source(&self, source: IpAddr, config: &Config) -> bool {
-        if config.network_interface.is_none() {
-            return config
-                .static_peers
+    /// True when the source is on the Pinned Network, or when it matches a
+    /// configured Static Peer address (the deliberate exemption for routed
+    /// networks). Everything else is dropped whole at the protocol boundary —
+    /// a denial logs the ignored source, rate-limited to one line per source
+    /// per 5 minutes.
+    ///
+    /// Runs per received packet, so it deliberately takes only the two config
+    /// inputs the decision reads (`pin_configured` =
+    /// `config.network_interface.is_some()`, plus the Static Peers) rather
+    /// than a full `Config` snapshot (#189).
+    pub(crate) async fn admits_source(
+        &self,
+        source: IpAddr,
+        pin_configured: bool,
+        static_peers: &[super::config::StaticPeer],
+    ) -> bool {
+        if !pin_configured {
+            return static_peers
                 .iter()
                 .any(|p| p.address.parse::<IpAddr>() == Ok(source));
         }
@@ -127,8 +135,7 @@ impl NetworkAdmission {
             _ => false,
         };
         if on_pinned_network
-            || config
-                .static_peers
+            || static_peers
                 .iter()
                 .any(|p| p.address.parse::<IpAddr>() == Ok(source))
         {
@@ -256,16 +263,46 @@ mod tests {
         ))
     }
 
+    /// The admission decision must be a function of exactly the pin flag and
+    /// the Static Peers — the two inputs the check reads (#189: the receive
+    /// path must not need a full `Config` snapshot per packet). One test
+    /// sweeping the unresolved / pinned-on-subnet / off-subnet /
+    /// static-exemption cases through the narrowed seam.
+    #[tokio::test]
+    async fn admits_source_decisions_across_all_cases_via_narrowed_inputs() {
+        let static_peers = vec![StaticPeer {
+            address: "192.168.4.7".into(),
+            port: 9000,
+            label: None,
+        }];
+        let on_subnet: IpAddr = "10.0.0.42".parse().unwrap();
+        let off_subnet: IpAddr = "192.168.1.1".parse().unwrap();
+        let static_source: IpAddr = "192.168.4.7".parse().unwrap();
+
+        // Unresolved pin: only Static Peers are admitted.
+        let unresolved = NetworkAdmission::new(None);
+        assert!(!unresolved.admits_source(on_subnet, false, &static_peers).await);
+        assert!(unresolved.admits_source(static_source, false, &static_peers).await);
+
+        // Pinned: on-subnet admitted, off-subnet denied, static exempted.
+        let pinned = NetworkAdmission::new(subnet());
+        assert!(pinned.admits_source(on_subnet, true, &static_peers).await);
+        assert!(!pinned.admits_source(off_subnet, true, &static_peers).await);
+        assert!(pinned.admits_source(static_source, true, &static_peers).await);
+
+        // Pinned but no usable IPv4 on the pinned interface: fail closed —
+        // only Static Peers get through.
+        let unresolvable = NetworkAdmission::new(None);
+        assert!(!unresolvable.admits_source(on_subnet, true, &static_peers).await);
+        assert!(unresolvable.admits_source(static_source, true, &static_peers).await);
+    }
+
     #[tokio::test]
     async fn admits_source_denies_arbitrary_source_when_unresolved() {
         let admission = NetworkAdmission::new(None);
-        let config = Config {
-            network_interface: None,
-            ..Config::default()
-        };
         assert!(
             !admission
-                .admits_source("10.0.0.9".parse().unwrap(), &config)
+                .admits_source("10.0.0.9".parse().unwrap(), false, &[])
                 .await
         );
     }
@@ -273,18 +310,14 @@ mod tests {
     #[tokio::test]
     async fn admits_source_admits_static_peer_when_unresolved() {
         let admission = NetworkAdmission::new(None);
-        let config = Config {
-            network_interface: None,
-            static_peers: vec![StaticPeer {
-                address: "10.0.0.9".into(),
-                port: 9000,
-                label: None,
-            }],
-            ..Config::default()
-        };
+        let static_peers = vec![StaticPeer {
+            address: "10.0.0.9".into(),
+            port: 9000,
+            label: None,
+        }];
         assert!(
             admission
-                .admits_source("10.0.0.9".parse().unwrap(), &config)
+                .admits_source("10.0.0.9".parse().unwrap(), false, &static_peers)
                 .await
         );
     }
@@ -292,18 +325,14 @@ mod tests {
     #[tokio::test]
     async fn admits_source_admits_on_pinned_subnet_denies_off_subnet() {
         let admission = NetworkAdmission::new(subnet());
-        let config = Config {
-            network_interface: Some("en0".into()),
-            ..Config::default()
-        };
         assert!(
             admission
-                .admits_source("10.0.0.42".parse().unwrap(), &config)
+                .admits_source("10.0.0.42".parse().unwrap(), true, &[])
                 .await
         );
         assert!(
             !admission
-                .admits_source("192.168.1.1".parse().unwrap(), &config)
+                .admits_source("192.168.1.1".parse().unwrap(), true, &[])
                 .await
         );
     }
