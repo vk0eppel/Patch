@@ -696,7 +696,12 @@ mod tests {
         // (the first retransmit is due immediately, on the next drain).
         let drained = reliability.lock().await.drain_retransmits();
         assert_eq!(drained.retransmits.len(), 1);
-        assert_eq!(drained.retransmits[0].2, vec![addr(2)]);
+        let snapshot: Vec<SocketAddr> = drained.retransmits[0]
+            .unacked
+            .iter()
+            .flat_map(|(_, addrs)| addrs.iter().copied())
+            .collect();
+        assert_eq!(snapshot, vec![addr(2)]);
     }
 
     /// Pins the state to a (test-injected) 10.1.0.0/24 Pinned Network.

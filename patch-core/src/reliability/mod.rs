@@ -52,13 +52,48 @@ pub struct DeliveryFailure {
     pub total: u32,
 }
 
+/// One due retransmit: the packet plus its still-unacked targets. Targets are
+/// peer-grouped so the poller can resolve each peer's *current* addresses at
+/// send time (#191) — the addresses captured here are the track-time snapshot,
+/// used as the fallback when a peer is no longer resolvable.
+pub struct Retransmit {
+    pub message_id: Uuid,
+    pub bytes: Vec<u8>,
+    /// Unacked peer id → addresses snapshotted at track time (fallback only).
+    pub unacked: Vec<(Uuid, Vec<SocketAddr>)>,
+}
+
 /// Outcome of one [`ReliabilityManager::drain_retransmits`] tick.
 #[derive(Default)]
 pub struct DrainResult {
-    /// (message_id, bytes, still-pending targets) to re-send.
-    pub retransmits: Vec<(Uuid, Vec<u8>, Vec<SocketAddr>)>,
+    /// Messages due for re-sending this tick.
+    pub retransmits: Vec<Retransmit>,
     /// Entries dropped this tick because they exceeded `MAX_RETRIES`.
     pub failures: Vec<DeliveryFailure>,
+}
+
+/// The addresses one retransmit attempt should target: each unacked peer's
+/// current addresses from `peers` (the same merged view `get_peers` serves),
+/// falling back to its track-time snapshot when the peer is no longer
+/// resolvable — a transiently unknown peer still gets best-effort retries.
+/// Deduped by `SocketAddr`, mirroring `reachable_peer_addrs`.
+pub(crate) fn resolve_retransmit_addrs(
+    peers: &[crate::state::peer::Peer],
+    unacked: &[(Uuid, Vec<SocketAddr>)],
+) -> Vec<SocketAddr> {
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for (peer_id, fallback) in unacked {
+        let current = crate::state::peer::find_peer(peers, *peer_id)
+            .map(|p| p.all_addrs())
+            .filter(|addrs| !addrs.is_empty());
+        for addr in current.as_deref().unwrap_or(fallback) {
+            if seen.insert(*addr) {
+                out.push(*addr);
+            }
+        }
+    }
+    out
 }
 
 /// Manages retransmit state for critical messages.
@@ -156,10 +191,11 @@ impl ReliabilityManager {
                 continue;
             }
 
-            // Collect all addresses of unacked peers for retransmit.
-            let unacked_addrs: Vec<SocketAddr> = unacked_peers
+            // Unacked peers with their track-time address snapshots — the
+            // poller re-resolves current addresses at send time (#191).
+            let unacked: Vec<(Uuid, Vec<SocketAddr>)> = unacked_peers
                 .iter()
-                .flat_map(|pid| entry.targets[pid].iter().copied())
+                .map(|pid| (*pid, entry.targets[pid].clone()))
                 .collect();
 
             // Schedule the next attempt: 2, 4, 8, 16, 32 ticks (capped).
@@ -170,9 +206,11 @@ impl ReliabilityManager {
                 unacked_peers.len(),
                 entry.retries
             );
-            result
-                .retransmits
-                .push((*id, entry.bytes.clone(), unacked_addrs));
+            result.retransmits.push(Retransmit {
+                message_id: *id,
+                bytes: entry.bytes.clone(),
+                unacked,
+            });
         }
 
         for id in to_drop {
@@ -269,9 +307,15 @@ pub fn spawn_retransmit_loop(
         loop {
             interval.tick().await;
             let due = reliability.lock().await.drain_retransmits();
-            for (_id, bytes, targets) in due.retransmits {
-                for addr in targets {
-                    let _ = transport.send_to(bytes.clone(), addr).await;
+            if !due.retransmits.is_empty() {
+                // One peer snapshot per tick; each retransmit targets the
+                // unacked peers' *current* addresses, falling back to the
+                // track-time snapshot for unresolvable peers (#191).
+                let peers = state.get_peers().await;
+                for r in due.retransmits {
+                    for addr in resolve_retransmit_addrs(&peers, &r.unacked) {
+                        let _ = transport.send_to(r.bytes.clone(), addr).await;
+                    }
                 }
             }
             for failure in due.failures {
@@ -300,6 +344,15 @@ mod tests {
         (peer_id, addrs.iter().map(|n| addr(*n)).collect())
     }
 
+    /// The snapshot (fallback) addresses a due retransmit carries, flattened —
+    /// what the poller would send to when no peer re-resolves.
+    fn fallback_addrs(r: &Retransmit) -> Vec<SocketAddr> {
+        r.unacked
+            .iter()
+            .flat_map(|(_, addrs)| addrs.iter().copied())
+            .collect()
+    }
+
     #[test]
     fn full_ack_completes_and_clears() {
         let mut r = ReliabilityManager::new();
@@ -325,7 +378,7 @@ mod tests {
         assert_eq!(r.ack(id, Uuid::new_v4()), None); // never a target — ignored
         let due = r.drain_retransmits();
         assert_eq!(due.retransmits.len(), 1);
-        assert_eq!(due.retransmits[0].2, vec![addr(1)]); // still pending
+        assert_eq!(fallback_addrs(&due.retransmits[0]), vec![addr(1)]); // still pending
     }
 
     #[test]
@@ -347,7 +400,7 @@ mod tests {
         assert_eq!(r.ack(id, p2), Some((1, 3))); // p2 acked; p1 and p3 still pending
         let due = r.drain_retransmits();
         assert_eq!(due.retransmits.len(), 1);
-        let pending = &due.retransmits[0].2;
+        let pending = fallback_addrs(&due.retransmits[0]);
         assert!(pending.contains(&addr(1)));
         assert!(pending.contains(&addr(3)));
         assert!(!pending.contains(&addr(2))); // acked — not retransmitted
@@ -463,9 +516,34 @@ mod tests {
         r.ack(id, peer_a); // peer_a acked; peer_b still pending
         let due = r.drain_retransmits();
         assert_eq!(due.retransmits.len(), 1);
-        let pending_addrs = &due.retransmits[0].2;
+        let pending_addrs = fallback_addrs(&due.retransmits[0]);
         assert_eq!(pending_addrs.len(), 1);
         assert_eq!(pending_addrs[0], addr(3)); // only peer_b's address
+    }
+
+    /// `resolve_retransmit_addrs`: a resolvable peer's *current* addresses
+    /// replace its snapshot; an unresolvable peer falls back to the snapshot
+    /// so a transiently unknown peer still gets best-effort retries (#191).
+    #[test]
+    fn resolve_retransmit_addrs_prefers_current_and_falls_back_to_snapshot() {
+        let moved_id = Uuid::new_v4();
+        let gone_id = Uuid::new_v4();
+        // The moved peer now lives at addr(9) — snapshot said addr(1).
+        let mut moved = crate::state::peer::Peer::from_presence(crate::osc::types::PeerPresence {
+            peer_id: moved_id,
+            peer_name: "mover".into(),
+            channels: Vec::new(),
+            role: None,
+            timestamp: chrono::Utc::now(),
+        });
+        moved.add_address(addr(9), chrono::Utc::now());
+
+        let unacked = vec![peer_target(moved_id, &[1]), peer_target(gone_id, &[3])];
+        let resolved = resolve_retransmit_addrs(&[moved], &unacked);
+
+        assert!(resolved.contains(&addr(9)), "current address must be used");
+        assert!(!resolved.contains(&addr(1)), "stale snapshot must be dropped");
+        assert!(resolved.contains(&addr(3)), "unresolvable peer keeps snapshot");
     }
 
     fn test_state() -> AppState {
@@ -564,6 +642,72 @@ mod tests {
             }
             other => panic!("expected MessageDelivery, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn spawn_retransmit_loop_targets_a_peers_current_address_after_it_moves() {
+        // #191: a peer whose address changes mid-flight (rebind, NIC change)
+        // must still get retries — each attempt re-resolves the unacked
+        // peers' *current* addresses instead of the track-time snapshot.
+        let state = test_state();
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+        let transport = Arc::new(
+            Transport::new(
+                &crate::state::Config {
+                    osc_port: 0,
+                    default_channels: Vec::new(),
+                    ..crate::state::Config::default()
+                },
+                state.clone(),
+                Arc::clone(&reliability),
+            )
+            .await
+            .unwrap(),
+        );
+
+        let peer_id = Uuid::new_v4();
+        let stale_addr: SocketAddr = "127.0.0.1:9".parse().unwrap(); // discard port
+        state
+            .record_sighting(
+                crate::state::PeerSighting::Heartbeat {
+                    peer_id,
+                    peer_name: "mover".into(),
+                },
+                stale_addr.ip().to_string(),
+                stale_addr.port(),
+            )
+            .await;
+
+        // Track against the stale snapshot, then the peer moves.
+        reliability.lock().await.track(
+            Uuid::new_v4(),
+            b"critical".to_vec(),
+            vec![(peer_id, vec![stale_addr])],
+        );
+        let listener = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let new_addr = listener.local_addr().unwrap();
+        state
+            .record_sighting(
+                crate::state::PeerSighting::Heartbeat {
+                    peer_id,
+                    peer_name: "mover".into(),
+                },
+                new_addr.ip().to_string(),
+                new_addr.port(),
+            )
+            .await;
+
+        let _handle = spawn_retransmit_loop(state, transport, Arc::clone(&reliability));
+
+        let mut buf = [0u8; 16];
+        let (n, _) = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            listener.recv_from(&mut buf),
+        )
+        .await
+        .expect("expected a retransmit at the peer's current address within 2s")
+        .unwrap();
+        assert_eq!(&buf[..n], b"critical");
     }
 
     #[tokio::test]
