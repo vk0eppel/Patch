@@ -38,8 +38,8 @@ pub struct EngineHandle {
     pub reliability: Arc<Mutex<ReliabilityManager>>,
     // Holds the mDNS `ServiceDaemon` handle for the engine's lifetime — dropping
     // `Discovery` would shut the daemon thread down. The heartbeat/browse tasks
-    // are detached, so this is the one thing that genuinely needs keeping alive.
-    _discovery: Arc<Discovery>,
+    // are detached. Also the handle `set_osc_port` re-advertises through (#192).
+    discovery: Arc<Discovery>,
 }
 
 static ENGINE: OnceCell<EngineHandle> = OnceCell::const_new();
@@ -141,7 +141,7 @@ pub async fn init(config_dir: Option<String>) -> Result<()> {
                 state,
                 transport,
                 reliability,
-                _discovery: discovery,
+                discovery,
             })
         })
         .await?;
@@ -491,7 +491,9 @@ pub async fn set_heartbeat_interval(secs: u64) -> Result<()> {
 /// Change the OSC UDP port and rebind the live socket — no restart. Validated
 /// 1024–65535. The socket is rebound **first** (so a bind failure, e.g. the port
 /// is already in use, surfaces as an error and leaves the persisted config
-/// untouched); only on success is the new port saved.
+/// untouched); only on success is the new port saved and the mDNS record
+/// re-advertised with it (#192, best-effort — an mDNS failure never fails the
+/// port change; peers still converge via the OSC presence beacon).
 pub async fn set_osc_port(port: u16) -> Result<()> {
     if !(1024..=65535).contains(&port) {
         anyhow::bail!("OSC port must be 1024–65535 (got {})", port);
@@ -500,7 +502,9 @@ pub async fn set_osc_port(port: u16) -> Result<()> {
     let mut config = h.state.config().await;
     config.osc_port = port;
     h.transport.rebind(&config).await?;
-    h.state.set_osc_port(port).await
+    h.state.set_osc_port(port).await?;
+    h.discovery.readvertise(&config).await;
+    Ok(())
 }
 
 pub async fn set_channel_flash(

@@ -22,7 +22,74 @@ pub struct Discovery {
     /// `ServiceDaemon` handle shuts the daemon thread down, so this must outlive
     /// `Discovery::new` — it's stored here and kept alive via `EngineHandle`.
     /// `None` when mDNS init failed and we fell back to OSC beacon only.
-    _mdns: Option<ServiceDaemon>,
+    mdns: Option<ServiceDaemon>,
+    /// Fullname of the record currently registered on the daemon — what a
+    /// re-advertisement (#192) unregisters before registering the fresh one.
+    registered_fullname: std::sync::Mutex<Option<String>>,
+}
+
+/// The daemon operations a (re-)advertisement needs — a seam so #192's
+/// re-register logic is drivable in a test without a live mDNS daemon.
+pub(crate) trait MdnsRegistrar {
+    fn register_service(&self, info: ServiceInfo) -> anyhow::Result<()>;
+    fn unregister_service(&self, fullname: &str) -> anyhow::Result<()>;
+}
+
+impl MdnsRegistrar for ServiceDaemon {
+    fn register_service(&self, info: ServiceInfo) -> anyhow::Result<()> {
+        Ok(self.register(info)?)
+    }
+    fn unregister_service(&self, fullname: &str) -> anyhow::Result<()> {
+        // Fire-and-forget: the returned status receiver isn't awaited — the
+        // fresh registration is what matters, and shutdown doesn't come
+        // through here (the daemon drops with the engine).
+        self.unregister(fullname)?;
+        Ok(())
+    }
+}
+
+/// Our mDNS service record for `port` — the one builder used by both the
+/// startup registration and a live re-advertisement (#192), so the advertised
+/// port can't drift between the two paths.
+fn build_service_info(
+    client_id: uuid::Uuid,
+    client_name: &str,
+    port: u16,
+) -> anyhow::Result<ServiceInfo> {
+    let service_type = "_patch._udp.local.";
+    let host_name = format!("{}.local.", gethostname());
+    let mut props = HashMap::new();
+    props.insert("peer_id".to_string(), client_id.to_string());
+    props.insert("peer_name".to_string(), client_name.to_string());
+    props.insert("version".to_string(), "0.1.0".to_string());
+    Ok(ServiceInfo::new(
+        service_type,
+        client_name,
+        &host_name,
+        "",
+        port,
+        props,
+    )?)
+}
+
+/// Replace the advertised record: best-effort unregister of `old_fullname`
+/// (a failure is logged, never blocking — the fresh record is what matters),
+/// then register a new record for `port`. Returns the new fullname for the
+/// caller to remember for the next re-advertisement.
+fn readvertise_service(
+    registrar: &impl MdnsRegistrar,
+    client_id: uuid::Uuid,
+    client_name: &str,
+    port: u16,
+    old_fullname: &str,
+) -> anyhow::Result<String> {
+    if let Err(e) = registrar.unregister_service(old_fullname) {
+        warn!("mDNS unregister of {} failed: {} — re-registering anyway", old_fullname, e);
+    }
+    let info = build_service_info(client_id, client_name, port)?;
+    let fullname = info.get_fullname().to_string();
+    registrar.register_service(info)?;
+    Ok(fullname)
 }
 
 impl Discovery {
@@ -33,29 +100,19 @@ impl Discovery {
 
         // ── mDNS (best-effort — gracefully skipped if unavailable) ───────────
         let service_type = "_patch._udp.local.";
-        // Returns the daemon handle on success so it can be held for the engine's
-        // lifetime (dropping it would stop the daemon thread).
-        let mdns_setup: anyhow::Result<ServiceDaemon> = async {
+        // Returns the daemon handle + registered fullname on success so both
+        // can be held for the engine's lifetime (dropping the daemon would
+        // stop its thread; the fullname is what `readvertise` unregisters).
+        let mdns_setup: anyhow::Result<(ServiceDaemon, String)> = async {
             let mdns = ServiceDaemon::new()?;
 
-            // Register ourselves
-            let instance_name = &client_name;
-            let host_name = format!("{}.local.", gethostname());
-            let mut props = HashMap::new();
-            props.insert("peer_id".to_string(), client_id.to_string());
-            props.insert("peer_name".to_string(), client_name.clone());
-            props.insert("version".to_string(), "0.1.0".to_string());
-
-            // The advertised port is fixed at registration. A live OSC-port
-            // change (`api::set_osc_port`) rebinds the socket and moves the
-            // heartbeat beacon, but this mDNS record keeps the old port until
-            // restart — peers still converge via the OSC presence beacon,
-            // whose sightings carry the live source address/port.
-            let service =
-                ServiceInfo::new(service_type, instance_name, &host_name, "", osc_port, props)?;
+            // Register ourselves. A live OSC-port change re-registers with
+            // the new port via `Discovery::readvertise` (#192).
+            let service = build_service_info(client_id, &client_name, osc_port)?;
+            let fullname = service.get_fullname().to_string();
 
             mdns.register(service)?;
-            info!("mDNS service registered as '{}'", instance_name);
+            info!("mDNS service registered as '{}'", client_name);
 
             // Browse for peers
             let browse_state = state.clone();
@@ -139,25 +196,70 @@ impl Discovery {
                     }
                 }
             });
-            Ok(mdns)
+            Ok((mdns, fullname))
         }
         .await;
 
         // Keep the daemon handle alive (in `Discovery`) so the browse task and
         // service registration survive past `new()`; `None` means mDNS is
         // unavailable and we run on the OSC beacon alone.
-        let mdns = match mdns_setup {
-            Ok(daemon) => Some(daemon),
+        let (mdns, registered_fullname) = match mdns_setup {
+            Ok((daemon, fullname)) => (Some(daemon), Some(fullname)),
             Err(e) => {
                 warn!("mDNS unavailable, falling back to OSC beacon only: {}", e);
-                None
+                (None, None)
             }
         };
 
         // ── Heartbeat + beacon task ───────────────────────────────────────────
         spawn_heartbeat_loop(client_id, state, transport);
 
-        Ok(Self { _mdns: mdns })
+        Ok(Self {
+            mdns,
+            registered_fullname: std::sync::Mutex::new(registered_fullname),
+        })
+    }
+
+    /// Re-advertise the mDNS record after a live OSC-port rebind (#192), so
+    /// mDNS-only discovery resolves us at the new port instead of the stale
+    /// startup one. Best-effort, like all of mDNS here: with no daemon (mDNS
+    /// unavailable at startup) this is a no-op, and a failure is logged — the
+    /// port change itself must never fail on it. Reads the current
+    /// `client_name` from `config`, so a rename since startup rides along.
+    pub async fn readvertise(&self, config: &Config) {
+        let Some(mdns) = &self.mdns else {
+            debug!("mDNS unavailable — skipping re-advertisement");
+            return;
+        };
+        let old_fullname = self
+            .registered_fullname
+            .lock()
+            .expect("registered_fullname lock poisoned")
+            .clone()
+            .unwrap_or_default();
+        match readvertise_service(
+            mdns,
+            config.client_id,
+            &config.client_name,
+            config.osc_port,
+            &old_fullname,
+        ) {
+            Ok(new_fullname) => {
+                info!(
+                    "mDNS record re-registered as '{}' on port {}",
+                    new_fullname, config.osc_port
+                );
+                *self
+                    .registered_fullname
+                    .lock()
+                    .expect("registered_fullname lock poisoned") = Some(new_fullname);
+            }
+            Err(e) => warn!(
+                "mDNS re-registration for port {} failed: {} — peers will still \
+                 converge via the OSC presence beacon",
+                config.osc_port, e
+            ),
+        }
     }
 }
 
@@ -289,6 +391,91 @@ mod tests {
     use super::*;
     use crate::osc::codec::{decode_packet, PatchEvent};
     use uuid::Uuid;
+
+    /// The advertised record must carry the port it was built for — the #192
+    /// seam: a live OSC-port rebind re-registers through this same builder,
+    /// so the port here is the port peers resolve.
+    #[test]
+    fn build_service_info_carries_the_given_port_and_identity() {
+        let client_id = Uuid::new_v4();
+        let info = build_service_info(client_id, "FOH Audio", 9100).unwrap();
+        assert_eq!(info.get_port(), 9100);
+        assert!(info.get_fullname().contains("._patch._udp.local."));
+        assert_eq!(
+            info.get_properties()
+                .get("peer_id")
+                .map(|p| p.val_str().to_string()),
+            Some(client_id.to_string())
+        );
+    }
+
+    /// A recording fake standing in for the mDNS daemon — #192's seam-level
+    /// test: assert the re-register happens with the new port without a live
+    /// daemon (untestable in CI).
+    #[derive(Default)]
+    struct FakeRegistrar {
+        unregistered: std::sync::Mutex<Vec<String>>,
+        registered: std::sync::Mutex<Vec<(String, u16)>>,
+    }
+
+    impl MdnsRegistrar for FakeRegistrar {
+        fn register_service(&self, info: ServiceInfo) -> anyhow::Result<()> {
+            self.registered
+                .lock()
+                .unwrap()
+                .push((info.get_fullname().to_string(), info.get_port()));
+            Ok(())
+        }
+        fn unregister_service(&self, fullname: &str) -> anyhow::Result<()> {
+            self.unregistered.lock().unwrap().push(fullname.to_string());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn readvertise_unregisters_the_old_record_and_registers_the_new_port() {
+        let fake = FakeRegistrar::default();
+        let client_id = Uuid::new_v4();
+
+        let new_fullname =
+            readvertise_service(&fake, client_id, "FOH Audio", 9100, "old._patch._udp.local.")
+                .unwrap();
+
+        assert_eq!(
+            *fake.unregistered.lock().unwrap(),
+            vec!["old._patch._udp.local.".to_string()]
+        );
+        let registered = fake.registered.lock().unwrap();
+        assert_eq!(registered.len(), 1);
+        assert_eq!(registered[0].0, new_fullname);
+        assert_eq!(registered[0].1, 9100, "re-registration must carry the new port");
+    }
+
+    /// A failed unregister (e.g. daemon already lost the record) must not
+    /// block the re-registration — the fresh record is what matters.
+    #[test]
+    fn readvertise_still_registers_when_unregister_fails() {
+        struct FailingUnregister(FakeRegistrar);
+        impl MdnsRegistrar for FailingUnregister {
+            fn register_service(&self, info: ServiceInfo) -> anyhow::Result<()> {
+                self.0.register_service(info)
+            }
+            fn unregister_service(&self, _fullname: &str) -> anyhow::Result<()> {
+                anyhow::bail!("daemon has no such record")
+            }
+        }
+
+        let fake = FailingUnregister(FakeRegistrar::default());
+        readvertise_service(
+            &fake,
+            Uuid::new_v4(),
+            "FOH Audio",
+            9100,
+            "old._patch._udp.local.",
+        )
+        .unwrap();
+        assert_eq!(fake.0.registered.lock().unwrap().len(), 1);
+    }
 
     /// Build state + transport + a loopback listener for driving the loop.
     async fn harness() -> (Config, AppState, Arc<Transport>, tokio::net::UdpSocket) {
