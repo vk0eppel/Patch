@@ -48,6 +48,10 @@ impl MdnsRegistrar for ServiceDaemon {
     }
 }
 
+/// The one mDNS service type — registered, re-advertised (#192), and browsed
+/// under this name.
+const SERVICE_TYPE: &str = "_patch._udp.local.";
+
 /// Our mDNS service record for `port` — the one builder used by both the
 /// startup registration and a live re-advertisement (#192), so the advertised
 /// port can't drift between the two paths.
@@ -56,14 +60,13 @@ fn build_service_info(
     client_name: &str,
     port: u16,
 ) -> anyhow::Result<ServiceInfo> {
-    let service_type = "_patch._udp.local.";
     let host_name = format!("{}.local.", gethostname());
     let mut props = HashMap::new();
     props.insert("peer_id".to_string(), client_id.to_string());
     props.insert("peer_name".to_string(), client_name.to_string());
     props.insert("version".to_string(), "0.1.0".to_string());
     Ok(ServiceInfo::new(
-        service_type,
+        SERVICE_TYPE,
         client_name,
         &host_name,
         "",
@@ -99,7 +102,6 @@ impl Discovery {
         let osc_port = config.osc_port;
 
         // ── mDNS (best-effort — gracefully skipped if unavailable) ───────────
-        let service_type = "_patch._udp.local.";
         // Returns the daemon handle + registered fullname on success so both
         // can be held for the engine's lifetime (dropping the daemon would
         // stop its thread; the fullname is what `readvertise` unregisters).
@@ -116,7 +118,7 @@ impl Discovery {
 
             // Browse for peers
             let browse_state = state.clone();
-            let receiver = mdns.browse(service_type)?;
+            let receiver = mdns.browse(SERVICE_TYPE)?;
             tokio::spawn(async move {
                 let mut lifecycle = PeerLifecycle::new();
                 while let Ok(event) = receiver.recv_async().await {

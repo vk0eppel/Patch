@@ -75,6 +75,10 @@ pub(crate) fn offline_addresses(peers: &[Peer], heartbeat_secs: u64) -> HashSet<
 
 // ── Rate-limited diagnostic warns ────────────────────────────────────────────
 
+/// The shared window for per-packet diagnostic warns (admission drop log,
+/// ACK source-anomaly log): one line per source per 5 minutes.
+pub(crate) const DIAG_WARN_WINDOW: std::time::Duration = std::time::Duration::from_secs(300);
+
 /// One-warn-per-source rate limiter for per-packet diagnostics (the admission
 /// drop log, the ACK source-anomaly log): the first sighting of a source in
 /// each window returns `true`, repeats within the window return `false`.
@@ -118,8 +122,7 @@ pub(crate) struct NetworkAdmission {
     /// usable IPv4 (then only Static Peers are admitted: fail-closed).
     /// Recomputed on construction and on `set_network_interface`.
     pinned_subnet: std::sync::Mutex<Option<(Ipv4Addr, Ipv4Addr)>>,
-    /// Rate limit for the "dropped off-pin source" log — one warn per source
-    /// per 5 minutes.
+    /// Rate limit for the "dropped off-pin source" log ([`DIAG_WARN_WINDOW`]).
     dropped_source_log: WarnRateLimit,
 }
 
@@ -127,7 +130,7 @@ impl NetworkAdmission {
     pub(crate) fn new(pinned_subnet: Option<(Ipv4Addr, Ipv4Addr)>) -> Self {
         Self {
             pinned_subnet: std::sync::Mutex::new(pinned_subnet),
-            dropped_source_log: WarnRateLimit::new(std::time::Duration::from_secs(300)),
+            dropped_source_log: WarnRateLimit::new(DIAG_WARN_WINDOW),
         }
     }
 

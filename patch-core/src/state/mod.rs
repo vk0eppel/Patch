@@ -100,7 +100,8 @@ struct Inner {
     /// Pinned Network admission (ADR-0010) and its rate-limited drop log.
     network_admission: NetworkAdmission,
     /// Rate limit for the ACK source-anomaly warn (#190) — one line per
-    /// source per 5 minutes, mirroring the admission drop log.
+    /// source per [`network_policy::DIAG_WARN_WINDOW`], like the admission
+    /// drop log.
     ack_anomaly_log: network_policy::WarnRateLimit,
 }
 
@@ -135,7 +136,7 @@ impl AppState {
             seen_messages: MessageDedup::new(),
             network_admission: NetworkAdmission::new(pinned_subnet),
             ack_anomaly_log: network_policy::WarnRateLimit::new(
-                std::time::Duration::from_secs(300),
+                network_policy::DIAG_WARN_WINDOW,
             ),
         }))
     }
