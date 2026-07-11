@@ -99,6 +99,9 @@ struct Inner {
     seen_messages: MessageDedup,
     /// Pinned Network admission (ADR-0010) and its rate-limited drop log.
     network_admission: NetworkAdmission,
+    /// Rate limit for the ACK source-anomaly warn (#190) — one line per
+    /// source per 5 minutes, mirroring the admission drop log.
+    ack_anomaly_log: network_policy::WarnRateLimit,
 }
 
 /// True when `id` is our own client_id — every event/discovery loop that
@@ -131,6 +134,9 @@ impl AppState {
             events: tx,
             seen_messages: MessageDedup::new(),
             network_admission: NetworkAdmission::new(pinned_subnet),
+            ack_anomaly_log: network_policy::WarnRateLimit::new(
+                std::time::Duration::from_secs(300),
+            ),
         }))
     }
 
@@ -557,6 +563,26 @@ impl AppState {
         subnet: Option<(std::net::Ipv4Addr, std::net::Ipv4Addr)>,
     ) {
         self.0.network_admission.set_pinned_subnet(subnet);
+    }
+
+    // ── ACK source anomaly (#190) ────────────────────────────────────────────
+
+    /// True when an accepted ACK from `source` claiming to be `peer_id`
+    /// deserves a diagnostic warn: the source IP is not among that peer's
+    /// known addresses (or the peer is unknown entirely), and this source
+    /// hasn't been warned about within the rate window. Diagnostic **only** —
+    /// the caller must never reject the ACK on this signal, because on
+    /// multi-VLAN rigs a peer legitimately ACKs from an address we never sent
+    /// to (see `reliability`'s ACK-by-peer_id rationale and ERRORS.md).
+    pub async fn ack_source_anomaly(&self, peer_id: Uuid, source: std::net::IpAddr) -> bool {
+        let source_known = self
+            .peer_by_id(peer_id)
+            .await
+            .is_some_and(|p| p.all_addrs().iter().any(|a| a.ip() == source));
+        if source_known {
+            return false;
+        }
+        self.0.ack_anomaly_log.first_in_window(source).await
     }
 
     // ── Receive dedup ────────────────────────────────────────────────────────
@@ -2399,6 +2425,53 @@ mod tests {
         let peer = peers.iter().find(|p| p.peer_id == peer_id).unwrap();
         // Fresh address (just recorded) must survive a 3x-heartbeat prune.
         assert!(peer.has_address());
+    }
+
+    // ── ACK source anomaly (#190) ────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn ack_source_anomaly_is_false_when_source_matches_a_known_address() {
+        let st = test_state();
+        let peer_id = Uuid::new_v4();
+        st.record_sighting(
+            PeerSighting::Presence(presence(peer_id, chrono::Utc::now())),
+            "10.0.0.5".into(),
+            9000,
+        )
+        .await;
+
+        assert!(
+            !st.ack_source_anomaly(peer_id, "10.0.0.5".parse().unwrap())
+                .await
+        );
+    }
+
+    #[tokio::test]
+    async fn ack_source_anomaly_flags_a_foreign_source_once_per_window() {
+        let st = test_state();
+        let peer_id = Uuid::new_v4();
+        st.record_sighting(
+            PeerSighting::Presence(presence(peer_id, chrono::Utc::now())),
+            "10.0.0.5".into(),
+            9000,
+        )
+        .await;
+
+        let foreign: std::net::IpAddr = "10.0.0.66".parse().unwrap();
+        assert!(st.ack_source_anomaly(peer_id, foreign).await);
+        // Rate-limited: the same source doesn't warn again within the window.
+        assert!(!st.ack_source_anomaly(peer_id, foreign).await);
+    }
+
+    #[tokio::test]
+    async fn ack_source_anomaly_flags_an_unknown_peer() {
+        // No known addresses to verify against — unverifiable counts as
+        // anomalous (still diagnostic-only; acceptance is unaffected).
+        let st = test_state();
+        assert!(
+            st.ack_source_anomaly(Uuid::new_v4(), "10.0.0.66".parse().unwrap())
+                .await
+        );
     }
 
     #[tokio::test]

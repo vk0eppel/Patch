@@ -73,6 +73,40 @@ pub(crate) fn offline_addresses(peers: &[Peer], heartbeat_secs: u64) -> HashSet<
         .collect()
 }
 
+// ── Rate-limited diagnostic warns ────────────────────────────────────────────
+
+/// One-warn-per-source rate limiter for per-packet diagnostics (the admission
+/// drop log, the ACK source-anomaly log): the first sighting of a source in
+/// each window returns `true`, repeats within the window return `false`.
+#[derive(Debug)]
+pub(crate) struct WarnRateLimit {
+    window: std::time::Duration,
+    last: Mutex<HashMap<IpAddr, Instant>>,
+}
+
+impl WarnRateLimit {
+    pub(crate) fn new(window: std::time::Duration) -> Self {
+        Self {
+            window,
+            last: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// True when `source` hasn't been seen within the window (and records it).
+    /// Expired entries are pruned on each call.
+    pub(crate) async fn first_in_window(&self, source: IpAddr) -> bool {
+        let mut last = self.last.lock().await;
+        let now = Instant::now();
+        last.retain(|_, t| now.duration_since(*t) < self.window);
+        if let std::collections::hash_map::Entry::Vacant(e) = last.entry(source) {
+            e.insert(now);
+            true
+        } else {
+            false
+        }
+    }
+}
+
 // ── Source admission (ADR-0010, Pinned Network) ─────────────────────────────
 
 /// Whether an inbound packet from `source` may be processed at all, plus the
@@ -84,15 +118,16 @@ pub(crate) struct NetworkAdmission {
     /// usable IPv4 (then only Static Peers are admitted: fail-closed).
     /// Recomputed on construction and on `set_network_interface`.
     pinned_subnet: std::sync::Mutex<Option<(Ipv4Addr, Ipv4Addr)>>,
-    /// Rate limit for the "dropped off-pin source" log — last warn per source.
-    dropped_source_log: Mutex<HashMap<IpAddr, Instant>>,
+    /// Rate limit for the "dropped off-pin source" log — one warn per source
+    /// per 5 minutes.
+    dropped_source_log: WarnRateLimit,
 }
 
 impl NetworkAdmission {
     pub(crate) fn new(pinned_subnet: Option<(Ipv4Addr, Ipv4Addr)>) -> Self {
         Self {
             pinned_subnet: std::sync::Mutex::new(pinned_subnet),
-            dropped_source_log: Mutex::new(HashMap::new()),
+            dropped_source_log: WarnRateLimit::new(std::time::Duration::from_secs(300)),
         }
     }
 
@@ -141,12 +176,7 @@ impl NetworkAdmission {
         {
             return true;
         }
-        const LOG_EVERY: std::time::Duration = std::time::Duration::from_secs(300);
-        let mut log = self.dropped_source_log.lock().await;
-        let now = Instant::now();
-        log.retain(|_, t| now.duration_since(*t) < LOG_EVERY);
-        if let std::collections::hash_map::Entry::Vacant(e) = log.entry(source) {
-            e.insert(now);
+        if self.dropped_source_log.first_in_window(source).await {
             tracing::warn!(
                 "packet from {} ignored — outside the pinned network (ADR-0010); \
                  add a static peer to reach hosts beyond it",

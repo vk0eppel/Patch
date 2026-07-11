@@ -79,7 +79,7 @@ pub(crate) async fn handle(
         PatchEvent::Ack {
             message_id,
             peer_id,
-        } => handle_ack(message_id, peer_id, state, reliability).await,
+        } => handle_ack(message_id, peer_id, from, state, reliability).await,
         PatchEvent::Presence(p) => handle_presence(p, from, state, client_id).await,
         PatchEvent::Bye { peer_id } => handle_bye(peer_id, from, state, client_id).await,
         PatchEvent::Flash {
@@ -216,6 +216,7 @@ async fn handle_direct_flash(
 pub(crate) async fn handle_ack(
     message_id: Uuid,
     peer_id: Uuid,
+    from: SocketAddr,
     state: &AppState,
     reliability: &Arc<Mutex<ReliabilityManager>>,
 ) -> Vec<Outgoing> {
@@ -223,6 +224,19 @@ pub(crate) async fn handle_ack(
     // it). Returns delivery progress so the UI can show "delivered N/M".
     let progress = reliability.lock().await.ack(message_id, peer_id);
     if let Some((delivered, total)) = progress {
+        // Accepted-ACK diagnostics (#190): an ACK is deliberately *never*
+        // source-verified — multi-VLAN peers legitimately ACK from an address
+        // we never sent to (see the reliability module header / ERRORS.md) —
+        // but an unknown source is worth a rate-limited trace for an operator
+        // debugging "delivered ✓ but the peer never saw it".
+        if state.ack_source_anomaly(peer_id, from.ip()).await {
+            warn!(
+                "ACK for {} claims peer {} but arrived from {} — not one of that \
+                 peer's known addresses; accepted (multi-VLAN ACKs may return on \
+                 another interface), logged for diagnosis",
+                message_id, peer_id, from
+            );
+        }
         state
             .publish(AppEvent::MessageDelivery {
                 message_id,
@@ -1315,6 +1329,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ack_from_a_foreign_source_is_still_accepted() {
+        // ACKs are matched by peer_id, never source-verified — on multi-VLAN
+        // rigs a peer legitimately ACKs from an address we never sent to. The
+        // #190 anomaly trace is diagnostic only; acceptance must be unchanged.
+        let state = test_state();
+        let peer_id = Uuid::new_v4();
+        add_known_peer(&state, peer_id, 5).await; // peer lives at 10.0.0.5
+        let mut events = state.subscribe();
+        let reliability = Arc::new(Mutex::new(ReliabilityManager::new()));
+        let message_id = Uuid::new_v4();
+        reliability
+            .lock()
+            .await
+            .track(message_id, vec![0], vec![(peer_id, vec![addr(5)])]);
+
+        handle(
+            PatchEvent::Ack {
+                message_id,
+                peer_id,
+            },
+            addr(6), // admitted source, but not one of the peer's addresses
+            &state,
+            Uuid::new_v4(),
+            &reliability,
+        )
+        .await;
+
+        let wait = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                if let AppEvent::MessageDelivery {
+                    delivered, failed, ..
+                } = events.recv().await.unwrap()
+                {
+                    break (delivered, failed);
+                }
+            }
+        })
+        .await;
+        assert_eq!(
+            wait.expect("foreign-source ACK must still publish delivery progress"),
+            (1, false)
+        );
+    }
+
+    #[tokio::test]
     async fn flash_records_sighting_and_publishes_channel_flash() {
         let state = test_state();
         let mut events = state.subscribe();
@@ -1537,7 +1596,7 @@ mod tests {
 
         let mut events = state.subscribe();
 
-        let out = handle_ack(message_id, peer_id, &state, &reliability).await;
+        let out = handle_ack(message_id, peer_id, addr(5), &state, &reliability).await;
 
         assert!(out.is_empty());
         // Delivery progress event should have been published.
