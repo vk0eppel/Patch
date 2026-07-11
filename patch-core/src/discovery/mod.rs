@@ -87,7 +87,10 @@ fn readvertise_service(
     old_fullname: &str,
 ) -> anyhow::Result<String> {
     if let Err(e) = registrar.unregister_service(old_fullname) {
-        warn!("mDNS unregister of {} failed: {} — re-registering anyway", old_fullname, e);
+        warn!(
+            "mDNS unregister of {} failed: {} — re-registering anyway",
+            old_fullname, e
+        );
     }
     let info = build_service_info(client_id, client_name, port)?;
     let fullname = info.get_fullname().to_string();
@@ -439,9 +442,14 @@ mod tests {
         let fake = FakeRegistrar::default();
         let client_id = Uuid::new_v4();
 
-        let new_fullname =
-            readvertise_service(&fake, client_id, "FOH Audio", 9100, "old._patch._udp.local.")
-                .unwrap();
+        let new_fullname = readvertise_service(
+            &fake,
+            client_id,
+            "FOH Audio",
+            9100,
+            "old._patch._udp.local.",
+        )
+        .unwrap();
 
         assert_eq!(
             *fake.unregistered.lock().unwrap(),
@@ -450,7 +458,10 @@ mod tests {
         let registered = fake.registered.lock().unwrap();
         assert_eq!(registered.len(), 1);
         assert_eq!(registered[0].0, new_fullname);
-        assert_eq!(registered[0].1, 9100, "re-registration must carry the new port");
+        assert_eq!(
+            registered[0].1, 9100,
+            "re-registration must carry the new port"
+        );
     }
 
     /// A failed unregister (e.g. daemon already lost the record) must not

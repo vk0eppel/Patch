@@ -135,9 +135,7 @@ impl AppState {
             events: tx,
             seen_messages: MessageDedup::new(),
             network_admission: NetworkAdmission::new(pinned_subnet),
-            ack_anomaly_log: network_policy::WarnRateLimit::new(
-                network_policy::DIAG_WARN_WINDOW,
-            ),
+            ack_anomaly_log: network_policy::WarnRateLimit::new(network_policy::DIAG_WARN_WINDOW),
         }))
     }
 

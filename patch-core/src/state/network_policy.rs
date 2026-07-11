@@ -314,20 +314,40 @@ mod tests {
 
         // Unresolved pin: only Static Peers are admitted.
         let unresolved = NetworkAdmission::new(None);
-        assert!(!unresolved.admits_source(on_subnet, false, &static_peers).await);
-        assert!(unresolved.admits_source(static_source, false, &static_peers).await);
+        assert!(
+            !unresolved
+                .admits_source(on_subnet, false, &static_peers)
+                .await
+        );
+        assert!(
+            unresolved
+                .admits_source(static_source, false, &static_peers)
+                .await
+        );
 
         // Pinned: on-subnet admitted, off-subnet denied, static exempted.
         let pinned = NetworkAdmission::new(subnet());
         assert!(pinned.admits_source(on_subnet, true, &static_peers).await);
         assert!(!pinned.admits_source(off_subnet, true, &static_peers).await);
-        assert!(pinned.admits_source(static_source, true, &static_peers).await);
+        assert!(
+            pinned
+                .admits_source(static_source, true, &static_peers)
+                .await
+        );
 
         // Pinned but no usable IPv4 on the pinned interface: fail closed —
         // only Static Peers get through.
         let unresolvable = NetworkAdmission::new(None);
-        assert!(!unresolvable.admits_source(on_subnet, true, &static_peers).await);
-        assert!(unresolvable.admits_source(static_source, true, &static_peers).await);
+        assert!(
+            !unresolvable
+                .admits_source(on_subnet, true, &static_peers)
+                .await
+        );
+        assert!(
+            unresolvable
+                .admits_source(static_source, true, &static_peers)
+                .await
+        );
     }
 
     #[tokio::test]

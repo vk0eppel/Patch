@@ -542,8 +542,14 @@ mod tests {
         let resolved = resolve_retransmit_addrs(&[moved], &unacked);
 
         assert!(resolved.contains(&addr(9)), "current address must be used");
-        assert!(!resolved.contains(&addr(1)), "stale snapshot must be dropped");
-        assert!(resolved.contains(&addr(3)), "unresolvable peer keeps snapshot");
+        assert!(
+            !resolved.contains(&addr(1)),
+            "stale snapshot must be dropped"
+        );
+        assert!(
+            resolved.contains(&addr(3)),
+            "unresolvable peer keeps snapshot"
+        );
     }
 
     fn test_state() -> AppState {
