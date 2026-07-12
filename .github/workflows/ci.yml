@@ -60,6 +60,13 @@ jobs:
         working-directory: patch_app
         run: flutter pub get
 
+      # Mirrors the Rust `cargo fmt --check` gate. Scoped to first-party dirs:
+      # generated bindings (lib/src/rust) and vendored cargokit are excluded
+      # via the analyzer config, and `dart format` has no --exclude flag.
+      - name: Format check
+        working-directory: patch_app
+        run: dart format --output=none --set-exit-if-changed lib test
+
       - name: Analyze
         working-directory: patch_app
         run: flutter analyze

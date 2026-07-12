@@ -5,7 +5,12 @@
 - Quick type-check: `cargo check -p patch_core` (package uses underscore — cargokit resolves `libpatch_core.a`)
 - Format: `cargo fmt -p patch_core` — policy in `rustfmt.toml` (edition 2021, max_width 100)
 - Lint: `cargo clippy -p patch_core --all-targets -- -D warnings`
-- CI enforces fmt + clippy + `cargo test` + `flutter analyze` + `flutter test` on every PR (pinned: Rust 1.95.0, Flutter 3.44.1)
+- CI enforces fmt + clippy + `cargo test` + `dart format` + `flutter analyze` + `flutter test` + a macOS native build on every PR (pinned: Rust 1.95.0, Flutter 3.44.1)
+
+## Dart formatting
+
+- Format: `dart format lib test` (run from `patch_app/`) — CI gates it with `dart format --output=none --set-exit-if-changed lib test`. Scoped to first-party dirs; generated bindings (`lib/src/rust`) and vendored `cargokit` are excluded (they're also excluded from the analyzer, and `dart format` has no `--exclude` flag).
+- The formatter splits a braceless `if (cond) stmt;` onto two lines when the body is long, which trips `curly_braces_in_flow_control_structures` — always brace flow-control bodies rather than relying on the single-line exemption.
 
 ## FFI Codegen
 
