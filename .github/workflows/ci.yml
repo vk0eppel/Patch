@@ -10,6 +10,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# CI only reads the repo (checkout) — no writes. Least privilege for the
+# default GITHUB_TOKEN. (release.yml scopes `contents: write` on its own job.)
+permissions:
+  contents: read
+
 jobs:
   rust:
     name: Rust engine — fmt · clippy · test

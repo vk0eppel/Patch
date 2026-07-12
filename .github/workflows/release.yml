@@ -22,9 +22,11 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
-# Pinned to match CI (ci.yml) + the validated local toolchain.
+# Pinned to match CI (ci.yml) + the validated local toolchain. The Rust
+# version is pinned on the toolchain action's `uses:` ref below (GitHub
+# disallows `${{ env }}` there), so it isn't an env var; keep it in step with
+# ci.yml's `dtolnay/rust-toolchain@1.95.0`.
 env:
-  RUST_VERSION: 1.95.0
   FLUTTER_VERSION: 3.44.1
 
 jobs:
@@ -45,10 +47,8 @@ jobs:
       # cargokit compiles patch-core (cdylib/staticlib) during `flutter build`,
       # so the Rust toolchain must be present. macOS links CoreMIDI, Windows
       # WinMM — neither needs an extra system package (ALSA is Linux-only).
-      - name: Install Rust ${{ env.RUST_VERSION }}
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@1.95.0
 
       - uses: Swatinem/rust-cache@v2
 
