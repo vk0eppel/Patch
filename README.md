@@ -237,4 +237,5 @@ See [TODO.md](TODO.md) for pending work and known issues.
 
 ## License
 
-TBD — private for now.
+Patch is licensed under the **GNU General Public License v3.0** — see
+[LICENSE](LICENSE) for the full text (SPDX: `GPL-3.0-only`).

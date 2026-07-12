@@ -1,6 +1,10 @@
 name: patch
 description: "PATCH — OSC-native operational communication for live production teams."
 publish_to: 'none'
+repository: https://github.com/vk0eppel/Patch
+homepage: https://github.com/vk0eppel/Patch
+# Licensed GPL-3.0-only; the repo-root LICENSE file is authoritative (pubspec
+# has no license key — pub derives it from LICENSE).
 
 # The following defines the version and build number for your application.
 # A version number is three numbers separated by dots, like 1.2.43
