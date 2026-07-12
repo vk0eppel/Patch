@@ -5,7 +5,8 @@ import 'package:flutter/material.dart';
 import '../models/channel.dart';
 import '../models/config.dart';
 import '../models/events.dart';
-import '../models/flash_model.dart' as fm
+import '../models/flash_model.dart'
+    as fm
     show
         FlashEvent,
         FlashState,
@@ -17,7 +18,8 @@ import '../models/flash_model.dart' as fm
         openDmThread,
         flashOutput,
         decideFlashCommand;
-import '../models/message.dart' show MessageDeliveryStatus, PeerInfo, PeerStatus;
+import '../models/message.dart'
+    show MessageDeliveryStatus, PeerInfo, PeerStatus;
 import '../models/selection.dart';
 import '../models/selection_controller.dart';
 import '../widgets/name_prompt.dart' show shouldShowNamePrompt;
@@ -64,8 +66,8 @@ final class ShowDeliveryFailure extends HomeCommand {
     final who = status.total == 0
         ? 'no peers were online'
         : status.failedPeers.isNotEmpty
-            ? 'not received by ${status.failedPeers.join(', ')}'
-            : 'not received by all peers';
+        ? 'not received by ${status.failedPeers.join(', ')}'
+        : 'not received by all peers';
     return 'Critical message $who';
   }
 }
@@ -98,15 +100,15 @@ class HomePresenter extends ChangeNotifier {
     bool showPeers = false,
     Color broadcastColor = Colors.white,
     Color dmColor = Colors.blue,
-  })  : _channelGetter = channelGetter ?? (() => const []),
-        _settings = fm.FlashSettings(
-          broadcastColor: broadcastColor,
-          dmColor: dmColor,
-          showPeers: showPeers,
-          flashCount: 4,
-          flashOnCritical: true,
-          flashOnMessage: false,
-        ) {
+  }) : _channelGetter = channelGetter ?? (() => const []),
+       _settings = fm.FlashSettings(
+         broadcastColor: broadcastColor,
+         dmColor: dmColor,
+         showPeers: showPeers,
+         flashCount: 4,
+         flashOnCritical: true,
+         flashOnMessage: false,
+       ) {
     _pushSub = pushes.listen(_handlePush);
     _configSub = configStream?.listen(_applyConfig);
     _peersSub = peersStream?.listen((peers) => _peers = peers);
@@ -159,9 +161,9 @@ class HomePresenter extends ChangeNotifier {
     // Reachability is classified engine-side (PeerStatus) — including the
     // no-resolved-address case (#137). No Dart-side re-derivation.
     final peer = _peers.cast<PeerInfo?>().firstWhere(
-          (p) => p?.peerId == peerId,
-          orElse: () => null,
-        );
+      (p) => p?.peerId == peerId,
+      orElse: () => null,
+    );
     return peer == null || peer.status == PeerStatus.offline;
   }
 
@@ -272,8 +274,9 @@ class HomePresenter extends ChangeNotifier {
     switch (event) {
       case DeliveryUpdated(:final messageId, :final status):
         if (status.failed) {
-          _commandCtrl
-              .add(ShowDeliveryFailure(messageId: messageId, status: status));
+          _commandCtrl.add(
+            ShowDeliveryFailure(messageId: messageId, status: status),
+          );
         }
       case PermissionDenied(:final context):
         _commandCtrl.add(ShowPermissionDenied(context: context));
@@ -287,8 +290,13 @@ class HomePresenter extends ChangeNotifier {
   void _handleFlashPush(PatchEvent event) {
     final sel = _selectionController!.selection;
     final prev = _state;
-    final decision =
-        fm.decideFlashCommand(prev, event, sel, _channelGetter(), _settings);
+    final decision = fm.decideFlashCommand(
+      prev,
+      event,
+      sel,
+      _channelGetter(),
+      _settings,
+    );
     _state = decision.state;
     if (_state != prev) {
       _fireCommands(decision.playAlert, decision.pulse);

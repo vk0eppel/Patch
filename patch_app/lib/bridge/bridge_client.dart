@@ -84,10 +84,11 @@ class BridgeClient {
 
   /// Fetch [channelId]'s recent message history. Returns directly (owned by
   /// `AppStore` — candidate 2, ADR-0004); throws on failure.
-  Future<List<PatchMessage>> getMessages(String channelId,
-      {int limit = 500}) async {
-    final messages =
-        await rust.getMessages(channelId: channelId, limit: limit);
+  Future<List<PatchMessage>> getMessages(
+    String channelId, {
+    int limit = 500,
+  }) async {
+    final messages = await rust.getMessages(channelId: channelId, limit: limit);
     return messages.map(PatchMessage.fromRust).toList();
   }
 
@@ -109,7 +110,9 @@ class BridgeClient {
   /// on failure; the caller refetches config via the store (`_applyConfigChange`).
   Future<void> setRole(String? role) {
     final trimmed = role?.trim();
-    return rust.setRole(role: (trimmed == null || trimmed.isEmpty) ? null : trimmed);
+    return rust.setRole(
+      role: (trimmed == null || trimmed.isEmpty) ? null : trimmed,
+    );
   }
 
   /// Remove dynamic peers (OscBeacon / Mdns) not heard from within [maxAgeSecs].
@@ -129,18 +132,17 @@ class BridgeClient {
     String? channelId,
     String? originalLabel,
     required MacroMessage macro,
-  }) =>
-      rust.upsertMacro(
-        channelId: channelId,
-        originalLabel: originalLabel,
-        label: macro.label,
-        payload: macro.payload,
-        priority: macro.priority,
-        keyBinding: macro.keyBinding,
-        midiNote: macro.midiNote,
-        midiCc: macro.midiCc,
-        osc: oscTargetFromMacroOsc(macro.osc),
-      );
+  }) => rust.upsertMacro(
+    channelId: channelId,
+    originalLabel: originalLabel,
+    label: macro.label,
+    payload: macro.payload,
+    priority: macro.priority,
+    keyBinding: macro.keyBinding,
+    midiNote: macro.midiNote,
+    midiCc: macro.midiCc,
+    osc: oscTargetFromMacroOsc(macro.osc),
+  );
 
   /// Fire an arbitrary OSC message to external gear (the dual-action half of an
   /// OSC macro — the Patch message is sent separately via [sendMessage]).
@@ -151,14 +153,13 @@ class BridgeClient {
     String path,
     String? arg, [
     MacroOscArgType argType = MacroOscArgType.string,
-  ]) =>
-      rust.sendOscMacro(
-        address: address,
-        port: port,
-        path: path,
-        arg: arg,
-        argType: _toRustArgType(argType),
-      );
+  ]) => rust.sendOscMacro(
+    address: address,
+    port: port,
+    path: path,
+    arg: arg,
+    argType: _toRustArgType(argType),
+  );
 
   /// Names of available MIDI input ports (for a future port-selector UI).
   /// Returns an empty list on failure — a non-critical read with a sensible
@@ -253,16 +254,22 @@ class BridgeClient {
     required String channelId,
     required String payload,
     int priority = 1,
-  }) =>
-      rust.sendMessage(channelId: channelId, payload: payload, priority: priority);
+  }) => rust.sendMessage(
+    channelId: channelId,
+    payload: payload,
+    priority: priority,
+  );
 
   /// Send a Direct Message to [peerId]. Returns the message id; throws on failure.
   Future<String> sendDirectMessage({
     required String peerId,
     required String payload,
     int priority = 1,
-  }) =>
-      rust.sendDirectMessage(peerId: peerId, payload: payload, priority: priority);
+  }) => rust.sendDirectMessage(
+    peerId: peerId,
+    payload: payload,
+    priority: priority,
+  );
 
   /// Flash a Channel (urgent attention signal, no message content).
   Future<void> sendFlash({required String channelId}) =>
@@ -308,18 +315,17 @@ class BridgeClient {
     bool? hideKeyboard,
     int? flashCount,
     int? macrosColumns,
-  }) =>
-      rust.patchConfig(
-        patch: rust_config.ConfigPatch(
-          flashOnCritical: flashOnCritical,
-          flashOnMessage: flashOnMessage,
-          flashCount: flashCount,
-          macrosColumns: macrosColumns,
-          hideKeyboard: hideKeyboard,
-          audibleAlert: audibleAlert,
-          flashWholeScreen: flashWholeScreen,
-        ),
-      );
+  }) => rust.patchConfig(
+    patch: rust_config.ConfigPatch(
+      flashOnCritical: flashOnCritical,
+      flashOnMessage: flashOnMessage,
+      flashCount: flashCount,
+      macrosColumns: macrosColumns,
+      hideKeyboard: hideKeyboard,
+      audibleAlert: audibleAlert,
+      flashWholeScreen: flashWholeScreen,
+    ),
+  );
 
   /// Restore the scalar behavior settings to their factory defaults — the
   /// engine owns the default values (#180); no literals cross the seam.
@@ -336,8 +342,7 @@ class BridgeClient {
     required String address,
     required int port,
     String? label,
-  }) =>
-      rust.addStaticPeer(address: address, port: port, label: label);
+  }) => rust.addStaticPeer(address: address, port: port, label: label);
 
   Future<void> removeStaticPeer({required String address, required int port}) =>
       rust.removeStaticPeer(address: address, port: port);
@@ -348,10 +353,10 @@ class BridgeClient {
     required String id,
     String? displayName,
     String? color,
-  }) =>
-      rust.upsertChannel(id: id, displayName: displayName, color: color);
+  }) => rust.upsertChannel(id: id, displayName: displayName, color: color);
 
-  Future<void> deleteChannel({required String id}) => rust.deleteChannel(id: id);
+  Future<void> deleteChannel({required String id}) =>
+      rust.deleteChannel(id: id);
 
   /// Per-channel flash overrides; null fields are left unchanged.
   Future<void> setChannelFlash({
@@ -359,26 +364,26 @@ class BridgeClient {
     bool? flashOnCritical,
     bool? flashOnMessage,
     int? flashCount,
-  }) =>
-      rust.setChannelFlash(
-        channelId: channelId,
-        flashOnCritical: flashOnCritical,
-        flashOnMessage: flashOnMessage,
-        flashCount: flashCount,
-      );
+  }) => rust.setChannelFlash(
+    channelId: channelId,
+    flashOnCritical: flashOnCritical,
+    flashOnMessage: flashOnMessage,
+    flashCount: flashCount,
+  );
 
   /// Restore the default channel set (destructive; confirmed by the UI).
   Future<void> resetChannels() => rust.resetChannels();
 
-  Future<void> deleteMacro({required String channelId, required String label}) =>
-      rust.deleteMacro(channelId: channelId, label: label);
+  Future<void> deleteMacro({
+    required String channelId,
+    required String label,
+  }) => rust.deleteMacro(channelId: channelId, label: label);
 
   /// Reorder a channel's macros to match [orderedLabels] (drag-to-reorder).
   Future<void> reorderMacros({
     required String channelId,
     required List<String> orderedLabels,
-  }) =>
-      rust.reorderMacros(channelId: channelId, orderedLabels: orderedLabels);
+  }) => rust.reorderMacros(channelId: channelId, orderedLabels: orderedLabels);
 
   Future<void> deleteGlobalMacro({required String label}) =>
       rust.deleteGlobalMacro(label: label);
@@ -443,82 +448,84 @@ class BridgeClient {
 /// dropped (`=> null`). Returns null for variants intentionally not surfaced to
 /// the UI. See ADR-0004.
 PatchEvent? patchEventFromRust(rust.PatchAppEvent event) => switch (event) {
-      rust.PatchAppEvent_Message(:final field0) =>
-        MessageReceived(PatchMessage.fromRust(field0)),
-      rust.PatchAppEvent_MessageDelivery(
-        :final messageId,
-        :final delivered,
-        :final total,
-        :final failed,
-        :final failedPeers,
-      ) =>
-        DeliveryUpdated(
-          messageId,
-          MessageDeliveryStatus(
-            delivered: delivered,
-            total: total,
-            failed: failed,
-            failedPeers: failedPeers,
-          ),
-        ),
-      rust.PatchAppEvent_ChannelFlash(:final field0) => Flashed(
-          channelId: field0.channelId,
-          senderId: field0.senderId.toString(),
-          senderName: field0.senderName,
-        ),
-      rust.PatchAppEvent_PeerExpired(:final peerId) => PeerExpired(peerId),
-      rust.PatchAppEvent_ChannelsOffered(
-        :final fromPeerId,
-        :final fromName,
-        :final channels,
-      ) =>
-        ChannelsOffered(
-          fromPeerId: fromPeerId,
-          fromName: fromName,
-          channels: channels.map(PatchChannel.fromRust).toList(),
-        ),
-      rust.PatchAppEvent_GlobalMacrosOffered(
-        :final fromPeerId,
-        :final fromName,
-        :final globalMacros,
-      ) =>
-        GlobalMacrosOffered(
-          fromPeerId: fromPeerId,
-          fromName: fromName,
-          globalMacros: globalMacros.map(MacroMessage.fromRust).toList(),
-        ),
-      rust.PatchAppEvent_ClientNameChanged(:final name) =>
-        ClientNameChanged(name),
-      rust.PatchAppEvent_PermissionDenied(:final context) =>
-        PermissionDenied(context),
-      // Payload intentionally dropped — presence lacks address/status, so the
-      // UI refetches regardless (ADR-0004).
-      rust.PatchAppEvent_PeerUpdated() => const PeersChanged(),
-      rust.PatchAppEvent_ChannelListUpdated() => const ChannelsChanged(),
-      // Intentionally not surfaced — no UI consumer reads the per-Peer ack.
-      rust.PatchAppEvent_MessageAcked() => null,
-      // This subscriber lagged and lost events — the store must refetch.
-      rust.PatchAppEvent_Desynced() => const Resynced(),
-    };
+  rust.PatchAppEvent_Message(:final field0) => MessageReceived(
+    PatchMessage.fromRust(field0),
+  ),
+  rust.PatchAppEvent_MessageDelivery(
+    :final messageId,
+    :final delivered,
+    :final total,
+    :final failed,
+    :final failedPeers,
+  ) =>
+    DeliveryUpdated(
+      messageId,
+      MessageDeliveryStatus(
+        delivered: delivered,
+        total: total,
+        failed: failed,
+        failedPeers: failedPeers,
+      ),
+    ),
+  rust.PatchAppEvent_ChannelFlash(:final field0) => Flashed(
+    channelId: field0.channelId,
+    senderId: field0.senderId.toString(),
+    senderName: field0.senderName,
+  ),
+  rust.PatchAppEvent_PeerExpired(:final peerId) => PeerExpired(peerId),
+  rust.PatchAppEvent_ChannelsOffered(
+    :final fromPeerId,
+    :final fromName,
+    :final channels,
+  ) =>
+    ChannelsOffered(
+      fromPeerId: fromPeerId,
+      fromName: fromName,
+      channels: channels.map(PatchChannel.fromRust).toList(),
+    ),
+  rust.PatchAppEvent_GlobalMacrosOffered(
+    :final fromPeerId,
+    :final fromName,
+    :final globalMacros,
+  ) =>
+    GlobalMacrosOffered(
+      fromPeerId: fromPeerId,
+      fromName: fromName,
+      globalMacros: globalMacros.map(MacroMessage.fromRust).toList(),
+    ),
+  rust.PatchAppEvent_ClientNameChanged(:final name) => ClientNameChanged(name),
+  rust.PatchAppEvent_PermissionDenied(:final context) => PermissionDenied(
+    context,
+  ),
+  // Payload intentionally dropped — presence lacks address/status, so the
+  // UI refetches regardless (ADR-0004).
+  rust.PatchAppEvent_PeerUpdated() => const PeersChanged(),
+  rust.PatchAppEvent_ChannelListUpdated() => const ChannelsChanged(),
+  // Intentionally not surfaced — no UI consumer reads the per-Peer ack.
+  rust.PatchAppEvent_MessageAcked() => null,
+  // This subscriber lagged and lost events — the store must refetch.
+  rust.PatchAppEvent_Desynced() => const Resynced(),
+};
 
 // Inverse of the fromRust factories on the Dart model classes — rebuilds the
 // typed FRB structs from
 // a `PatchChannel` so an adopted offer (delivered as `PatchChannel`s in
 // `channels_offered`) can be passed back into `adopt_channels`.
 rust_channel.Channel _channelToRust(PatchChannel c) => rust_channel.Channel(
-      id: c.id,
-      displayName: c.displayName,
-      // Pad to 8 hex digits (full ARGB) before dropping the alpha byte —
-      // padding after the substring would corrupt low colour values.
-      color:
-          '#${c.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
-      macros: c.macros.map(_macroToRust).toList(),
-      flashOnCritical: c.flashOnCritical,
-      flashOnMessage: c.flashOnMessage,
-      flashCount: c.flashCount,
-    );
+  id: c.id,
+  displayName: c.displayName,
+  // Pad to 8 hex digits (full ARGB) before dropping the alpha byte —
+  // padding after the substring would corrupt low colour values.
+  color:
+      '#${c.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
+  macros: c.macros.map(_macroToRust).toList(),
+  flashOnCritical: c.flashOnCritical,
+  flashOnMessage: c.flashOnMessage,
+  flashCount: c.flashCount,
+);
 
-rust_channel.MacroMessage _macroToRust(MacroMessage s) => rust_channel.MacroMessage(
+rust_channel.MacroMessage _macroToRust(MacroMessage s) =>
+    rust_channel.MacroMessage(
       label: s.label,
       payload: s.payload,
       keyBinding: s.keyBinding,
@@ -547,10 +554,10 @@ rust_channel.OscTarget? oscTargetFromMacroOsc(MacroOsc? o) {
 }
 
 rust_osc.OscArgKind _toRustArgType(MacroOscArgType t) => switch (t) {
-      MacroOscArgType.string => rust_osc.OscArgKind.string,
-      MacroOscArgType.int => rust_osc.OscArgKind.int,
-      MacroOscArgType.float => rust_osc.OscArgKind.float,
-    };
+  MacroOscArgType.string => rust_osc.OscArgKind.string,
+  MacroOscArgType.int => rust_osc.OscArgKind.int,
+  MacroOscArgType.float => rust_osc.OscArgKind.float,
+};
 
 // Keep this import alive — `InterfaceInfo` is referenced only via `rust.`,
 // not via the prefix, but the unused-import lint would still trip without it.

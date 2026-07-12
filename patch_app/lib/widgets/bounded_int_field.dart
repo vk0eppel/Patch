@@ -31,8 +31,9 @@ class BoundedIntField extends StatefulWidget {
 }
 
 class _BoundedIntFieldState extends State<BoundedIntField> {
-  late final TextEditingController _ctrl =
-      TextEditingController(text: widget.value.toString());
+  late final TextEditingController _ctrl = TextEditingController(
+    text: widget.value.toString(),
+  );
   late final FocusNode _focusNode = FocusNode()..addListener(_onFocusChange);
   String? _error;
   // TextField's default behavior unfocuses after onSubmitted fires, which

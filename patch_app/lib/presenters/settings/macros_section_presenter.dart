@@ -10,9 +10,7 @@ import 'save_result.dart';
 /// macro-edit dialog, list rendering) stays in the section widgets per
 /// ADR-0005.
 class MacrosSectionPresenter {
-  MacrosSectionPresenter({
-    required this.upsertMacro,
-  });
+  MacrosSectionPresenter({required this.upsertMacro});
 
   /// The one macro-save command (#186), keyed on [channelId]: non-null is a
   /// Channel Macro, null is a Global Macro — the same discriminator macro
@@ -22,21 +20,21 @@ class MacrosSectionPresenter {
     String? channelId,
     String? originalLabel,
     required MacroMessage macro,
-  }) upsertMacro;
+  })
+  upsertMacro;
 
   Future<SaveResult> saveMacro({
     String? channelId,
     String? originalLabel,
     required MacroMessage macro,
-  }) =>
-      validateThenSave(
-        validate: () => _validateOsc(macro.osc),
-        save: () => upsertMacro(
-          channelId: channelId,
-          originalLabel: originalLabel,
-          macro: macro,
-        ),
-      );
+  }) => validateThenSave(
+    validate: () => _validateOsc(macro.osc),
+    save: () => upsertMacro(
+      channelId: channelId,
+      originalLabel: originalLabel,
+      macro: macro,
+    ),
+  );
 }
 
 /// ADR-0002: a live UI edit rejects an invalid OSC target immediately —

@@ -34,16 +34,18 @@ class GlobalMacrosSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(children: [
-          const Expanded(child: SettingsSectionHeader('Global Macros')),
-          IconButton(
-            icon: const Icon(Icons.cloud_download_outlined, size: 18),
-            color: PatchTheme.textMuted,
-            tooltip: 'Import macros from a peer',
-            onPressed: onImportFromPeer,
-          ),
-          SettingsResetButton(section: 'Global Macros', onReset: onReset),
-        ]),
+        Row(
+          children: [
+            const Expanded(child: SettingsSectionHeader('Global Macros')),
+            IconButton(
+              icon: const Icon(Icons.cloud_download_outlined, size: 18),
+              color: PatchTheme.textMuted,
+              tooltip: 'Import macros from a peer',
+              onPressed: onImportFromPeer,
+            ),
+            SettingsResetButton(section: 'Global Macros', onReset: onReset),
+          ],
+        ),
         const SizedBox(height: 4),
         const Text(
           'Macros shown on every channel\'s panel. Firing one sends on the '
@@ -55,7 +57,11 @@ class GlobalMacrosSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        _GlobalMacrosEditor(macros: globalMacros, bridge: bridge, presenter: presenter),
+        _GlobalMacrosEditor(
+          macros: globalMacros,
+          bridge: bridge,
+          presenter: presenter,
+        ),
       ],
     );
   }
@@ -106,8 +112,7 @@ class ChannelsMacrosSection extends StatelessWidget {
             ),
             SettingsResetButton(
               section: 'Channels & Macros',
-              onReset: () =>
-                  runGuarded(context, () => bridge.resetChannels()),
+              onReset: () => runGuarded(context, () => bridge.resetChannels()),
             ),
           ],
         ),
@@ -115,22 +120,25 @@ class ChannelsMacrosSection extends StatelessWidget {
         const Text(
           'Edit a channel\'s name and colour, manage its one-tap macros, or create a new channel.',
           style: TextStyle(
-              color: PatchTheme.textSecondary,
-              fontSize: PatchTheme.fontSizeSmall),
+            color: PatchTheme.textSecondary,
+            fontSize: PatchTheme.fontSizeSmall,
+          ),
         ),
         const SizedBox(height: 16),
-        ...channels.map((ch) => _ChannelMacroEditor(
-              channel: ch,
-              bridge: bridge,
-              presenter: presenter,
-              onDelete: () => onDeleteChannel(ch),
-              onEdit: () => _showChannelDialog(
-                context,
-                bridge,
-                existing: ch,
-                existingIds: channels.map((c) => c.id).toSet(),
-              ),
-            )),
+        ...channels.map(
+          (ch) => _ChannelMacroEditor(
+            channel: ch,
+            bridge: bridge,
+            presenter: presenter,
+            onDelete: () => onDeleteChannel(ch),
+            onEdit: () => _showChannelDialog(
+              context,
+              bridge,
+              existing: ch,
+              existingIds: channels.map((c) => c.id).toSet(),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -210,20 +218,32 @@ class _ChannelMacroEditor extends StatelessWidget {
         if (context.mounted) _showSaveError(context, result);
       }),
       onDelete: (m) => runGuarded(
-          context, () => bridge.deleteMacro(channelId: channel.id, label: m.label)),
-      onReorder: (labels) =>
-          runGuarded(context,
-              () => bridge.reorderMacros(channelId: channel.id, orderedLabels: labels)),
+        context,
+        () => bridge.deleteMacro(channelId: channel.id, label: m.label),
+      ),
+      onReorder: (labels) => runGuarded(
+        context,
+        () =>
+            bridge.reorderMacros(channelId: channel.id, orderedLabels: labels),
+      ),
       trailingActions: [
         IconButton(
-          icon: const Icon(Icons.edit_outlined, size: 16, color: PatchTheme.textMuted),
+          icon: const Icon(
+            Icons.edit_outlined,
+            size: 16,
+            color: PatchTheme.textMuted,
+          ),
           tooltip: 'Edit channel',
           onPressed: onEdit,
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
         ),
         IconButton(
-          icon: const Icon(Icons.delete_outline, size: 16, color: PatchTheme.textMuted),
+          icon: const Icon(
+            Icons.delete_outline,
+            size: 16,
+            color: PatchTheme.textMuted,
+          ),
           tooltip: 'Delete channel',
           onPressed: onDelete,
           padding: EdgeInsets.zero,
@@ -242,10 +262,7 @@ class _ChannelMacroEditor extends StatelessWidget {
               child: Text(
                 'Global Behavior settings always apply — these flags add triggers '
                 'per channel but cannot suppress a global setting.',
-                style: TextStyle(
-                  color: PatchTheme.textMuted,
-                  fontSize: 10,
-                ),
+                style: TextStyle(color: PatchTheme.textMuted, fontSize: 10),
               ),
             ),
             SwitchListTile(
@@ -260,8 +277,13 @@ class _ChannelMacroEditor extends StatelessWidget {
               ),
               value: channel.flashOnMessage,
               activeThumbColor: PatchTheme.accent,
-              onChanged: (val) => runGuarded(context,
-                  () => bridge.setChannelFlash(channelId: channel.id, flashOnMessage: val)),
+              onChanged: (val) => runGuarded(
+                context,
+                () => bridge.setChannelFlash(
+                  channelId: channel.id,
+                  flashOnMessage: val,
+                ),
+              ),
             ),
             SwitchListTile(
               dense: true,
@@ -275,8 +297,13 @@ class _ChannelMacroEditor extends StatelessWidget {
               ),
               value: channel.flashOnCritical,
               activeThumbColor: PatchTheme.accent,
-              onChanged: (val) => runGuarded(context,
-                  () => bridge.setChannelFlash(channelId: channel.id, flashOnCritical: val)),
+              onChanged: (val) => runGuarded(
+                context,
+                () => bridge.setChannelFlash(
+                  channelId: channel.id,
+                  flashOnCritical: val,
+                ),
+              ),
             ),
             const SizedBox(height: 4),
             Row(
@@ -294,12 +321,13 @@ class _ChannelMacroEditor extends StatelessWidget {
                 FlashCountPicker(
                   value: channel.flashCount,
                   onChanged: (val) => runGuarded(
-                      context,
-                      () => bridge.setChannelFlash(
-                            channelId: channel.id,
-                            // 0 signals "clear override" to the Rust side
-                            flashCount: val ?? 0,
-                          )),
+                    context,
+                    () => bridge.setChannelFlash(
+                      channelId: channel.id,
+                      // 0 signals "clear override" to the Rust side
+                      flashCount: val ?? 0,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -321,9 +349,17 @@ class _MacroListCard extends StatelessWidget {
   final List<MacroMessage> macros;
   final String Function(MacroMessage) keyFor;
   final String emptyText;
-  final void Function(String? originalLabel, String label, String payload,
-      String? keyBinding, int priority, int? midiNote, int? midiCc,
-      MacroOsc? osc) onUpsert;
+  final void Function(
+    String? originalLabel,
+    String label,
+    String payload,
+    String? keyBinding,
+    int priority,
+    int? midiNote,
+    int? midiCc,
+    MacroOsc? osc,
+  )
+  onUpsert;
   final void Function(MacroMessage macro) onDelete;
   final void Function(List<String> labels) onReorder;
   final List<Widget> trailingActions;
@@ -366,8 +402,12 @@ class _MacroListCard extends StatelessWidget {
             child: Row(
               children: [
                 Container(
-                  width: 8, height: 8,
-                  decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: dotColor,
+                    shape: BoxShape.circle,
+                  ),
                 ),
                 const SizedBox(width: 8),
                 Text(
@@ -383,11 +423,11 @@ class _MacroListCard extends StatelessWidget {
                 TextButton.icon(
                   icon: const Icon(Icons.add, size: 16),
                   label: const Text('Add'),
-                  style: TextButton.styleFrom(foregroundColor: PatchTheme.accent),
-                  onPressed: () => _showMacroEditDialog(
-                    context,
-                    onSave: onUpsert,
+                  style: TextButton.styleFrom(
+                    foregroundColor: PatchTheme.accent,
                   ),
+                  onPressed: () =>
+                      _showMacroEditDialog(context, onSave: onUpsert),
                 ),
                 ...trailingActions,
               ],
@@ -398,7 +438,10 @@ class _MacroListCard extends StatelessWidget {
               padding: const EdgeInsets.all(14),
               child: Text(
                 emptyText,
-                style: const TextStyle(color: PatchTheme.textMuted, fontSize: PatchTheme.fontSizeSmall),
+                style: const TextStyle(
+                  color: PatchTheme.textMuted,
+                  fontSize: PatchTheme.fontSizeSmall,
+                ),
               ),
             )
           else
@@ -447,24 +490,37 @@ class _MacroListCard extends StatelessWidget {
     BuildContext context, {
     MacroMessage? existing,
     bool allowMidi = true,
-    required void Function(String? originalLabel, String label,
-            String payload, String? keyBinding, int priority, int? midiNote,
-            int? midiCc, MacroOsc? osc)
-        onSave,
+    required void Function(
+      String? originalLabel,
+      String label,
+      String payload,
+      String? keyBinding,
+      int priority,
+      int? midiNote,
+      int? midiCc,
+      MacroOsc? osc,
+    )
+    onSave,
   }) {
     final labelCtrl = TextEditingController(text: existing?.label ?? '');
     final payloadCtrl = TextEditingController(text: existing?.payload ?? '');
     final keyCtrl = TextEditingController(text: existing?.keyBinding ?? '');
-    final noteCtrl =
-        TextEditingController(text: existing?.midiNote?.toString() ?? '');
-    final ccCtrl =
-        TextEditingController(text: existing?.midiCc?.toString() ?? '');
-    final oscAddrCtrl = TextEditingController(text: existing?.osc?.address ?? '');
-    final oscPortCtrl =
-        TextEditingController(text: existing?.osc?.port.toString() ?? '');
+    final noteCtrl = TextEditingController(
+      text: existing?.midiNote?.toString() ?? '',
+    );
+    final ccCtrl = TextEditingController(
+      text: existing?.midiCc?.toString() ?? '',
+    );
+    final oscAddrCtrl = TextEditingController(
+      text: existing?.osc?.address ?? '',
+    );
+    final oscPortCtrl = TextEditingController(
+      text: existing?.osc?.port.toString() ?? '',
+    );
     final oscPathCtrl = TextEditingController(text: existing?.osc?.path ?? '');
     final oscArgCtrl = TextEditingController(text: existing?.osc?.arg ?? '');
-    MacroOscArgType oscArgType = existing?.osc?.argType ?? MacroOscArgType.string;
+    MacroOscArgType oscArgType =
+        existing?.osc?.argType ?? MacroOscArgType.string;
     bool oscEnabled = existing?.osc != null;
     int priority = existing?.priority ?? 1;
     // For a new macro, mirror the label into the message text (capitalized-first)
@@ -488,7 +544,10 @@ class _MacroListCard extends StatelessWidget {
               children: [
                 TextField(
                   controller: labelCtrl,
-                  decoration: const InputDecoration(labelText: 'Button label', hintText: 'e.g. HOLD'),
+                  decoration: const InputDecoration(
+                    labelText: 'Button label',
+                    hintText: 'e.g. HOLD',
+                  ),
                   textCapitalization: TextCapitalization.characters,
                   onChanged: (value) {
                     // Mirror label → message until the user edits the message.
@@ -548,16 +607,16 @@ class _MacroListCard extends StatelessWidget {
                   const Text(
                     'Fire this macro hands-free from a footswitch, pad, or '
                     'keyboard. Leave blank for none.',
-                    style: TextStyle(
-                      color: PatchTheme.textMuted,
-                      fontSize: 11,
-                    ),
+                    style: TextStyle(color: PatchTheme.textMuted, fontSize: 11),
                   ),
                 ],
                 const SizedBox(height: 14),
                 const Text(
                   'Priority',
-                  style: TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeSmall),
+                  style: TextStyle(
+                    color: PatchTheme.textSecondary,
+                    fontSize: PatchTheme.fontSizeSmall,
+                  ),
                 ),
                 const SizedBox(height: 6),
                 SegmentedButton<int>(
@@ -567,15 +626,22 @@ class _MacroListCard extends StatelessWidget {
                     ButtonSegment(value: 3, label: Text('Critical')),
                   ],
                   selected: {priority},
-                  onSelectionChanged: (s) => setDialogState(() => priority = s.first),
+                  onSelectionChanged: (s) =>
+                      setDialogState(() => priority = s.first),
                   style: ButtonStyle(
                     foregroundColor: WidgetStateProperty.resolveWith((states) {
-                      if (states.contains(WidgetState.selected)) return Colors.black;
+                      if (states.contains(WidgetState.selected)) {
+                        return Colors.black;
+                      }
                       return PatchTheme.textSecondary;
                     }),
                     backgroundColor: WidgetStateProperty.resolveWith((states) {
                       if (states.contains(WidgetState.selected)) {
-                        return priority == 3 ? PatchTheme.critical : priority == 2 ? PatchTheme.warning : PatchTheme.accent;
+                        return priority == 3
+                            ? PatchTheme.critical
+                            : priority == 2
+                            ? PatchTheme.warning
+                            : PatchTheme.accent;
                       }
                       return PatchTheme.surfaceHigh;
                     }),
@@ -588,7 +654,10 @@ class _MacroListCard extends StatelessWidget {
                   contentPadding: EdgeInsets.zero,
                   title: const Text(
                     'Also send OSC',
-                    style: TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeSmall),
+                    style: TextStyle(
+                      color: PatchTheme.textSecondary,
+                      fontSize: PatchTheme.fontSizeSmall,
+                    ),
                   ),
                   subtitle: const Text(
                     'Fire an OSC message to gear (QLab, Companion, vMix…) when this macro fires.',
@@ -607,7 +676,10 @@ class _MacroListCard extends StatelessWidget {
                         child: TextField(
                           controller: oscAddrCtrl,
                           keyboardType: TextInputType.url,
-                          decoration: const InputDecoration(labelText: 'IP', hintText: '192.168.1.50'),
+                          decoration: const InputDecoration(
+                            labelText: 'IP',
+                            hintText: '192.168.1.50',
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -616,7 +688,10 @@ class _MacroListCard extends StatelessWidget {
                         child: TextField(
                           controller: oscPortCtrl,
                           keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'Port', hintText: '53000'),
+                          decoration: const InputDecoration(
+                            labelText: 'Port',
+                            hintText: '53000',
+                          ),
                         ),
                       ),
                     ],
@@ -624,36 +699,52 @@ class _MacroListCard extends StatelessWidget {
                   const SizedBox(height: 10),
                   TextField(
                     controller: oscPathCtrl,
-                    decoration: const InputDecoration(labelText: 'OSC path', hintText: '/cue/1/start'),
+                    decoration: const InputDecoration(
+                      labelText: 'OSC path',
+                      hintText: '/cue/1/start',
+                    ),
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: oscArgCtrl,
-                    decoration: const InputDecoration(labelText: 'Argument (optional)', hintText: 'e.g. go'),
+                    decoration: const InputDecoration(
+                      labelText: 'Argument (optional)',
+                      hintText: 'e.g. go',
+                    ),
                   ),
                   const SizedBox(height: 8),
                   const Text(
                     'Argument type',
-                    style: TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeSmall),
+                    style: TextStyle(
+                      color: PatchTheme.textSecondary,
+                      fontSize: PatchTheme.fontSizeSmall,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   SegmentedButton<MacroOscArgType>(
                     segments: const [
-                      ButtonSegment(value: MacroOscArgType.string, label: Text('String')),
-                      ButtonSegment(value: MacroOscArgType.int, label: Text('Int')),
-                      ButtonSegment(value: MacroOscArgType.float, label: Text('Float')),
+                      ButtonSegment(
+                        value: MacroOscArgType.string,
+                        label: Text('String'),
+                      ),
+                      ButtonSegment(
+                        value: MacroOscArgType.int,
+                        label: Text('Int'),
+                      ),
+                      ButtonSegment(
+                        value: MacroOscArgType.float,
+                        label: Text('Float'),
+                      ),
                     ],
                     selected: {oscArgType},
-                    onSelectionChanged: (s) => setDialogState(() => oscArgType = s.first),
+                    onSelectionChanged: (s) =>
+                        setDialogState(() => oscArgType = s.first),
                   ),
                   const SizedBox(height: 2),
                   const Text(
                     'Sent to the console as that OSC type — e.g. Float for a fader '
                     '(0.0–1.0), Int for a cue number.',
-                    style: TextStyle(
-                      color: PatchTheme.textMuted,
-                      fontSize: 11,
-                    ),
+                    style: TextStyle(color: PatchTheme.textMuted, fontSize: 11),
                   ),
                 ],
               ],
@@ -789,17 +880,19 @@ class _MacroRow extends StatelessWidget {
   });
 
   Color get _priorityColor => switch (shortcut.priority) {
-        3 => PatchTheme.critical,
-        2 => PatchTheme.warning,
-        _ => PatchTheme.textMuted,
-      };
+    3 => PatchTheme.critical,
+    2 => PatchTheme.warning,
+    _ => PatchTheme.textMuted,
+  };
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: PatchTheme.border.withAlpha(80))),
+        border: Border(
+          bottom: BorderSide(color: PatchTheme.border.withAlpha(80)),
+        ),
       ),
       child: Row(
         children: [
@@ -810,14 +903,22 @@ class _MacroRow extends StatelessWidget {
               padding: EdgeInsets.only(right: 8),
               child: Tooltip(
                 message: 'Drag to reorder',
-                child: Icon(Icons.drag_handle, size: 16, color: PatchTheme.textMuted),
+                child: Icon(
+                  Icons.drag_handle,
+                  size: 16,
+                  color: PatchTheme.textMuted,
+                ),
               ),
             ),
           ),
           // Priority dot
           Container(
-            width: 7, height: 7,
-            decoration: BoxDecoration(color: _priorityColor, shape: BoxShape.circle),
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(
+              color: _priorityColor,
+              shape: BoxShape.circle,
+            ),
           ),
           const SizedBox(width: 10),
           // Label
@@ -836,7 +937,10 @@ class _MacroRow extends StatelessWidget {
           Expanded(
             child: Text(
               shortcut.payload,
-              style: const TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeSmall),
+              style: const TextStyle(
+                color: PatchTheme.textSecondary,
+                fontSize: PatchTheme.fontSizeSmall,
+              ),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -852,7 +956,10 @@ class _MacroRow extends StatelessWidget {
               ),
               child: Text(
                 shortcut.keyBinding!,
-                style: const TextStyle(color: PatchTheme.textMuted, fontSize: 10),
+                style: const TextStyle(
+                  color: PatchTheme.textMuted,
+                  fontSize: 10,
+                ),
               ),
             ),
           // MIDI binding badge (♪ note / CC)
@@ -869,7 +976,10 @@ class _MacroRow extends StatelessWidget {
                 shortcut.midiNote != null
                     ? '♪ ${shortcut.midiNote}'
                     : 'CC ${shortcut.midiCc}',
-                style: const TextStyle(color: PatchTheme.textMuted, fontSize: 10),
+                style: const TextStyle(
+                  color: PatchTheme.textMuted,
+                  fontSize: 10,
+                ),
               ),
             ),
           // OSC target badge
@@ -883,15 +993,26 @@ class _MacroRow extends StatelessWidget {
                 border: Border.all(color: PatchTheme.accent.withAlpha(120)),
               ),
               child: Tooltip(
-                message: '${shortcut.osc!.address}:${shortcut.osc!.port} ${shortcut.osc!.path}',
-                child: const Text('OSC',
-                    style: TextStyle(color: PatchTheme.accent, fontSize: 9, fontWeight: FontWeight.w700)),
+                message:
+                    '${shortcut.osc!.address}:${shortcut.osc!.port} ${shortcut.osc!.path}',
+                child: const Text(
+                  'OSC',
+                  style: TextStyle(
+                    color: PatchTheme.accent,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ),
           const SizedBox(width: 8),
           // Edit
           IconButton(
-            icon: const Icon(Icons.edit_outlined, size: 16, color: PatchTheme.textMuted),
+            icon: const Icon(
+              Icons.edit_outlined,
+              size: 16,
+              color: PatchTheme.textMuted,
+            ),
             onPressed: onEdit,
             tooltip: 'Edit',
             padding: EdgeInsets.zero,
@@ -899,7 +1020,11 @@ class _MacroRow extends StatelessWidget {
           ),
           // Delete
           IconButton(
-            icon: const Icon(Icons.delete_outline, size: 16, color: PatchTheme.textMuted),
+            icon: const Icon(
+              Icons.delete_outline,
+              size: 16,
+              color: PatchTheme.textMuted,
+            ),
             onPressed: onDelete,
             tooltip: 'Delete',
             padding: EdgeInsets.zero,
@@ -1046,7 +1171,11 @@ void _showChannelDialog(
                             ),
                           ),
                           child: p.toARGB32() == color.toARGB32()
-                              ? const Icon(Icons.check, size: 16, color: Colors.white)
+                              ? const Icon(
+                                  Icons.check,
+                                  size: 16,
+                                  color: Colors.white,
+                                )
                               : null,
                         ),
                       ),
@@ -1068,13 +1197,19 @@ void _showChannelDialog(
                 ),
                 if (error != null) ...[
                   const SizedBox(height: 8),
-                  Text(error!, style: const TextStyle(color: PatchTheme.critical)),
+                  Text(
+                    error!,
+                    style: const TextStyle(color: PatchTheme.critical),
+                  ),
                 ],
               ],
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
             ElevatedButton(
               onPressed: () {
                 final id = idCtrl.text.trim();
@@ -1084,16 +1219,26 @@ void _showChannelDialog(
                   return;
                 }
                 if (!_channelIdRegex.hasMatch(id)) {
-                  setDialogState(() => error =
-                      'ID must be lowercase letters, digits, or hyphens, and start with a letter or digit.');
+                  setDialogState(
+                    () => error =
+                        'ID must be lowercase letters, digits, or hyphens, and start with a letter or digit.',
+                  );
                   return;
                 }
                 if (existing == null && existingIds.contains(id)) {
-                  setDialogState(() => error = 'A channel with ID "$id" already exists.');
+                  setDialogState(
+                    () => error = 'A channel with ID "$id" already exists.',
+                  );
                   return;
                 }
-                runGuarded(context,
-                    () => bridge.upsertChannel(id: id, displayName: name, color: _colorToHex(color)));
+                runGuarded(
+                  context,
+                  () => bridge.upsertChannel(
+                    id: id,
+                    displayName: name,
+                    color: _colorToHex(color),
+                  ),
+                );
                 Navigator.pop(ctx);
               },
               child: const Text('Save'),
@@ -1104,4 +1249,3 @@ void _showChannelDialog(
     ),
   );
 }
-

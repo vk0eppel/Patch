@@ -31,13 +31,16 @@ void main() {
   });
 
   group('AllSelection', () {
-    test('tabIds is just the ALL sentinel, carries the prior selection for snap-back', () {
-      const sel = AllSelection({'rf', 'audio'});
-      expect(sel.tabIds, {kAllChannelId});
-      expect(sel.isAllMode, isTrue);
-      expect(sel.isMultiChannel, isFalse); // exclusive — never "multi"
-      expect(sel.previous, {'rf', 'audio'});
-    });
+    test(
+      'tabIds is just the ALL sentinel, carries the prior selection for snap-back',
+      () {
+        const sel = AllSelection({'rf', 'audio'});
+        expect(sel.tabIds, {kAllChannelId});
+        expect(sel.isAllMode, isTrue);
+        expect(sel.isMultiChannel, isFalse); // exclusive — never "multi"
+        expect(sel.previous, {'rf', 'audio'});
+      },
+    );
 
     test('containsRawId matches only the ALL sentinel', () {
       const sel = AllSelection({'rf'});
@@ -64,11 +67,18 @@ void main() {
 
   group('value equality', () {
     test('ChannelSelection compares by set contents, not identity', () {
-      expect(const ChannelSelection({'rf', 'audio'}),
-          const ChannelSelection({'audio', 'rf'})); // order-independent
-      expect(const ChannelSelection({'rf'}), isNot(const ChannelSelection({'audio'})));
-      expect(const ChannelSelection({'rf'}).hashCode,
-          const ChannelSelection({'rf'}).hashCode);
+      expect(
+        const ChannelSelection({'rf', 'audio'}),
+        const ChannelSelection({'audio', 'rf'}),
+      ); // order-independent
+      expect(
+        const ChannelSelection({'rf'}),
+        isNot(const ChannelSelection({'audio'})),
+      );
+      expect(
+        const ChannelSelection({'rf'}).hashCode,
+        const ChannelSelection({'rf'}).hashCode,
+      );
     });
 
     test('AllSelection compares by previous contents', () {

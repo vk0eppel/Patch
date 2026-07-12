@@ -28,9 +28,6 @@ void main() {
 
     expect(calls, hasLength(1));
     expect(calls.single.method, 'pulse');
-    expect(calls.single.arguments, {
-      'argb': 0xFFAABBCC,
-      'pulseCount': 5,
-    });
+    expect(calls.single.arguments, {'argb': 0xFFAABBCC, 'pulseCount': 5});
   });
 }

@@ -4,8 +4,11 @@ import 'package:patch/models/channel.dart';
 import 'package:patch/models/selection.dart';
 import 'package:patch/models/send_target.dart';
 
-PatchChannel ch(String id, [String? name]) =>
-    PatchChannel(id: id, displayName: name ?? id.toUpperCase(), color: Colors.red);
+PatchChannel ch(String id, [String? name]) => PatchChannel(
+  id: id,
+  displayName: name ?? id.toUpperCase(),
+  color: Colors.red,
+);
 
 void main() {
   group('SendTarget.of', () {
@@ -20,8 +23,10 @@ void main() {
     });
 
     test('an ALL Selection resolves to the one-shot broadcast', () {
-      final t = SendTarget.of(const AllSelection({'rf'}),
-          selectedChannels: const []);
+      final t = SendTarget.of(
+        const AllSelection({'rf'}),
+        selectedChannels: const [],
+      );
       expect(t, isA<AllTarget>());
     });
 
@@ -51,30 +56,36 @@ void main() {
     });
 
     test('multi-Channel clears each selected Channel — not everything', () {
-      expect(
-        ChannelsTarget([ch('rf'), ch('audio')]).clearKeys,
-        ['rf', 'audio'],
-      );
+      expect(ChannelsTarget([ch('rf'), ch('audio')]).clearKeys, [
+        'rf',
+        'audio',
+      ]);
     });
   });
 
   group('labels', () {
     test('exportFileLabel names the export file by target', () {
-      expect(const DmTarget('p', peerName: 'Stage Manager').exportFileLabel,
-          'dm_stage manager');
+      expect(
+        const DmTarget('p', peerName: 'Stage Manager').exportFileLabel,
+        'dm_stage manager',
+      );
       expect(const DmTarget('p').exportFileLabel, 'dm_');
       expect(const AllTarget().exportFileLabel, 'all_channels');
       expect(ChannelsTarget([ch('rf', 'RF')]).exportFileLabel, 'rf');
-      expect(ChannelsTarget([ch('rf'), ch('audio')]).exportFileLabel,
-          'all_channels');
+      expect(
+        ChannelsTarget([ch('rf'), ch('audio')]).exportFileLabel,
+        'all_channels',
+      );
     });
 
     test('clearDescription names what the confirm dialog will wipe', () {
       expect(const DmTarget('p').clearDescription, 'this conversation');
       expect(const AllTarget().clearDescription, 'all channels');
       expect(ChannelsTarget([ch('rf', 'RF')]).clearDescription, 'RF');
-      expect(ChannelsTarget([ch('rf'), ch('audio')]).clearDescription,
-          '2 channels');
+      expect(
+        ChannelsTarget([ch('rf'), ch('audio')]).clearDescription,
+        '2 channels',
+      );
     });
   });
 }

@@ -21,7 +21,12 @@ void main() {
     for (final name in files) {
       final source = File('../docs/$name').readAsStringSync();
       final bundled = File('assets/docs/$name').readAsStringSync();
-      expect(bundled, source, reason: '$name is out of sync with docs/$name — copy it into assets/docs/');
+      expect(
+        bundled,
+        source,
+        reason:
+            '$name is out of sync with docs/$name — copy it into assets/docs/',
+      );
     }
   });
 }

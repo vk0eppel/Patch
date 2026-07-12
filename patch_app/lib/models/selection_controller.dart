@@ -93,8 +93,8 @@ class SelectionController {
       _selection = kept.isNotEmpty
           ? ChannelSelection(kept)
           : (channels.isNotEmpty
-              ? ChannelSelection({channels.first.id})
-              : const ChannelSelection({}));
+                ? ChannelSelection({channels.first.id})
+                : const ChannelSelection({}));
     }
     _callSideEffects();
     return _idsToEnsure;

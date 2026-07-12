@@ -47,31 +47,31 @@ class PatchMessage {
   /// Stamp this message with its local arrival-order sequence. The only
   /// mutation `AppStore` performs on a message after decoding it.
   PatchMessage withLocalSeq(int seq) => PatchMessage(
-        messageId: messageId,
-        senderId: senderId,
-        senderName: senderName,
-        channelId: channelId,
-        timestamp: timestamp,
-        priority: priority,
-        payload: payload,
-        isFlash: isFlash,
-        flashSenderName: flashSenderName,
-        flashSenderRole: flashSenderRole,
-        localSeq: seq,
-      );
+    messageId: messageId,
+    senderId: senderId,
+    senderName: senderName,
+    channelId: channelId,
+    timestamp: timestamp,
+    priority: priority,
+    payload: payload,
+    isFlash: isFlash,
+    flashSenderName: flashSenderName,
+    flashSenderRole: flashSenderRole,
+    localSeq: seq,
+  );
 
   factory PatchMessage.fromRust(rust_osc.PatchMessage m) => PatchMessage(
-        messageId: m.messageId.toString(),
-        senderId: m.senderId.toString(),
-        senderName: m.senderName,
-        channelId: m.channelId,
-        timestamp: m.timestamp,
-        priority: m.priority.index,
-        payload: m.payload,
-        isFlash: m.isFlash,
-        flashSenderName: m.flashSenderName,
-        flashSenderRole: m.flashSenderRole,
-      );
+    messageId: m.messageId.toString(),
+    senderId: m.senderId.toString(),
+    senderName: m.senderName,
+    channelId: m.channelId,
+    timestamp: m.timestamp,
+    priority: m.priority.index,
+    payload: m.payload,
+    isFlash: m.isFlash,
+    flashSenderName: m.flashSenderName,
+    flashSenderRole: m.flashSenderRole,
+  );
 }
 
 /// Delivery progress/result for a critical message *we* sent (only the sender
@@ -107,11 +107,11 @@ class ShowFileMeta {
   });
 
   factory ShowFileMeta.fromRust(rust_show_file.ShowFileMeta s) => ShowFileMeta(
-        slug: s.slug,
-        name: s.name,
-        createdAt: s.createdAt,
-        channelCount: s.channelCount.toInt(),
-      );
+    slug: s.slug,
+    name: s.name,
+    createdAt: s.createdAt,
+    channelCount: s.channelCount.toInt(),
+  );
 }
 
 /// Online/Stale/Offline mirrors `patch_core::state::peer::PeerStatus` — the
@@ -157,23 +157,23 @@ class PeerInfo {
   });
 
   factory PeerInfo.fromRust(rust.PeerSnapshot p) => PeerInfo(
-        peerId: p.peerId.toString(),
-        peerName: p.peerName,
-        role: p.role,
-        channels: p.channels,
-        address: p.address,
-        oscPort: p.oscPort,
-        lastSeen: p.lastSeen,
-        departed: p.departed,
-        discoveryMode: switch (p.discoveryMode) {
-          rust_peer.DiscoveryMode.mdns => 'mdns',
-          rust_peer.DiscoveryMode.oscBeacon => 'osc_beacon',
-          rust_peer.DiscoveryMode.manualIp => 'manual_ip',
-        },
-        status: switch (p.status) {
-          rust_peer.PeerStatus.online => PeerStatus.online,
-          rust_peer.PeerStatus.stale => PeerStatus.stale,
-          rust_peer.PeerStatus.offline => PeerStatus.offline,
-        },
-      );
+    peerId: p.peerId.toString(),
+    peerName: p.peerName,
+    role: p.role,
+    channels: p.channels,
+    address: p.address,
+    oscPort: p.oscPort,
+    lastSeen: p.lastSeen,
+    departed: p.departed,
+    discoveryMode: switch (p.discoveryMode) {
+      rust_peer.DiscoveryMode.mdns => 'mdns',
+      rust_peer.DiscoveryMode.oscBeacon => 'osc_beacon',
+      rust_peer.DiscoveryMode.manualIp => 'manual_ip',
+    },
+    status: switch (p.status) {
+      rust_peer.PeerStatus.online => PeerStatus.online,
+      rust_peer.PeerStatus.stale => PeerStatus.stale,
+      rust_peer.PeerStatus.offline => PeerStatus.offline,
+    },
+  );
 }

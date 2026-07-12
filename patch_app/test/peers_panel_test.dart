@@ -14,8 +14,11 @@ import 'package:patch/widgets/peers_panel.dart';
 
 /// Finds containers with a specific `BoxDecoration` color (status dots).
 Finder _dotsWithColor(Color c) => find.byWidgetPredicate(
-      (w) => w is Container && w.decoration is BoxDecoration && (w.decoration as BoxDecoration).color == c,
-    );
+  (w) =>
+      w is Container &&
+      w.decoration is BoxDecoration &&
+      (w.decoration as BoxDecoration).color == c,
+);
 
 PeerInfo _peer({
   required String name,
@@ -26,35 +29,28 @@ PeerInfo _peer({
   List<String> channels = const [],
   String? role,
   bool departed = false,
-}) =>
-    PeerInfo(
-      peerId: name,
-      peerName: name,
-      role: role,
-      channels: channels,
-      address: address,
-      oscPort: 9000,
-      lastSeen: DateTime.now().subtract(seenAgo),
-      discoveryMode: mode,
-      status: status,
-      departed: departed,
-    );
+}) => PeerInfo(
+  peerId: name,
+  peerName: name,
+  role: role,
+  channels: channels,
+  address: address,
+  oscPort: 9000,
+  lastSeen: DateTime.now().subtract(seenAgo),
+  discoveryMode: mode,
+  status: status,
+  departed: departed,
+);
 
-Widget _host(List<PeerInfo> peers) =>
-    MaterialApp(
-      home: Scaffold(
-        body: SizedBox(
-          width: 200,
-          child: PeersPanel(peers: peers),
-        ),
-      ),
-    );
+Widget _host(List<PeerInfo> peers) => MaterialApp(
+  home: Scaffold(
+    body: SizedBox(width: 200, child: PeersPanel(peers: peers)),
+  ),
+);
 
 void main() {
   testWidgets('peer name is shown', (tester) async {
-    await tester.pumpWidget(
-      _host([_peer(name: 'MON', mode: 'osc_beacon')]),
-    );
+    await tester.pumpWidget(_host([_peer(name: 'MON', mode: 'osc_beacon')]));
     expect(find.text('MON'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
@@ -82,7 +78,9 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('dot is amber when a heartbeat or more has been missed', (tester) async {
+  testWidgets('dot is amber when a heartbeat or more has been missed', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _host([_peer(name: 'MON', mode: 'osc_beacon', status: PeerStatus.stale)]),
     );
@@ -90,43 +88,72 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('shows the role badge when set, omits it when unset', (tester) async {
-    await tester.pumpWidget(_host([
-      _peer(name: 'Sam', mode: 'osc_beacon', role: 'FOH'),
-      _peer(name: 'Alex', mode: 'osc_beacon'), // no role
-    ]));
+  testWidgets('shows the role badge when set, omits it when unset', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host([
+        _peer(name: 'Sam', mode: 'osc_beacon', role: 'FOH'),
+        _peer(name: 'Alex', mode: 'osc_beacon'), // no role
+      ]),
+    );
     expect(find.text('FOH'), findsOneWidget);
     expect(find.text('Sam'), findsOneWidget);
     expect(find.text('Alex'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('dot is green when healthy, gray when stale or manual', (tester) async {
-    await tester.pumpWidget(_host([
-      _peer(name: 'FOH', mode: 'mdns'), // fresh → green
-      _peer(name: 'Old', mode: 'osc_beacon', status: PeerStatus.offline), // quiet → gray
-      _peer(name: 'Booth', mode: 'manual_ip', status: PeerStatus.offline), // configured → gray
-    ]));
+  testWidgets('dot is green when healthy, gray when stale or manual', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host([
+        _peer(name: 'FOH', mode: 'mdns'), // fresh → green
+        _peer(
+          name: 'Old',
+          mode: 'osc_beacon',
+          status: PeerStatus.offline,
+        ), // quiet → gray
+        _peer(
+          name: 'Booth',
+          mode: 'manual_ip',
+          status: PeerStatus.offline,
+        ), // configured → gray
+      ]),
+    );
     expect(_dotsWithColor(PatchTheme.success), findsOneWidget);
     expect(_dotsWithColor(PatchTheme.textMuted), findsNWidgets(2));
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('departed peer: gray dot despite a recent last_seen', (tester) async {
+  testWidgets('departed peer: gray dot despite a recent last_seen', (
+    tester,
+  ) async {
     // Heard from just now, but it announced a clean departure → still gray.
     await tester.pumpWidget(
-      _host([_peer(name: 'Gone', mode: 'osc_beacon', departed: true, status: PeerStatus.offline)]),
+      _host([
+        _peer(
+          name: 'Gone',
+          mode: 'osc_beacon',
+          departed: true,
+          status: PeerStatus.offline,
+        ),
+      ]),
     );
     expect(_dotsWithColor(PatchTheme.success), findsNothing);
     expect(_dotsWithColor(PatchTheme.textMuted), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('departed peer name is italic, live peer name is not', (tester) async {
-    await tester.pumpWidget(_host([
-      _peer(name: 'Gone', mode: 'osc_beacon', departed: true),
-      _peer(name: 'Here', mode: 'osc_beacon'),
-    ]));
+  testWidgets('departed peer name is italic, live peer name is not', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host([
+        _peer(name: 'Gone', mode: 'osc_beacon', departed: true),
+        _peer(name: 'Here', mode: 'osc_beacon'),
+      ]),
+    );
     final gone = tester.widget<Text>(find.text('Gone'));
     final here = tester.widget<Text>(find.text('Here'));
     expect(gone.style?.fontStyle, FontStyle.italic);
@@ -134,10 +161,10 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('status dot carries a tooltip explaining the colours', (tester) async {
-    await tester.pumpWidget(
-      _host([_peer(name: 'MON', mode: 'osc_beacon')]),
-    );
+  testWidgets('status dot carries a tooltip explaining the colours', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_host([_peer(name: 'MON', mode: 'osc_beacon')]));
     final tips = tester.widgetList<Tooltip>(find.byType(Tooltip));
     final dotTip = tips.firstWhere(
       (t) => (t.message ?? '').contains('Green'),
@@ -145,7 +172,10 @@ void main() {
     );
     expect(dotTip.message, contains('Amber'));
     expect(dotTip.message, contains('Grey'));
-    expect(dotTip.message, contains('manual')); // covers the manual / offline grey case
+    expect(
+      dotTip.message,
+      contains('manual'),
+    ); // covers the manual / offline grey case
     await tester.pumpWidget(const SizedBox());
   });
 }

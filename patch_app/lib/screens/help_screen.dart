@@ -58,13 +58,33 @@ class _HelpScreenState extends State<HelpScreen> {
   }
 
   MarkdownStyleSheet _styleSheet(BuildContext context) {
-    const body = TextStyle(color: PatchTheme.textPrimary, fontSize: PatchTheme.fontSizeMedium, height: 1.55);
+    const body = TextStyle(
+      color: PatchTheme.textPrimary,
+      fontSize: PatchTheme.fontSizeMedium,
+      height: 1.55,
+    );
     return MarkdownStyleSheet(
       p: body,
-      h1: const TextStyle(color: PatchTheme.textPrimary, fontSize: 22, fontWeight: FontWeight.w700),
-      h2: const TextStyle(color: PatchTheme.textPrimary, fontSize: 18, fontWeight: FontWeight.w600),
-      h3: const TextStyle(color: PatchTheme.textPrimary, fontSize: PatchTheme.fontSizeMedium, fontWeight: FontWeight.w600),
-      code: const TextStyle(color: PatchTheme.accent, fontFamily: 'monospace', fontSize: PatchTheme.fontSizeSmall),
+      h1: const TextStyle(
+        color: PatchTheme.textPrimary,
+        fontSize: 22,
+        fontWeight: FontWeight.w700,
+      ),
+      h2: const TextStyle(
+        color: PatchTheme.textPrimary,
+        fontSize: 18,
+        fontWeight: FontWeight.w600,
+      ),
+      h3: const TextStyle(
+        color: PatchTheme.textPrimary,
+        fontSize: PatchTheme.fontSizeMedium,
+        fontWeight: FontWeight.w600,
+      ),
+      code: const TextStyle(
+        color: PatchTheme.accent,
+        fontFamily: 'monospace',
+        fontSize: PatchTheme.fontSizeSmall,
+      ),
       codeblockDecoration: BoxDecoration(
         color: PatchTheme.surfaceHigh,
         borderRadius: BorderRadius.circular(6),
@@ -73,15 +93,27 @@ class _HelpScreenState extends State<HelpScreen> {
       blockquoteDecoration: const BoxDecoration(
         border: Border(left: BorderSide(color: PatchTheme.accent, width: 3)),
       ),
-      blockquote: const TextStyle(color: PatchTheme.textSecondary, fontSize: PatchTheme.fontSizeMedium),
-      tableHead: const TextStyle(color: PatchTheme.textPrimary, fontWeight: FontWeight.w700),
+      blockquote: const TextStyle(
+        color: PatchTheme.textSecondary,
+        fontSize: PatchTheme.fontSizeMedium,
+      ),
+      tableHead: const TextStyle(
+        color: PatchTheme.textPrimary,
+        fontWeight: FontWeight.w700,
+      ),
       tableBody: body,
       tableBorder: TableBorder.all(color: PatchTheme.border),
       horizontalRuleDecoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: PatchTheme.border)),
       ),
-      strong: const TextStyle(color: PatchTheme.textPrimary, fontWeight: FontWeight.w700),
-      em: const TextStyle(color: PatchTheme.textPrimary, fontStyle: FontStyle.italic),
+      strong: const TextStyle(
+        color: PatchTheme.textPrimary,
+        fontWeight: FontWeight.w700,
+      ),
+      em: const TextStyle(
+        color: PatchTheme.textPrimary,
+        fontStyle: FontStyle.italic,
+      ),
       a: const TextStyle(color: PatchTheme.accent),
       listBullet: const TextStyle(color: PatchTheme.textSecondary),
     );
@@ -92,7 +124,11 @@ class _HelpScreenState extends State<HelpScreen> {
 ///
 /// [assetPath] must match an entry declared in pubspec.yaml assets (e.g.
 /// `'assets/docs/networking.md'`).
-void openHelp(BuildContext context, {required String assetPath, required String title}) {
+void openHelp(
+  BuildContext context, {
+  required String assetPath,
+  required String title,
+}) {
   Navigator.push(
     context,
     MaterialPageRoute<void>(

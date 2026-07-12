@@ -29,7 +29,9 @@ class MessageSearchBar extends StatefulWidget {
 }
 
 class _MessageSearchBarState extends State<MessageSearchBar> {
-  late final TextEditingController _ctrl = TextEditingController(text: widget.query);
+  late final TextEditingController _ctrl = TextEditingController(
+    text: widget.query,
+  );
 
   @override
   void dispose() {

@@ -12,18 +12,17 @@ Widget _host({
   ValueChanged<String>? onQueryChanged,
   ValueChanged<String>? onToggleCategory,
   VoidCallback? onClose,
-}) =>
-    MaterialApp(
-      home: Scaffold(
-        body: MessageSearchBar(
-          query: query,
-          categories: categories,
-          onQueryChanged: onQueryChanged ?? (_) {},
-          onToggleCategory: onToggleCategory ?? (_) {},
-          onClose: onClose ?? () {},
-        ),
-      ),
-    );
+}) => MaterialApp(
+  home: Scaffold(
+    body: MessageSearchBar(
+      query: query,
+      categories: categories,
+      onQueryChanged: onQueryChanged ?? (_) {},
+      onToggleCategory: onToggleCategory ?? (_) {},
+      onClose: onClose ?? () {},
+    ),
+  ),
+);
 
 void main() {
   testWidgets('renders the field and the three priority chips', (tester) async {

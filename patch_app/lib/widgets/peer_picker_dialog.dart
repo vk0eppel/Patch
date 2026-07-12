@@ -25,8 +25,9 @@ class PeerPickerDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final candidates =
-        peers.where((p) => p.address.isNotEmpty && p.oscPort > 0).toList();
+    final candidates = peers
+        .where((p) => p.address.isNotEmpty && p.oscPort > 0)
+        .toList();
     return AlertDialog(
       title: Text(title),
       content: SizedBox(
@@ -49,17 +50,19 @@ class PeerPickerDialog extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  ...candidates.map((p) => ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.person_outline, size: 18),
-                        title: Text(p.peerName),
-                        subtitle: Text(p.address),
-                        onTap: () {
-                          Navigator.pop(context);
-                          onPick(p.peerId, p.peerName);
-                        },
-                      )),
+                  ...candidates.map(
+                    (p) => ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.person_outline, size: 18),
+                      title: Text(p.peerName),
+                      subtitle: Text(p.address),
+                      onTap: () {
+                        Navigator.pop(context);
+                        onPick(p.peerId, p.peerName);
+                      },
+                    ),
+                  ),
                 ],
               ),
       ),

@@ -7,37 +7,38 @@ import 'package:patch/models/channel.dart';
 import 'package:patch/widgets/macros_panel.dart';
 
 ChannelMacro _macro(String label, {String channelId = 'rf'}) => ChannelMacro(
-      channelId: channelId,
-      channelColor: const Color(0xFF1E88E5),
-      macro: MacroMessage(label: label, payload: label),
-    );
+  channelId: channelId,
+  channelColor: const Color(0xFF1E88E5),
+  macro: MacroMessage(label: label, payload: label),
+);
 
 Widget _host({
   required List<ChannelMacro> macros,
   required List<ChannelMacro> globalMacros,
-}) =>
-    MaterialApp(
-      home: Scaffold(
-        body: SizedBox(
-          width: 200,
-          height: 600,
-          child: MacrosPanel(
-            macros: macros,
-            globalMacros: globalMacros,
-            isMulti: false,
-            columns: 1,
-            onMacro: (_) {},
-          ),
-        ),
+}) => MaterialApp(
+  home: Scaffold(
+    body: SizedBox(
+      width: 200,
+      height: 600,
+      child: MacrosPanel(
+        macros: macros,
+        globalMacros: globalMacros,
+        isMulti: false,
+        columns: 1,
+        onMacro: (_) {},
       ),
-    );
+    ),
+  ),
+);
 
 void main() {
   testWidgets('global macros render above per-channel macros', (tester) async {
-    await tester.pumpWidget(_host(
-      macros: [_macro('CHAN_MAC')],
-      globalMacros: [_macro('GLOBAL_MAC', channelId: '')],
-    ));
+    await tester.pumpWidget(
+      _host(
+        macros: [_macro('CHAN_MAC')],
+        globalMacros: [_macro('GLOBAL_MAC', channelId: '')],
+      ),
+    );
     await tester.pumpAndSettle();
 
     // Both present, plus the GLOBAL group header.
@@ -51,11 +52,15 @@ void main() {
     expect(globalY, lessThan(chanY));
   });
 
-  testWidgets('with no per-channel macros, only the global group renders', (tester) async {
-    await tester.pumpWidget(_host(
-      macros: const [],
-      globalMacros: [_macro('GLOBAL_MAC', channelId: '')],
-    ));
+  testWidgets('with no per-channel macros, only the global group renders', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        macros: const [],
+        globalMacros: [_macro('GLOBAL_MAC', channelId: '')],
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('GLOBAL_MAC'), findsOneWidget);
     expect(find.text('No macros'), findsNothing);

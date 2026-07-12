@@ -196,8 +196,9 @@ class AppStore extends ChangeNotifier {
           // Drop the trimmed messages' delivery entries too — they'd
           // otherwise accumulate for the session (the same leak
           // DeliveryTracker.clearForMessageIds exists to prevent on clear).
-          _delivery
-              .clearForMessageIds(list.take(excess).map((m) => m.messageId));
+          _delivery.clearForMessageIds(
+            list.take(excess).map((m) => m.messageId),
+          );
           list.removeRange(0, excess);
         }
         notifyListeners();
@@ -232,15 +233,13 @@ class AppStoreScope extends InheritedNotifier<AppStore> {
   }) : super(notifier: store);
 
   static AppStore of(BuildContext context) {
-    final scope =
-        context.dependOnInheritedWidgetOfExactType<AppStoreScope>();
+    final scope = context.dependOnInheritedWidgetOfExactType<AppStoreScope>();
     assert(scope?.notifier != null, 'No AppStoreScope found in context');
     return scope!.notifier!;
   }
 
   static AppStore read(BuildContext context) {
-    final scope =
-        context.getInheritedWidgetOfExactType<AppStoreScope>();
+    final scope = context.getInheritedWidgetOfExactType<AppStoreScope>();
     assert(scope?.notifier != null, 'No AppStoreScope found in context');
     return scope!.notifier!;
   }

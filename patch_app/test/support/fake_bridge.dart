@@ -64,8 +64,10 @@ class FakeBridge extends Fake implements BridgeClient {
   }
 
   @override
-  Future<List<PatchMessage>> getMessages(String channelId,
-      {int limit = 500}) async {
+  Future<List<PatchMessage>> getMessages(
+    String channelId, {
+    int limit = 500,
+  }) async {
     getMessagesCalls++;
     if (gateMessages != null) await gateMessages!.future;
     return messagesToReturn[channelId] ?? const [];
@@ -115,17 +117,20 @@ class FakeBridge extends Fake implements BridgeClient {
 // ── Shared fixture builders ─────────────────────────────────────────────
 
 PatchChannel chan(String id) => PatchChannel(
-    id: id, displayName: id.toUpperCase(), color: const Color(0xFF1E88E5));
+  id: id,
+  displayName: id.toUpperCase(),
+  color: const Color(0xFF1E88E5),
+);
 
 PatchMessage msg(String channelId, String id) => PatchMessage(
-      messageId: id,
-      senderId: 's',
-      senderName: 'S',
-      channelId: channelId,
-      timestamp: DateTime.utc(2026, 6, 22),
-      priority: 1,
-      payload: 'hi',
-    );
+  messageId: id,
+  senderId: 's',
+  senderName: 'S',
+  channelId: channelId,
+  timestamp: DateTime.utc(2026, 6, 22),
+  priority: 1,
+  payload: 'hi',
+);
 
 AppConfig cfg({String clientName = 'Me', bool nameIsDefault = false}) =>
     AppConfig(
@@ -146,14 +151,13 @@ PeerInfo peerInfo(
   String peerName = '',
   String address = '10.0.0.1',
   int oscPort = 9000,
-}) =>
-    PeerInfo(
-      peerId: id,
-      peerName: peerName.isEmpty ? 'peer-$id' : peerName,
-      channels: const [],
-      address: address,
-      oscPort: oscPort,
-      lastSeen: DateTime.utc(2026, 6, 22),
-      discoveryMode: 'osc_beacon',
-      status: PeerStatus.online,
-    );
+}) => PeerInfo(
+  peerId: id,
+  peerName: peerName.isEmpty ? 'peer-$id' : peerName,
+  channels: const [],
+  address: address,
+  oscPort: oscPort,
+  lastSeen: DateTime.utc(2026, 6, 22),
+  discoveryMode: 'osc_beacon',
+  status: PeerStatus.online,
+);

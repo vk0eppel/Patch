@@ -35,22 +35,22 @@ class NetworkPresenter {
   /// Save the heartbeat interval; out-of-bounds is rejected before any
   /// bridge call.
   Future<SaveResult> saveHeartbeatInterval(int secs) => validateThenSave(
-        validate: () => (secs < heartbeatMin || secs > heartbeatMax)
-            ? 'Heartbeat interval must be between $heartbeatMin and '
-                '$heartbeatMax seconds'
-            : null,
-        save: () => setHeartbeatInterval(secs),
-        refetch: refreshConfig,
-      );
+    validate: () => (secs < heartbeatMin || secs > heartbeatMax)
+        ? 'Heartbeat interval must be between $heartbeatMin and '
+              '$heartbeatMax seconds'
+        : null,
+    save: () => setHeartbeatInterval(secs),
+    refetch: refreshConfig,
+  );
 
   /// Save the OSC port; out-of-bounds is rejected before any bridge call.
   Future<SaveResult> saveOscPort(int port) => validateThenSave(
-        validate: () => (port < oscPortMin || port > oscPortMax)
-            ? 'OSC port must be between $oscPortMin and $oscPortMax'
-            : null,
-        save: () => setOscPort(port),
-        refetch: refreshConfig,
-      );
+    validate: () => (port < oscPortMin || port > oscPortMax)
+        ? 'OSC port must be between $oscPortMin and $oscPortMax'
+        : null,
+    save: () => setOscPort(port),
+    refetch: refreshConfig,
+  );
 
   /// Available NICs for the picker. A load failure degrades to an empty
   /// picker — non-critical.

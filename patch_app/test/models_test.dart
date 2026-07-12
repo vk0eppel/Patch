@@ -11,14 +11,14 @@ import 'package:patch/src/rust/state/channel.dart' as rust_channel;
 void main() {
   group('PatchMessage', () {
     PatchMessage make(int priority) => PatchMessage(
-          messageId: 'm',
-          senderId: 's',
-          senderName: 'n',
-          channelId: 'rf',
-          timestamp: DateTime.utc(2026, 6, 4, 12),
-          priority: priority,
-          payload: 'x',
-        );
+      messageId: 'm',
+      senderId: 's',
+      senderName: 'n',
+      channelId: 'rf',
+      timestamp: DateTime.utc(2026, 6, 4, 12),
+      priority: priority,
+      payload: 'x',
+    );
 
     test('priority getters match the wire contract (0=debug…3=critical)', () {
       expect(make(0).isCritical, isFalse); // debug
@@ -57,15 +57,15 @@ void main() {
 
     test('isManual is true only for a Static Peer (manual_ip)', () {
       PeerInfo peer(String mode) => PeerInfo(
-            peerId: 'p1',
-            peerName: 'MON',
-            channels: const [],
-            address: '',
-            oscPort: 9000,
-            lastSeen: DateTime.parse('2026-06-04T12:00:00Z'),
-            discoveryMode: mode,
-            status: PeerStatus.online,
-          );
+        peerId: 'p1',
+        peerName: 'MON',
+        channels: const [],
+        address: '',
+        oscPort: 9000,
+        lastSeen: DateTime.parse('2026-06-04T12:00:00Z'),
+        discoveryMode: mode,
+        status: PeerStatus.online,
+      );
       // 'manual_ip' is the only spelling the model ever emits (fromRust) —
       // the classification gates the DM affordance, so no other string may
       // classify as manual.
@@ -77,33 +77,45 @@ void main() {
   });
 
   group('PatchChannel.fromRust — the one inbound construction path', () {
-    rust_channel.Channel wire(String color,
-            [List<rust_channel.MacroMessage> macros = const []]) =>
-        rust_channel.Channel(
-          id: 'rf',
-          displayName: 'RF',
-          color: color,
-          macros: macros,
-          flashOnCritical: true,
-          flashOnMessage: false,
-        );
+    rust_channel.Channel wire(
+      String color, [
+      List<rust_channel.MacroMessage> macros = const [],
+    ]) => rust_channel.Channel(
+      id: 'rf',
+      displayName: 'RF',
+      color: color,
+      macros: macros,
+      flashOnCritical: true,
+      flashOnMessage: false,
+    );
 
     test('parses colour hex with and without a leading #', () {
-      expect(PatchChannel.fromRust(wire('#1E88E5')).color.toARGB32(),
-          0xFF1E88E5);
       expect(
-          PatchChannel.fromRust(wire('1E88E5')).color.toARGB32(), 0xFF1E88E5);
+        PatchChannel.fromRust(wire('#1E88E5')).color.toARGB32(),
+        0xFF1E88E5,
+      );
+      expect(
+        PatchChannel.fromRust(wire('1E88E5')).color.toARGB32(),
+        0xFF1E88E5,
+      );
     });
 
     test('maps the macro list field-for-field', () {
-      final c = PatchChannel.fromRust(wire('#1E88E5', const [
-        rust_channel.MacroMessage(
+      final c = PatchChannel.fromRust(
+        wire('#1E88E5', const [
+          rust_channel.MacroMessage(
             label: 'CLEAR',
             payload: 'Channel clear',
             keyBinding: 'F1',
-            priority: 1),
-        rust_channel.MacroMessage(label: 'HOLD', payload: 'HOLD', priority: 2),
-      ]));
+            priority: 1,
+          ),
+          rust_channel.MacroMessage(
+            label: 'HOLD',
+            payload: 'HOLD',
+            priority: 2,
+          ),
+        ]),
+      );
       expect(c.macros, hasLength(2));
       expect(c.macros[0].label, 'CLEAR');
       expect(c.macros[0].keyBinding, 'F1');
@@ -113,7 +125,10 @@ void main() {
 
     test('constructor flag defaults (flash flags, empty macros)', () {
       const c = PatchChannel(
-          id: 'x', displayName: 'X', color: Color(0xFF607D8B));
+        id: 'x',
+        displayName: 'X',
+        color: Color(0xFF607D8B),
+      );
       expect(c.flashOnCritical, isTrue);
       expect(c.flashOnMessage, isFalse);
       expect(c.flashCount, isNull);

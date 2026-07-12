@@ -34,10 +34,12 @@ class _MessageListState extends State<MessageList> {
     // than the length, because the list is capped (home_screen) so length stays
     // pinned at the cap once full and a length check would stop firing. The
     // length compare still covers clears/session loads (empty↔non-empty).
-    final oldLast =
-        oldWidget.messages.isNotEmpty ? oldWidget.messages.last.messageId : null;
-    final newLast =
-        widget.messages.isNotEmpty ? widget.messages.last.messageId : null;
+    final oldLast = oldWidget.messages.isNotEmpty
+        ? oldWidget.messages.last.messageId
+        : null;
+    final newLast = widget.messages.isNotEmpty
+        ? widget.messages.last.messageId
+        : null;
     if (newLast != oldLast ||
         widget.messages.length != oldWidget.messages.length) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -123,7 +125,9 @@ class _MessageTile extends StatelessWidget {
   String get _flashLabel {
     final name = message.flashSenderName ?? message.senderName;
     final role = message.flashSenderRole;
-    return (role != null && role.isNotEmpty) ? '$name ($role) flashed' : '$name flashed';
+    return (role != null && role.isNotEmpty)
+        ? '$name ($role) flashed'
+        : '$name flashed';
   }
 
   @override
@@ -185,8 +189,8 @@ class _MessageTile extends StatelessWidget {
         color: isCritical
             ? PatchTheme.critical.withAlpha(25)
             : isWarning
-                ? PatchTheme.warning.withAlpha(15)
-                : Colors.transparent,
+            ? PatchTheme.warning.withAlpha(15)
+            : Colors.transparent,
         borderRadius: BorderRadius.circular(4),
         border: Border(left: BorderSide(color: _priorityColor, width: 3)),
       ),
@@ -233,8 +237,8 @@ class _MessageTile extends StatelessWidget {
                 color: isCritical
                     ? PatchTheme.critical
                     : isWarning
-                        ? PatchTheme.warning
-                        : PatchTheme.accent,
+                    ? PatchTheme.warning
+                    : PatchTheme.accent,
                 fontSize: PatchTheme.fontSizeSmall,
                 fontWeight: FontWeight.w700,
               ),
@@ -245,7 +249,9 @@ class _MessageTile extends StatelessWidget {
               child: Text(
                 message.payload,
                 style: TextStyle(
-                  color: isCritical ? PatchTheme.critical : PatchTheme.textPrimary,
+                  color: isCritical
+                      ? PatchTheme.critical
+                      : PatchTheme.textPrimary,
                   fontSize: PatchTheme.fontSizeMedium,
                   fontWeight: isCritical ? FontWeight.w700 : FontWeight.w400,
                 ),
@@ -269,9 +275,13 @@ class _MessageTile extends StatelessWidget {
       tip = d.total == 0
           ? 'No peers online — not delivered'
           : d.failedPeers.isNotEmpty
-              ? 'Not delivered to: ${d.failedPeers.join(', ')}'
-              : 'Not delivered to all peers';
-      child = const Icon(Icons.error_outline, size: 14, color: PatchTheme.critical);
+          ? 'Not delivered to: ${d.failedPeers.join(', ')}'
+          : 'Not delivered to all peers';
+      child = const Icon(
+        Icons.error_outline,
+        size: 14,
+        color: PatchTheme.critical,
+      );
     } else if (d.isComplete) {
       tip = 'Delivered to all ${d.total}';
       child = const Icon(Icons.done_all, size: 14, color: PatchTheme.success);

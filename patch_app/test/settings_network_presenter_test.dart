@@ -25,8 +25,7 @@ void main() {
   });
 
   group('NetworkPresenter', () {
-    test('heartbeat outside 1–60 is rejected before any bridge call',
-        () async {
+    test('heartbeat outside 1–60 is rejected before any bridge call', () async {
       expect(await p.saveHeartbeatInterval(0), isA<SaveError>());
       expect(await p.saveHeartbeatInterval(61), isA<SaveError>());
       expect(calls, isEmpty);
@@ -37,12 +36,14 @@ void main() {
       expect(calls, ['setHeartbeat:7', 'refreshConfig']);
     });
 
-    test('OSC port outside 1024–65535 is rejected before any bridge call',
-        () async {
-      expect(await p.saveOscPort(80), isA<SaveError>());
-      expect(await p.saveOscPort(70000), isA<SaveError>());
-      expect(calls, isEmpty);
-    });
+    test(
+      'OSC port outside 1024–65535 is rejected before any bridge call',
+      () async {
+        expect(await p.saveOscPort(80), isA<SaveError>());
+        expect(await p.saveOscPort(70000), isA<SaveError>());
+        expect(calls, isEmpty);
+      },
+    );
 
     test('valid OSC port saves then refetches', () async {
       expect(await p.saveOscPort(9000), isA<SaveOk>());

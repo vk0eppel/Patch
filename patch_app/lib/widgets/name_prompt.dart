@@ -7,18 +7,9 @@ import '../theme/patch_theme.dart';
 bool shouldShowNamePrompt({
   required bool nameIsDefault,
   required bool alreadyShown,
-}) =>
-    nameIsDefault && !alreadyShown;
+}) => nameIsDefault && !alreadyShown;
 
-const _kRoleSuggestions = [
-  'FOH',
-  'MON',
-  'PM',
-  'LD',
-  'TD',
-  'Stage',
-  'Comms',
-];
+const _kRoleSuggestions = ['FOH', 'MON', 'PM', 'LD', 'TD', 'Stage', 'Comms'];
 
 /// Show the first-run identity prompt. Collects name (pre-filled with
 /// [currentName]) and role (empty, with suggestion chips) in one step.
@@ -32,8 +23,9 @@ Future<void> showNamePrompt(
   required ValueChanged<String> onSaveName,
   required ValueChanged<String> onSaveRole,
 }) {
-  final nameCtrl = TextEditingController(text: currentName)
-    ..selection = TextSelection(baseOffset: 0, extentOffset: currentName.length);
+  final nameCtrl = TextEditingController(
+    text: currentName,
+  )..selection = TextSelection(baseOffset: 0, extentOffset: currentName.length);
   final roleCtrl = TextEditingController();
 
   return showDialog<void>(
@@ -96,11 +88,14 @@ Future<void> showNamePrompt(
                         onTap: () => setState(() {
                           roleCtrl.text = selected ? '' : suggestion;
                           roleCtrl.selection = TextSelection.collapsed(
-                              offset: roleCtrl.text.length);
+                            offset: roleCtrl.text.length,
+                          );
                         }),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: selected
                                 ? PatchTheme.accent.withAlpha(40)
@@ -135,10 +130,13 @@ Future<void> showNamePrompt(
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                    backgroundColor: PatchTheme.accent),
+                  backgroundColor: PatchTheme.accent,
+                ),
                 onPressed: save,
-                child: const Text('Use this name',
-                    style: TextStyle(color: Colors.white)),
+                child: const Text(
+                  'Use this name',
+                  style: TextStyle(color: Colors.white),
+                ),
               ),
             ],
           );

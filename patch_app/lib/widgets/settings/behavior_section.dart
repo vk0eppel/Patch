@@ -31,20 +31,23 @@ class BehaviorSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(children: [
-          const Expanded(child: SettingsSectionHeader('Behavior')),
-          SettingsResetButton(
-            section: 'Behavior',
-            onReset: () => runGuarded(context, presenter.resetDefaults),
-          ),
-        ]),
+        Row(
+          children: [
+            const Expanded(child: SettingsSectionHeader('Behavior')),
+            SettingsResetButton(
+              section: 'Behavior',
+              onReset: () => runGuarded(context, presenter.resetDefaults),
+            ),
+          ],
+        ),
         const SizedBox(height: 4),
         SwitchListTile(
           title: const Text(
             'Flash on every message',
             style: TextStyle(
-                color: PatchTheme.textPrimary,
-                fontSize: PatchTheme.fontSizeSmall),
+              color: PatchTheme.textPrimary,
+              fontSize: PatchTheme.fontSizeSmall,
+            ),
           ),
           subtitle: const Text(
             'Flash the channel border on any incoming message',
@@ -60,8 +63,9 @@ class BehaviorSection extends StatelessWidget {
           title: const Text(
             'Flash on critical messages',
             style: TextStyle(
-                color: PatchTheme.textPrimary,
-                fontSize: PatchTheme.fontSizeSmall),
+              color: PatchTheme.textPrimary,
+              fontSize: PatchTheme.fontSizeSmall,
+            ),
           ),
           subtitle: const Text(
             'Flash the channel border when a priority-3 message arrives',
@@ -77,8 +81,9 @@ class BehaviorSection extends StatelessWidget {
           title: const Text(
             'Audible alert',
             style: TextStyle(
-                color: PatchTheme.textPrimary,
-                fontSize: PatchTheme.fontSizeSmall),
+              color: PatchTheme.textPrimary,
+              fontSize: PatchTheme.fontSizeSmall,
+            ),
           ),
           subtitle: const Text(
             'Play a sound when a channel flashes (critical / page / broadcast)',
@@ -97,8 +102,9 @@ class BehaviorSection extends StatelessWidget {
             title: const Text(
               'Flash whole screen',
               style: TextStyle(
-                  color: PatchTheme.textPrimary,
-                  fontSize: PatchTheme.fontSizeSmall),
+                color: PatchTheme.textPrimary,
+                fontSize: PatchTheme.fontSizeSmall,
+              ),
             ),
             subtitle: const Text(
               'Also pulse a full-screen overlay so a Flash is visible even when '
@@ -128,8 +134,10 @@ class BehaviorSection extends StatelessWidget {
                   ),
                   Text(
                     'Number of times the channel flashes per event',
-                    style:
-                        TextStyle(color: PatchTheme.textSecondary, fontSize: 11),
+                    style: TextStyle(
+                      color: PatchTheme.textSecondary,
+                      fontSize: 11,
+                    ),
                   ),
                 ],
               ),
@@ -160,8 +168,10 @@ class BehaviorSection extends StatelessWidget {
                   ),
                   Text(
                     'Number of columns in the macros side panel',
-                    style:
-                        TextStyle(color: PatchTheme.textSecondary, fontSize: 11),
+                    style: TextStyle(
+                      color: PatchTheme.textSecondary,
+                      fontSize: 11,
+                    ),
                   ),
                 ],
               ),
@@ -175,7 +185,9 @@ class BehaviorSection extends StatelessWidget {
               ],
               selected: {macrosColumns},
               onSelectionChanged: (s) => runGuarded(
-                  context, () => presenter.saveMacrosColumns(s.first)),
+                context,
+                () => presenter.saveMacrosColumns(s.first),
+              ),
               style: SegmentedButton.styleFrom(
                 foregroundColor: PatchTheme.textSecondary,
                 selectedForegroundColor: PatchTheme.accent,
@@ -191,8 +203,9 @@ class BehaviorSection extends StatelessWidget {
             title: const Text(
               'Hide keyboard on channel switch',
               style: TextStyle(
-                  color: PatchTheme.textPrimary,
-                  fontSize: PatchTheme.fontSizeSmall),
+                color: PatchTheme.textPrimary,
+                fontSize: PatchTheme.fontSizeSmall,
+              ),
             ),
             subtitle: const Text(
               'Keeps the software keyboard hidden until you tap the input field',

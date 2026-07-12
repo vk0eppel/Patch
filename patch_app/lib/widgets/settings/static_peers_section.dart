@@ -38,8 +38,11 @@ class StaticPeersSection extends StatelessWidget {
               icon: const Icon(Icons.help_outline, size: 16),
               color: PatchTheme.textMuted,
               tooltip: 'Networking guide',
-              onPressed: () => openHelp(context,
-                  assetPath: 'assets/docs/networking.md', title: 'Networking'),
+              onPressed: () => openHelp(
+                context,
+                assetPath: 'assets/docs/networking.md',
+                title: 'Networking',
+              ),
             ),
             TextButton.icon(
               icon: const Icon(Icons.add, size: 16),
@@ -50,11 +53,12 @@ class StaticPeersSection extends StatelessWidget {
             SettingsResetButton(
               section: 'Static Peers',
               onReset: () => runGuarded(
-                  context,
-                  () => presenter.removeAll([
-                        for (final peer in staticPeers)
-                          (address: peer.address, port: peer.port),
-                      ])),
+                context,
+                () => presenter.removeAll([
+                  for (final peer in staticPeers)
+                    (address: peer.address, port: peer.port),
+                ]),
+              ),
             ),
           ],
         ),
@@ -63,8 +67,9 @@ class StaticPeersSection extends StatelessWidget {
           'Add peers by IP when mDNS is blocked (AP isolation, VLANs, show networks). '
           'Static peers are always sent to and never expire.',
           style: TextStyle(
-              color: PatchTheme.textSecondary,
-              fontSize: PatchTheme.fontSizeSmall),
+            color: PatchTheme.textSecondary,
+            fontSize: PatchTheme.fontSizeSmall,
+          ),
         ),
         if (interfaces.isNotEmpty) ...[
           const SizedBox(height: 8),
@@ -72,21 +77,26 @@ class StaticPeersSection extends StatelessWidget {
             spacing: 12,
             runSpacing: 4,
             children: interfaces
-                .map((iface) => Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.laptop,
-                            size: 13, color: PatchTheme.textMuted),
-                        const SizedBox(width: 4),
-                        Text(
-                          'This device: ${iface['ip']} (${iface['name']})',
-                          style: const TextStyle(
-                            color: PatchTheme.textMuted,
-                            fontSize: PatchTheme.fontSizeMedium,
-                          ),
+                .map(
+                  (iface) => Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.laptop,
+                        size: 13,
+                        color: PatchTheme.textMuted,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'This device: ${iface['ip']} (${iface['name']})',
+                        style: const TextStyle(
+                          color: PatchTheme.textMuted,
+                          fontSize: PatchTheme.fontSizeMedium,
                         ),
-                      ],
-                    ))
+                      ),
+                    ],
+                  ),
+                )
                 .toList(),
           ),
         ],
@@ -97,16 +107,21 @@ class StaticPeersSection extends StatelessWidget {
             child: Text(
               'No static peers',
               style: TextStyle(
-                  color: PatchTheme.textMuted,
-                  fontSize: PatchTheme.fontSizeSmall),
+                color: PatchTheme.textMuted,
+                fontSize: PatchTheme.fontSizeSmall,
+              ),
             ),
           )
         else
-          ...staticPeers.map((peer) => _StaticPeerRow(
-                peer: peer,
-                onDelete: () => runGuarded(
-                    context, () => presenter.remove(peer.address, peer.port)),
-              )),
+          ...staticPeers.map(
+            (peer) => _StaticPeerRow(
+              peer: peer,
+              onDelete: () => runGuarded(
+                context,
+                () => presenter.remove(peer.address, peer.port),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -136,7 +151,11 @@ class _StaticPeerRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.push_pin_outlined, size: 14, color: PatchTheme.textMuted),
+          const Icon(
+            Icons.push_pin_outlined,
+            size: 14,
+            color: PatchTheme.textMuted,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -162,7 +181,11 @@ class _StaticPeerRow extends StatelessWidget {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.delete_outline, size: 16, color: PatchTheme.textMuted),
+            icon: const Icon(
+              Icons.delete_outline,
+              size: 16,
+              color: PatchTheme.textMuted,
+            ),
             tooltip: 'Remove peer',
             onPressed: onDelete,
             padding: EdgeInsets.zero,
@@ -218,7 +241,10 @@ void _showAddPeerDialog(BuildContext context, StaticPeersPresenter presenter) {
               ),
               if (error != null) ...[
                 const SizedBox(height: 8),
-                Text(error!, style: const TextStyle(color: PatchTheme.critical)),
+                Text(
+                  error!,
+                  style: const TextStyle(color: PatchTheme.critical),
+                ),
               ],
             ],
           ),
@@ -259,4 +285,3 @@ void _showAddPeerDialog(BuildContext context, StaticPeersPresenter presenter) {
     ),
   );
 }
-

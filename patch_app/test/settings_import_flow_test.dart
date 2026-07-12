@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -12,8 +11,8 @@ import 'support/fake_bridge.dart';
 /// #182: the picker → request → offer flow, end to end through a fake
 /// bridge — the previously-untested dialog choreography around the
 /// PeerRequestGate. Uses the shared FakeBridge (#188) with a peer preloaded.
-FakeBridge _bridge() => FakeBridge()
-  ..peersToReturn = [peerInfo('peer-foh', peerName: 'FOH')];
+FakeBridge _bridge() =>
+    FakeBridge()..peersToReturn = [peerInfo('peer-foh', peerName: 'FOH')];
 
 void main() {
   setUp(() {
@@ -52,13 +51,19 @@ void main() {
     expect(bridge.requestedChannelsFrom, ['peer-foh']);
 
     // The solicited offer arrives → the preview dialog opens.
-    bridge.push(ChannelsOffered(
-      fromPeerId: 'peer-foh',
-      fromName: 'FOH',
-      channels: [
-        PatchChannel(id: 'rf', displayName: 'RF', color: const Color(0xFFFF0000)),
-      ],
-    ));
+    bridge.push(
+      ChannelsOffered(
+        fromPeerId: 'peer-foh',
+        fromName: 'FOH',
+        channels: [
+          PatchChannel(
+            id: 'rf',
+            displayName: 'RF',
+            color: const Color(0xFFFF0000),
+          ),
+        ],
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Channels from FOH'), findsOneWidget);
 
@@ -79,13 +84,19 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    bridge.push(ChannelsOffered(
-      fromPeerId: 'peer-foh',
-      fromName: 'FOH',
-      channels: [
-        PatchChannel(id: 'rf', displayName: 'RF', color: const Color(0xFFFF0000)),
-      ],
-    ));
+    bridge.push(
+      ChannelsOffered(
+        fromPeerId: 'peer-foh',
+        fromName: 'FOH',
+        channels: [
+          PatchChannel(
+            id: 'rf',
+            displayName: 'RF',
+            color: const Color(0xFFFF0000),
+          ),
+        ],
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Channels from FOH'), findsNothing);
   });

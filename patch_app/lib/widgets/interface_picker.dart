@@ -34,23 +34,24 @@ class InterfacePicker extends StatelessWidget {
     // when nothing has ever been resolved (mandatory pinning has no Auto).
     final items = <DropdownMenuItem<String?>>[
       if (selected == null)
-        const DropdownMenuItem(
-          value: null,
-          child: Text('Select a network…'),
+        const DropdownMenuItem(value: null, child: Text('Select a network…')),
+      ...interfaces.map(
+        (iface) => DropdownMenuItem(
+          value: iface['name'],
+          child: Text('${iface['name']}  •  ${iface['ip']}'),
         ),
-      ...interfaces.map((iface) => DropdownMenuItem(
-            value: iface['name'],
-            child: Text('${iface['name']}  •  ${iface['ip']}'),
-          )),
+      ),
     ];
 
     // Saved-but-unavailable interface → keep a matching item so the dropdown
     // doesn't assert, and the user can see/change their stale selection.
     if (selected != null && !names.contains(selected)) {
-      items.add(DropdownMenuItem(
-        value: selected,
-        child: Text('$selected  •  (not connected)'),
-      ));
+      items.add(
+        DropdownMenuItem(
+          value: selected,
+          child: Text('$selected  •  (not connected)'),
+        ),
+      );
     }
 
     return Column(
@@ -67,8 +68,11 @@ class InterfacePicker extends StatelessWidget {
             child: const Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.warning_amber_rounded,
-                    size: 16, color: PatchTheme.warning),
+                Icon(
+                  Icons.warning_amber_rounded,
+                  size: 16,
+                  color: PatchTheme.warning,
+                ),
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -76,8 +80,9 @@ class InterfacePicker extends StatelessWidget {
                     'discovered by other devices until you choose one. '
                     'Static peers still work.',
                     style: TextStyle(
-                        color: PatchTheme.warning,
-                        fontSize: PatchTheme.fontSizeSmall),
+                      color: PatchTheme.warning,
+                      fontSize: PatchTheme.fontSizeSmall,
+                    ),
                   ),
                 ),
               ],
@@ -109,7 +114,11 @@ class InterfacePicker extends StatelessWidget {
           const SizedBox(height: 8),
           Row(
             children: const [
-              Icon(Icons.check_circle_outline, size: 14, color: PatchTheme.success),
+              Icon(
+                Icons.check_circle_outline,
+                size: 14,
+                color: PatchTheme.success,
+              ),
               SizedBox(width: 6),
               Text(
                 'Applied — active within a few seconds.',

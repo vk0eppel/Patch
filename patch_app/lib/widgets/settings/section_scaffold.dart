@@ -53,8 +53,11 @@ Future<bool> confirmSettingsReset(BuildContext context, String section) async {
 class SettingsResetButton extends StatelessWidget {
   final String section;
   final VoidCallback onReset;
-  const SettingsResetButton(
-      {super.key, required this.section, required this.onReset});
+  const SettingsResetButton({
+    super.key,
+    required this.section,
+    required this.onReset,
+  });
 
   @override
   Widget build(BuildContext context) {

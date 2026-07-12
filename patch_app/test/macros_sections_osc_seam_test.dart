@@ -12,19 +12,19 @@ import 'package:patch/store/app_store.dart';
 import 'package:patch/widgets/settings/macros_sections.dart';
 
 Widget _host(MacrosSectionPresenter presenter) => MaterialApp(
-      home: AppStoreScope(
-        store: AppStore(BridgeClient()),
-        child: Scaffold(
-          body: GlobalMacrosSection(
-            bridge: BridgeClient(),
-            presenter: presenter,
-            globalMacros: const [],
-            onImportFromPeer: () {},
-            onReset: () {},
-          ),
-        ),
+  home: AppStoreScope(
+    store: AppStore(BridgeClient()),
+    child: Scaffold(
+      body: GlobalMacrosSection(
+        bridge: BridgeClient(),
+        presenter: presenter,
+        globalMacros: const [],
+        onImportFromPeer: () {},
+        onReset: () {},
       ),
-    );
+    ),
+  ),
+);
 
 Future<void> _openDialogAndFillOsc(
   WidgetTester tester, {
@@ -35,7 +35,9 @@ Future<void> _openDialogAndFillOsc(
 
   await tester.enterText(find.widgetWithText(TextField, 'Button label'), 'GO');
   await tester.enterText(
-      find.widgetWithText(TextField, 'Message text'), 'GO GO GO');
+    find.widgetWithText(TextField, 'Message text'),
+    'GO GO GO',
+  );
 
   // Enable the OSC dual-action switch.
   await tester.tap(find.text('Also send OSC'));
@@ -44,17 +46,19 @@ Future<void> _openDialogAndFillOsc(
   await tester.enterText(find.widgetWithText(TextField, 'IP'), address);
   await tester.enterText(find.widgetWithText(TextField, 'Port'), '53000');
   await tester.enterText(
-      find.widgetWithText(TextField, 'OSC path'), '/cue/1/start');
+    find.widgetWithText(TextField, 'OSC path'),
+    '/cue/1/start',
+  );
 
   await tester.tap(find.widgetWithText(ElevatedButton, 'Save'));
   await tester.pumpAndSettle();
 }
 
 void main() {
-  testWidgets(
-      'a target the validator rejects (non-IP address) is not saved, '
-      'and the dialog does not gate it with its own looser check',
-      (tester) async {
+  testWidgets('a target the validator rejects (non-IP address) is not saved, '
+      'and the dialog does not gate it with its own looser check', (
+    tester,
+  ) async {
     var saveCalled = false;
     final presenter = MacrosSectionPresenter(
       upsertMacro: ({channelId, originalLabel, required macro}) async {
@@ -71,12 +75,15 @@ void main() {
     await _openDialogAndFillOsc(tester, address: 'localhost');
 
     expect(saveCalled, isFalse);
-    expect(find.text('OSC address must be an IP address (e.g. 10.0.0.9)'),
-        findsOneWidget);
+    expect(
+      find.text('OSC address must be an IP address (e.g. 10.0.0.9)'),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('a well-formed OSC target saves through the presenter seam',
-      (tester) async {
+  testWidgets('a well-formed OSC target saves through the presenter seam', (
+    tester,
+  ) async {
     MacroOsc? savedOsc;
     final presenter = MacrosSectionPresenter(
       upsertMacro: ({channelId, originalLabel, required macro}) async {

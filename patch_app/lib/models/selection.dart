@@ -17,31 +17,31 @@ sealed class Selection {
   bool get isDmMode => this is DmSelection;
 
   bool get isMultiChannel => switch (this) {
-        ChannelSelection(ids: final ids) => ids.length > 1,
-        _ => false,
-      };
+    ChannelSelection(ids: final ids) => ids.length > 1,
+    _ => false,
+  };
 
   String? get dmPeerId => switch (this) {
-        DmSelection(peerId: final p) => p,
-        _ => null,
-      };
+    DmSelection(peerId: final p) => p,
+    _ => null,
+  };
 
   /// Channel-strip tab ids to highlight — channel ids, or the ALL tab. Empty
   /// during a DM: DM tabs never appear in the channel strip (CONTEXT.md).
   Set<String> get tabIds => switch (this) {
-        ChannelSelection(ids: final ids) => ids,
-        AllSelection() => {kAllChannelId},
-        DmSelection() => const {},
-      };
+    ChannelSelection(ids: final ids) => ids,
+    AllSelection() => {kAllChannelId},
+    DmSelection() => const {},
+  };
 
   /// True when `id` (a raw channel id, `__all__`, or `dm:<peer>`) names what's
   /// currently selected — the one-call replacement for the old
   /// `_selectedIds.contains(id)` shape-sniffing.
   bool containsRawId(String id) => switch (this) {
-        ChannelSelection(ids: final ids) => ids.contains(id),
-        AllSelection() => id == kAllChannelId,
-        DmSelection(peerId: final p) => id == DmThread(p).key,
-      };
+    ChannelSelection(ids: final ids) => ids.contains(id),
+    AllSelection() => id == kAllChannelId,
+    DmSelection(peerId: final p) => id == DmThread(p).key,
+  };
 }
 
 bool _setEquals(Set<String> a, Set<String> b) =>

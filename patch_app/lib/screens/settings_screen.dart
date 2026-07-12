@@ -30,10 +30,7 @@ import 'help_screen.dart';
 class SettingsScreen extends StatefulWidget {
   final BridgeClient bridge;
 
-  const SettingsScreen({
-    super.key,
-    required this.bridge,
-  });
+  const SettingsScreen({super.key, required this.bridge});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -115,8 +112,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     'Channels & Macros',
     'Help',
   ];
-  final List<GlobalKey> _sectionKeys =
-      List.generate(_sectionTitles.length, (_) => GlobalKey());
+  final List<GlobalKey> _sectionKeys = List.generate(
+    _sectionTitles.length,
+    (_) => GlobalKey(),
+  );
   final _viewportKey = GlobalKey();
   final _scrollController = ScrollController();
   int _activeSection = 0;
@@ -211,7 +210,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case ChannelsOffered(:final fromName, :final channels):
         if (!_channelsGate.admitOffer() || !mounted) break;
         _showOfferDialog(
-            fromName, channels, freshChannels(offered: channels, existing: _channels));
+          fromName,
+          channels,
+          freshChannels(offered: channels, existing: _channels),
+        );
       case GlobalMacrosOffered(:final fromName, :final globalMacros):
         if (!_macrosGate.admitOffer() || !mounted) break;
         _showMacrosOfferDialog(fromName, globalMacros);
@@ -250,7 +252,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (_) => PeerPickerDialog(
         title: 'Import channels from…',
-        blurb: "Pick a peer to copy their channel layout from. Only channels "
+        blurb:
+            "Pick a peer to copy their channel layout from. Only channels "
             "you don't already have are added — your channels are kept.",
         peers: peers,
         onPick: _requestFromPeer,
@@ -293,7 +296,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 fresh.isEmpty
                     ? 'You already have all ${channels.length} of their channels.'
                     : '${fresh.length} new of ${channels.length} will be added '
-                        '(existing channels are kept unchanged):',
+                          '(existing channels are kept unchanged):',
                 style: const TextStyle(
                   color: PatchTheme.textSecondary,
                   fontSize: PatchTheme.fontSizeSmall,
@@ -325,8 +328,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Text(
                         isNew ? 'new' : 'have',
                         style: TextStyle(
-                          color:
-                              isNew ? PatchTheme.success : PatchTheme.textMuted,
+                          color: isNew
+                              ? PatchTheme.success
+                              : PatchTheme.textMuted,
                           fontSize: 11,
                         ),
                       ),
@@ -349,16 +353,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     final messenger = ScaffoldMessenger.of(context);
                     runGuarded(context, () async {
                       final added = await widget.bridge.adoptChannels(fresh);
-                      messenger.showSnackBar(SnackBar(
-                        content: Text(added == 0
-                            ? 'No new channels to add — you already have them all'
-                            : 'Added $added channel${added == 1 ? '' : 's'}'),
-                        duration: const Duration(seconds: 3),
-                      ));
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            added == 0
+                                ? 'No new channels to add — you already have them all'
+                                : 'Added $added channel${added == 1 ? '' : 's'}',
+                          ),
+                          duration: const Duration(seconds: 3),
+                        ),
+                      );
                     });
                     Navigator.pop(ctx);
                   },
-            child: Text(fresh.isEmpty ? 'Nothing to add' : 'Add ${fresh.length}'),
+            child: Text(
+              fresh.isEmpty ? 'Nothing to add' : 'Add ${fresh.length}',
+            ),
           ),
         ],
       ),
@@ -377,7 +387,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (_) => PeerPickerDialog(
         title: 'Import macros from…',
-        blurb: "Pick a peer to copy their global macros from. Macros you "
+        blurb:
+            "Pick a peer to copy their global macros from. Macros you "
             "already have, exactly, are skipped — yours are kept.",
         peers: peers,
         onPick: _requestMacrosFromPeer,
@@ -430,7 +441,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             );
           }
           final outcomes = snapshot.data!;
-          final newCount = outcomes.whereType<MacroAdded>().length +
+          final newCount =
+              outcomes.whereType<MacroAdded>().length +
               outcomes.whereType<MacroAddedBindingDropped>().length;
           final warnings = <String>[
             for (final o in outcomes)
@@ -451,7 +463,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     newCount == 0
                         ? 'You already have all ${outcomes.length} of their macros.'
                         : '$newCount new of ${outcomes.length} will be added '
-                            '(your existing macros are kept unchanged):',
+                              '(your existing macros are kept unchanged):',
                     style: const TextStyle(
                       color: PatchTheme.textSecondary,
                       fontSize: PatchTheme.fontSizeSmall,
@@ -459,16 +471,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   if (warnings.isNotEmpty) ...[
                     const SizedBox(height: 12),
-                    ...warnings.map((w) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: Text(
-                            w,
-                            style: const TextStyle(
-                              color: PatchTheme.warning,
-                              fontSize: 11,
-                            ),
+                    ...warnings.map(
+                      (w) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text(
+                          w,
+                          style: const TextStyle(
+                            color: PatchTheme.warning,
+                            fontSize: 11,
                           ),
-                        )),
+                        ),
+                      ),
+                    ),
                   ],
                 ],
               ),
@@ -485,24 +499,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         final messenger = ScaffoldMessenger.of(context);
                         final store = AppStoreScope.read(context);
                         runGuarded(context, () async {
-                          final result =
-                              await widget.bridge.adoptGlobalMacros(offered);
+                          final result = await widget.bridge.adoptGlobalMacros(
+                            offered,
+                          );
                           await store.refreshConfig();
-                          final added = result.whereType<MacroAdded>().length +
+                          final added =
+                              result.whereType<MacroAdded>().length +
                               result
                                   .whereType<MacroAddedBindingDropped>()
                                   .length;
-                          messenger.showSnackBar(SnackBar(
-                            content: Text(added == 0
-                                ? 'No new macros to add — you already have them all'
-                                : 'Added $added macro${added == 1 ? '' : 's'}'),
-                            duration: const Duration(seconds: 3),
-                          ));
+                          messenger.showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                added == 0
+                                    ? 'No new macros to add — you already have them all'
+                                    : 'Added $added macro${added == 1 ? '' : 's'}',
+                              ),
+                              duration: const Duration(seconds: 3),
+                            ),
+                          );
                         });
                         Navigator.pop(ctx);
                       },
-                child:
-                    Text(newCount == 0 ? 'Nothing to add' : 'Add $newCount'),
+                child: Text(newCount == 0 ? 'Nothing to add' : 'Add $newCount'),
               ),
             ],
           );
@@ -526,9 +545,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: PatchTheme.critical),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: PatchTheme.critical,
+            ),
             onPressed: () {
-              runGuarded(context, () => widget.bridge.deleteChannel(id: channel.id));
+              runGuarded(
+                context,
+                () => widget.bridge.deleteChannel(id: channel.id),
+              );
               Navigator.pop(context);
             },
             child: const Text('Delete', style: TextStyle(color: Colors.white)),
@@ -670,13 +694,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: const _SectionHeader('Help & Documentation'),
           ),
           const SizedBox(height: 8),
-          ..._kHelpEntries.map((e) => ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.article_outlined, size: 18, color: PatchTheme.textMuted),
-                title: Text(e.label, style: const TextStyle(fontSize: PatchTheme.fontSizeSmall)),
-                onTap: () => openHelp(context, assetPath: e.assetPath, title: e.label),
-              )),
+          ..._kHelpEntries.map(
+            (e) => ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(
+                Icons.article_outlined,
+                size: 18,
+                color: PatchTheme.textMuted,
+              ),
+              title: Text(
+                e.label,
+                style: const TextStyle(fontSize: PatchTheme.fontSizeSmall),
+              ),
+              onTap: () =>
+                  openHelp(context, assetPath: e.assetPath, title: e.label),
+            ),
+          ),
 
           const SizedBox(height: 32),
           Center(
@@ -703,12 +737,12 @@ class _HelpEntry {
 }
 
 const _kHelpEntries = [
-  _HelpEntry('Quick Start',          'assets/docs/quick-start.md'),
-  _HelpEntry('Networking',           'assets/docs/networking.md'),
-  _HelpEntry('Channels & Show Files','assets/docs/channels-and-show-files.md'),
-  _HelpEntry('OSC Integration',      'assets/docs/osc-integration.md'),
-  _HelpEntry('Integrations',         'assets/docs/integrations.md'),
-  _HelpEntry('Troubleshooting',      'assets/docs/troubleshooting.md'),
+  _HelpEntry('Quick Start', 'assets/docs/quick-start.md'),
+  _HelpEntry('Networking', 'assets/docs/networking.md'),
+  _HelpEntry('Channels & Show Files', 'assets/docs/channels-and-show-files.md'),
+  _HelpEntry('OSC Integration', 'assets/docs/osc-integration.md'),
+  _HelpEntry('Integrations', 'assets/docs/integrations.md'),
+  _HelpEntry('Troubleshooting', 'assets/docs/troubleshooting.md'),
 ];
 
 // ── Settings rail ─────────────────────────────────────────────────────────────
@@ -736,7 +770,10 @@ class _SettingsRail extends StatelessWidget {
             InkWell(
               onTap: () => onTap(i),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   border: Border(
                     left: BorderSide(
@@ -754,7 +791,9 @@ class _SettingsRail extends StatelessWidget {
                         ? PatchTheme.textPrimary
                         : PatchTheme.textSecondary,
                     fontSize: PatchTheme.fontSizeSmall,
-                    fontWeight: i == activeIndex ? FontWeight.w700 : FontWeight.w400,
+                    fontWeight: i == activeIndex
+                        ? FontWeight.w700
+                        : FontWeight.w400,
                   ),
                 ),
               ),
@@ -786,4 +825,3 @@ class _SectionHeader extends StatelessWidget {
 }
 
 // ── Network interface picker ──────────────────────────────────────────────────
-

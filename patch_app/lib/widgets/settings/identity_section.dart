@@ -41,7 +41,9 @@ class _IdentitySectionState extends State<IdentitySection> {
   void initState() {
     super.initState();
     _pushSub = widget.pushes.listen((event) {
-      if (event is ClientNameChanged) _tick(() => _nameSaved = true, () => _nameSaved = false);
+      if (event is ClientNameChanged) {
+        _tick(() => _nameSaved = true, () => _nameSaved = false);
+      }
     });
   }
 
@@ -82,7 +84,8 @@ class _IdentitySectionState extends State<IdentitySection> {
   }
 
   void _reset() {
-    final name = Platform.environment['USER'] ??
+    final name =
+        Platform.environment['USER'] ??
         Platform.environment['USERNAME'] ??
         'crew';
     runGuarded(context, () async {
@@ -96,16 +99,19 @@ class _IdentitySectionState extends State<IdentitySection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(children: [
-          const Expanded(child: SettingsSectionHeader('Identity')),
-          SettingsResetButton(section: 'Identity', onReset: _reset),
-        ]),
+        Row(
+          children: [
+            const Expanded(child: SettingsSectionHeader('Identity')),
+            SettingsResetButton(section: 'Identity', onReset: _reset),
+          ],
+        ),
         const SizedBox(height: 4),
         const Text(
           'Your display name as seen by other Patch users on the network.',
           style: TextStyle(
-              color: PatchTheme.textSecondary,
-              fontSize: PatchTheme.fontSizeSmall),
+            color: PatchTheme.textSecondary,
+            fontSize: PatchTheme.fontSizeSmall,
+          ),
         ),
         const SizedBox(height: 10),
         _UsernameField(
@@ -118,8 +124,9 @@ class _IdentitySectionState extends State<IdentitySection> {
           'Optional role (e.g. "FOH", "Monitors", "PM") — shown next to your name '
           'in other crew\'s peers panel. Leave blank for none.',
           style: TextStyle(
-              color: PatchTheme.textSecondary,
-              fontSize: PatchTheme.fontSizeSmall),
+            color: PatchTheme.textSecondary,
+            fontSize: PatchTheme.fontSizeSmall,
+          ),
         ),
         const SizedBox(height: 10),
         _UsernameField(
@@ -172,8 +179,11 @@ class _UsernameField extends StatelessWidget {
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 200),
           child: saved
-              ? const Icon(Icons.check_circle,
-                  color: PatchTheme.success, key: ValueKey('saved'))
+              ? const Icon(
+                  Icons.check_circle,
+                  color: PatchTheme.success,
+                  key: ValueKey('saved'),
+                )
               : ElevatedButton(
                   key: const ValueKey('save'),
                   onPressed: onSave,

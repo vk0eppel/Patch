@@ -13,13 +13,15 @@ void main() {
     });
 
     test('a complete MacroOsc maps field-for-field', () {
-      final t = oscTargetFromMacroOsc(const MacroOsc(
-        address: '10.0.0.9',
-        port: 53000,
-        path: '/cue/1/start',
-        arg: '42',
-        argType: MacroOscArgType.int,
-      ));
+      final t = oscTargetFromMacroOsc(
+        const MacroOsc(
+          address: '10.0.0.9',
+          port: 53000,
+          path: '/cue/1/start',
+          arg: '42',
+          argType: MacroOscArgType.int,
+        ),
+      );
       expect(t, isNotNull);
       expect(t!.address, '10.0.0.9');
       expect(t.port, 53000);
@@ -38,33 +40,39 @@ void main() {
         argType: MacroOscArgType.string,
       );
       expect(
-        oscTargetFromMacroOsc(const MacroOsc(
-          address: '',
-          port: 53000,
-          path: '/cue/1/start',
-          arg: null,
-          argType: MacroOscArgType.string,
-        )),
+        oscTargetFromMacroOsc(
+          const MacroOsc(
+            address: '',
+            port: 53000,
+            path: '/cue/1/start',
+            arg: null,
+            argType: MacroOscArgType.string,
+          ),
+        ),
         isNull,
       );
       expect(
-        oscTargetFromMacroOsc(const MacroOsc(
-          address: '10.0.0.9',
-          port: 0,
-          path: '/cue/1/start',
-          arg: null,
-          argType: MacroOscArgType.string,
-        )),
+        oscTargetFromMacroOsc(
+          const MacroOsc(
+            address: '10.0.0.9',
+            port: 0,
+            path: '/cue/1/start',
+            arg: null,
+            argType: MacroOscArgType.string,
+          ),
+        ),
         isNull,
       );
       expect(
-        oscTargetFromMacroOsc(const MacroOsc(
-          address: '10.0.0.9',
-          port: 53000,
-          path: '',
-          arg: null,
-          argType: MacroOscArgType.string,
-        )),
+        oscTargetFromMacroOsc(
+          const MacroOsc(
+            address: '10.0.0.9',
+            port: 53000,
+            path: '',
+            arg: null,
+            argType: MacroOscArgType.string,
+          ),
+        ),
         isNull,
       );
       // and the untouched base still maps
@@ -72,13 +80,15 @@ void main() {
     });
 
     test('an empty arg collapses to null', () {
-      final t = oscTargetFromMacroOsc(const MacroOsc(
-        address: '10.0.0.9',
-        port: 53000,
-        path: '/cue/1/start',
-        arg: '',
-        argType: MacroOscArgType.string,
-      ));
+      final t = oscTargetFromMacroOsc(
+        const MacroOsc(
+          address: '10.0.0.9',
+          port: 53000,
+          path: '/cue/1/start',
+          arg: '',
+          argType: MacroOscArgType.string,
+        ),
+      );
       expect(t!.arg, isNull);
     });
   });

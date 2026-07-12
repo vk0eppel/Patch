@@ -15,13 +15,16 @@ void main() {
 
   Future<void> pumpDialog(WidgetTester tester, FakeBridge bridge) async {
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: ShowFilesDialog(bridge: bridge))),
+      MaterialApp(
+        home: Scaffold(body: ShowFilesDialog(bridge: bridge)),
+      ),
     );
     await tester.pumpAndSettle();
   }
 
-  testWidgets('deleting a Show File issues the command through the bridge',
-      (tester) async {
+  testWidgets('deleting a Show File issues the command through the bridge', (
+    tester,
+  ) async {
     final bridge = FakeBridge()..showFilesToReturn = [festival];
     await pumpDialog(tester, bridge);
     expect(find.text('Festival Day 1'), findsOneWidget);
