@@ -67,3 +67,43 @@ jobs:
       - name: Test
         working-directory: patch_app
         run: flutter test
+
+  # Compiles patch_core as a cdylib/staticlib and links it into the app the
+  # same way a release build does, so native/link regressions (e.g. a missing
+  # `-framework` in rust_builder/macos/patch_core.podspec — see CONVENTION.md
+  # → Platform, ERRORS.md → Build/Release) fail the PR instead of first
+  # surfacing at release-tag time. Also the only CI job that compiles
+  # patch_core's macOS `cfg(target_os = ...)` paths (CoreMIDI/midir). Windows
+  # (WinMM) stays covered by release.yml; a Windows build job can be added
+  # here later if it proves worth the runner minutes.
+  build-macos:
+    name: macOS — native build smoke test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # cargokit invokes cargo during `flutter build`, so the same pinned Rust
+      # as the `rust` job must be present. No `rustup target add` needed: a
+      # host-arch debug build is enough to catch link/framework breakage (the
+      # release job handles the universal arm64+x86_64 build).
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@1.95.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Flutter 3.44.1
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.1
+          channel: stable
+          cache: true
+
+      - name: Pub get
+        working-directory: patch_app
+        run: flutter pub get
+
+      # Debug + no codesign: we only need the compile-and-link to succeed, not
+      # a signed/notarized artifact.
+      - name: Build macOS (debug, no codesign)
+        working-directory: patch_app
+        run: flutter build macos --debug
