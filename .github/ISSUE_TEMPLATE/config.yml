@@ -1,0 +1,10 @@
+# Blank issues stay enabled so maintainers and AFK agents (which file via the
+# `gh` CLI, bypassing these forms — see docs/agents/issue-tracker.md) aren't
+# blocked. New form-filed issues start as `needs-triage`; a maintainer then
+# moves them to `needs-info`, `ready-for-agent`, `ready-for-human`, or `wontfix`
+# per docs/agents/triage-labels.md.
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation (quick start, networking, OSC, troubleshooting)
+    url: https://github.com/vk0eppel/Patch/tree/main/docs
+    about: Check the operator docs before filing — especially Troubleshooting and Networking.

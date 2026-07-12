@@ -1,0 +1,33 @@
+name: Feature request
+description: Propose a capability for live production crews.
+labels: [needs-triage, enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Patch is an operational comms tool for live production teams — not a chat
+        app. Every feature must answer: **"Does this help a crew execute a live
+        show more reliably?"** Use the domain terms (Operator, Peer, Channel,
+        Flash, Macro, …) from [CONTEXT.md](../blob/main/CONTEXT.md).
+  - type: textarea
+    id: problem
+    attributes:
+      label: The operational need
+      description: What can't a crew do today, and when does it bite during a show?
+      placeholder: An Operator can't tell at a glance which Peers have acknowledged a Critical Message.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: What should Patch do, from the Operator's point of view? (Not implementation.)
+    validations:
+      required: true
+  - type: textarea
+    id: reliability
+    attributes:
+      label: Why it makes a show more reliable
+      description: The litmus test above — spell out the reliability payoff.
+    validations:
+      required: true
