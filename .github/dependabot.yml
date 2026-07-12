@@ -1,0 +1,38 @@
+# Automated dependency-update PRs so the project's pins don't silently rot.
+# Three ecosystems: GitHub Actions (workflows), Cargo (Rust workspace at the
+# repo root — patch-core is a member), and pub (the Flutter app).
+#
+# NOTE on flutter_rust_bridge: the Dart package (patch_app/pubspec.yaml) is
+# pinned to the exact version the Rust crate (patch-core/Cargo.toml) and the
+# generated FFI glue reference. A bump on either side is NOT a drop-in update —
+# it needs a coordinated `flutter_rust_bridge_codegen generate` (see
+# CONVENTION.md → FFI Codegen). Dependabot will still open the PR; treat those
+# two as a manual, paired change rather than auto-merging.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # One PR for all action bumps instead of one per action.
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: pub
+    directory: /patch_app
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      pub-minor-patch:
+        update-types: [minor, patch]
