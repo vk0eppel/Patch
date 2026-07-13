@@ -33,7 +33,7 @@ tokio = { version = "1", features = ["full"] }
 rosc = "0.10"
 
 # mDNS / Bonjour discovery
-mdns-sd = "0.11"
+mdns-sd = "0.20"
 
 # Network interface enumeration
 network-interface = "2"
