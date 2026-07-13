@@ -36,7 +36,7 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  file_picker: ^8.0.0
+  file_picker: ^11.0.2
   # Plays the short alert sound asset (SystemSound.alert is a no-op on macOS/iOS).
   audioplayers: ^6.0.0
   flutter_rust_bridge: ^2.12.0
