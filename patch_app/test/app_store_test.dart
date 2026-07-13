@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 
-
 import 'package:patch/models/events.dart';
 import 'package:patch/models/message.dart';
 import 'package:patch/store/app_store.dart';
@@ -22,21 +21,23 @@ void main() {
     store.dispose();
   });
 
-  test('start() loads peers, config, and channels and notifies for each',
-      () async {
-    bridge.peersToReturn = [peerInfo('a'), peerInfo('b')];
-    bridge.configToReturn = cfg(clientName: 'FOH');
-    bridge.channelsToReturn = [chan('rf')];
-    var notified = 0;
-    store.addListener(() => notified++);
+  test(
+    'start() loads peers, config, and channels and notifies for each',
+    () async {
+      bridge.peersToReturn = [peerInfo('a'), peerInfo('b')];
+      bridge.configToReturn = cfg(clientName: 'FOH');
+      bridge.channelsToReturn = [chan('rf')];
+      var notified = 0;
+      store.addListener(() => notified++);
 
-    await store.start();
+      await store.start();
 
-    expect(store.peers.map((p) => p.peerId), ['a', 'b']);
-    expect(store.config?.clientName, 'FOH');
-    expect(store.channels.single.id, 'rf');
-    expect(notified, 3); // peers + config + channels
-  });
+      expect(store.peers.map((p) => p.peerId), ['a', 'b']);
+      expect(store.config?.clientName, 'FOH');
+      expect(store.channels.single.id, 'rf');
+      expect(notified, 3); // peers + config + channels
+    },
+  );
 
   test('ChannelsChanged push refetches channels and notifies', () async {
     bridge.channelsToReturn = [chan('rf')];
@@ -70,60 +71,82 @@ void main() {
     expect(notified, 1);
   });
 
-  test('PeerExpired push coalesces a burst into one debounced refetch',
-      () async {
-    // "Clear inactive peers" emits one PeerExpired per removed peer — N
-    // stale peers must not mean N full refetches.
-    bridge.peersToReturn = [peerInfo('a')];
-    var notified = 0;
-    store.addListener(() => notified++);
+  test(
+    'PeerExpired push coalesces a burst into one debounced refetch',
+    () async {
+      // "Clear inactive peers" emits one PeerExpired per removed peer — N
+      // stale peers must not mean N full refetches.
+      bridge.peersToReturn = [peerInfo('a')];
+      var notified = 0;
+      store.addListener(() => notified++);
 
-    bridge
-      ..push(const PeerExpired('gone-1'))
-      ..push(const PeerExpired('gone-2'))
-      ..push(const PeerExpired('gone-3'));
-    await pumpEventQueue();
-    expect(bridge.getPeersCalls, 0, reason: 'still within the debounce window');
+      bridge
+        ..push(const PeerExpired('gone-1'))
+        ..push(const PeerExpired('gone-2'))
+        ..push(const PeerExpired('gone-3'));
+      await pumpEventQueue();
+      expect(
+        bridge.getPeersCalls,
+        0,
+        reason: 'still within the debounce window',
+      );
 
-    await Future<void>.delayed(const Duration(milliseconds: 850));
+      await Future<void>.delayed(const Duration(milliseconds: 850));
 
-    expect(bridge.getPeersCalls, 1, reason: 'one refetch for the whole burst');
-    expect(store.peers.single.peerId, 'a');
-    expect(notified, 1);
-  });
+      expect(
+        bridge.getPeersCalls,
+        1,
+        reason: 'one refetch for the whole burst',
+      );
+      expect(store.peers.single.peerId, 'a');
+      expect(notified, 1);
+    },
+  );
 
-  test('PeersChanged push coalesces a burst into one debounced refetch',
-      () async {
-    bridge.peersToReturn = [peerInfo('a')];
-    var notified = 0;
-    store.addListener(() => notified++);
+  test(
+    'PeersChanged push coalesces a burst into one debounced refetch',
+    () async {
+      bridge.peersToReturn = [peerInfo('a')];
+      var notified = 0;
+      store.addListener(() => notified++);
 
-    // A burst of PeersChanged (one per received packet).
-    bridge
-      ..push(const PeersChanged())
-      ..push(const PeersChanged())
-      ..push(const PeersChanged());
-    await pumpEventQueue();
-    expect(bridge.getPeersCalls, 0, reason: 'still within the debounce window');
+      // A burst of PeersChanged (one per received packet).
+      bridge
+        ..push(const PeersChanged())
+        ..push(const PeersChanged())
+        ..push(const PeersChanged());
+      await pumpEventQueue();
+      expect(
+        bridge.getPeersCalls,
+        0,
+        reason: 'still within the debounce window',
+      );
 
-    await Future<void>.delayed(const Duration(milliseconds: 850));
+      await Future<void>.delayed(const Duration(milliseconds: 850));
 
-    expect(bridge.getPeersCalls, 1, reason: 'one refetch for the whole burst');
-    expect(store.peers.single.peerId, 'a');
-    expect(notified, 1);
-  });
+      expect(
+        bridge.getPeersCalls,
+        1,
+        reason: 'one refetch for the whole burst',
+      );
+      expect(store.peers.single.peerId, 'a');
+      expect(notified, 1);
+    },
+  );
 
-  test('MessageReceived push appends to the channel buffer and notifies',
-      () async {
-    var notified = 0;
-    store.addListener(() => notified++);
+  test(
+    'MessageReceived push appends to the channel buffer and notifies',
+    () async {
+      var notified = 0;
+      store.addListener(() => notified++);
 
-    bridge.push(MessageReceived(msg('rf', 'm1')));
-    await pumpEventQueue();
+      bridge.push(MessageReceived(msg('rf', 'm1')));
+      await pumpEventQueue();
 
-    expect(store.messages['rf']?.map((m) => m.messageId), ['m1']);
-    expect(notified, 1);
-  });
+      expect(store.messages['rf']?.map((m) => m.messageId), ['m1']);
+      expect(notified, 1);
+    },
+  );
 
   test('MessageReceived push stamps each message with an increasing '
       'localSeq, in arrival order, regardless of channel', () async {
@@ -161,25 +184,30 @@ void main() {
     expect(seqs[0], lessThan(seqs[1]));
   });
 
-  test('a message pushed while ensureMessages is fetching survives the merge',
-      () async {
-    // The fetch snapshot can predate the pushed message's engine-side store —
-    // overwriting the buffer with the snapshot would lose it from the UI
-    // until restart, since nothing ever refetches message history.
-    bridge.messagesToReturn['rf'] = [msg('rf', 'a')];
-    bridge.gateMessages = Completer<void>();
+  test(
+    'a message pushed while ensureMessages is fetching survives the merge',
+    () async {
+      // The fetch snapshot can predate the pushed message's engine-side store —
+      // overwriting the buffer with the snapshot would lose it from the UI
+      // until restart, since nothing ever refetches message history.
+      bridge.messagesToReturn['rf'] = [msg('rf', 'a')];
+      bridge.gateMessages = Completer<void>();
 
-    final fetch = store.ensureMessages('rf');
-    bridge.push(MessageReceived(msg('rf', 'live'))); // arrives mid-fetch
-    await pumpEventQueue();
-    bridge.gateMessages!.complete();
-    await fetch;
+      final fetch = store.ensureMessages('rf');
+      bridge.push(MessageReceived(msg('rf', 'live'))); // arrives mid-fetch
+      await pumpEventQueue();
+      bridge.gateMessages!.complete();
+      await fetch;
 
-    final rf = store.messages['rf']!;
-    expect(rf.map((m) => m.messageId), ['a', 'live']);
-    expect(rf[0].localSeq, lessThan(rf[1].localSeq),
-        reason: 'history sorts before the just-arrived tail');
-  });
+      final rf = store.messages['rf']!;
+      expect(rf.map((m) => m.messageId), ['a', 'live']);
+      expect(
+        rf[0].localSeq,
+        lessThan(rf[1].localSeq),
+        reason: 'history sorts before the just-arrived tail',
+      );
+    },
+  );
 
   test('a message pushed mid-fetch that the snapshot already includes is '
       'not duplicated', () async {
@@ -195,24 +223,31 @@ void main() {
     expect(store.messages['rf']!.map((m) => m.messageId), ['a', 'live']);
   });
 
-  test('trimming the 500-message cap drops the trimmed delivery entries too',
-      () async {
-    bridge.push(MessageReceived(msg('rf', 'm0')));
-    bridge.push(const DeliveryUpdated(
-      'm0',
-      MessageDeliveryStatus(delivered: 1, total: 1, failed: false),
-    ));
-    // 500 more on the same channel pushes m0 out of the ring.
-    for (var i = 1; i <= 500; i++) {
-      bridge.push(MessageReceived(msg('rf', 'm$i')));
-    }
-    await pumpEventQueue();
+  test(
+    'trimming the 500-message cap drops the trimmed delivery entries too',
+    () async {
+      bridge.push(MessageReceived(msg('rf', 'm0')));
+      bridge.push(
+        const DeliveryUpdated(
+          'm0',
+          MessageDeliveryStatus(delivered: 1, total: 1, failed: false),
+        ),
+      );
+      // 500 more on the same channel pushes m0 out of the ring.
+      for (var i = 1; i <= 500; i++) {
+        bridge.push(MessageReceived(msg('rf', 'm$i')));
+      }
+      await pumpEventQueue();
 
-    expect(store.messages['rf']!.length, 500);
-    expect(store.messages['rf']!.first.messageId, 'm1');
-    expect(store.delivery.containsKey('m0'), isFalse,
-        reason: 'trimmed message must not leak its delivery entry');
-  });
+      expect(store.messages['rf']!.length, 500);
+      expect(store.messages['rf']!.first.messageId, 'm1');
+      expect(
+        store.delivery.containsKey('m0'),
+        isFalse,
+        reason: 'trimmed message must not leak its delivery entry',
+      );
+    },
+  );
 
   test('Resynced push refetches loaded message buffers, recovering a '
       'message the event stream dropped', () async {
@@ -235,10 +270,12 @@ void main() {
 
   test('Resynced push refetches peers, config, and channels, and keeps '
       'delivery entries', () async {
-    bridge.push(const DeliveryUpdated(
-      'm1',
-      MessageDeliveryStatus(delivered: 1, total: 2, failed: false),
-    ));
+    bridge.push(
+      const DeliveryUpdated(
+        'm1',
+        MessageDeliveryStatus(delivered: 1, total: 2, failed: false),
+      ),
+    );
     await pumpEventQueue();
     bridge.peersToReturn = [peerInfo('a')];
     bridge.configToReturn = cfg(clientName: 'After');
@@ -250,8 +287,11 @@ void main() {
     expect(store.peers.single.peerId, 'a');
     expect(store.config?.clientName, 'After');
     expect(store.channels.single.id, 'rf');
-    expect(store.delivery.containsKey('m1'), isTrue,
-        reason: 'a resync must not discard in-flight delivery status');
+    expect(
+      store.delivery.containsKey('m1'),
+      isTrue,
+      reason: 'a resync must not discard in-flight delivery status',
+    );
   });
 
   test('dropMessages clears a channel buffer and notifies', () async {
@@ -270,10 +310,12 @@ void main() {
     var notified = 0;
     store.addListener(() => notified++);
 
-    bridge.push(const DeliveryUpdated(
-      'm1',
-      MessageDeliveryStatus(delivered: 1, total: 2, failed: false),
-    ));
+    bridge.push(
+      const DeliveryUpdated(
+        'm1',
+        MessageDeliveryStatus(delivered: 1, total: 2, failed: false),
+      ),
+    );
     await pumpEventQueue();
 
     expect(store.delivery['m1']?.delivered, 1);

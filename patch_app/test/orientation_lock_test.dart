@@ -8,7 +8,10 @@ import 'package:patch/util/orientation_lock.dart';
 void main() {
   test('locks on an iPad-class iOS device', () {
     expect(shouldLockLandscape(isIOS: true, shortestSide: 768), isTrue); // iPad
-    expect(shouldLockLandscape(isIOS: true, shortestSide: 600), isTrue); // boundary
+    expect(
+      shouldLockLandscape(isIOS: true, shortestSide: 600),
+      isTrue,
+    ); // boundary
   });
 
   test('does not lock on iPhone', () {

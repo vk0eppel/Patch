@@ -5,25 +5,25 @@ class PatchTheme {
   PatchTheme._();
 
   // ── Palette ───────────────────────────────────────────────────────────────
-  static const background    = Color(0xFF0D0D0D);
-  static const surface       = Color(0xFF1A1A1A);
-  static const surfaceHigh   = Color(0xFF242424);
-  static const border        = Color(0xFF2E2E2E);
+  static const background = Color(0xFF0D0D0D);
+  static const surface = Color(0xFF1A1A1A);
+  static const surfaceHigh = Color(0xFF242424);
+  static const border = Color(0xFF2E2E2E);
 
-  static const textPrimary   = Color(0xFFEEEEEE);
+  static const textPrimary = Color(0xFFEEEEEE);
   static const textSecondary = Color(0xFF888888);
-  static const textMuted     = Color(0xFF555555);
+  static const textMuted = Color(0xFF555555);
 
-  static const accent        = Color(0xFF00B4FF); // PATCH blue
-  static const critical      = Color(0xFFE53935); // red
-  static const warning       = Color(0xFFFFB300); // amber
-  static const success       = Color(0xFF43A047); // green
+  static const accent = Color(0xFF00B4FF); // PATCH blue
+  static const critical = Color(0xFFE53935); // red
+  static const warning = Color(0xFFFFB300); // amber
+  static const success = Color(0xFF43A047); // green
 
   /// The synthetic ALL / crew-wide broadcast tab. Neutral light-grey on purpose —
   /// ALL isn't a department, and a real colour (the old accent blue) clashed with
   /// the RF channel. Softer than pure white so it doesn't glare next to the vivid
   /// channel dots. Used for the ALL tab dot, its header label, and the broadcast flash.
-  static const broadcast     = Color(0xFFCCCCCC); // soft light-grey
+  static const broadcast = Color(0xFFCCCCCC); // soft light-grey
 
   // ── Layout ────────────────────────────────────────────────────────────────
   /// Unified header height for all top-of-screen sections (channel strip,
@@ -39,9 +39,9 @@ class PatchTheme {
 
   // ── Typography ────────────────────────────────────────────────────────────
   /// Large, readable timestamp / label for stage desk use
-  static const fontSizeLarge  = 18.0;
+  static const fontSizeLarge = 18.0;
   static const fontSizeMedium = 15.0;
-  static const fontSizeSmall  = 12.0;
+  static const fontSizeSmall = 12.0;
 
   static ThemeData dark() {
     return ThemeData.dark().copyWith(
@@ -85,13 +85,19 @@ class PatchTheme {
           borderSide: const BorderSide(color: accent, width: 1.5),
         ),
         hintStyle: const TextStyle(color: textMuted),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: accent,
           foregroundColor: Colors.black,
-          textStyle: const TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.8),
+          textStyle: const TextStyle(
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.8,
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
         ),

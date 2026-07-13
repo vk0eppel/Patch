@@ -1,0 +1,54 @@
+name: Bug report
+description: Something in Patch behaves wrong during operation.
+labels: [needs-triage, bug]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Use Patch's domain terms where they fit (Operator, Peer, Channel, Flash,
+        Macro, Direct Message, Show File, Pinned Network) — see
+        [CONTEXT.md](../blob/main/CONTEXT.md). It keeps reports unambiguous for
+        the crew and for agents picking the issue up.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What went wrong, and what did you expect instead?
+      placeholder: Tapping the AUDIO Channel tab did nothing; I expected it to toggle into the view.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact sequence — the more mechanical, the faster it's fixed.
+      placeholder: |
+        1. Select the AUDIO Channel
+        2. Tap the RF Channel
+        3. Tap AUDIO again to remove it
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: macOS 15.2 (Apple Silicon) / Windows 11 / iPad
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Patch version
+      description: From the app's identity chip / About, or the pubspec version you built.
+      placeholder: 0.9.2+1
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Operational impact
+      description: >
+        Does this block executing a live show, and how? (Helps triage severity —
+        Patch exists to make a crew's live show more reliable.)
+    validations:
+      required: false

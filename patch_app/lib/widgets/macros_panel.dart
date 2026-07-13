@@ -119,30 +119,35 @@ class MacrosPanel extends StatelessWidget {
   }
 
   /// Chunk [items] into rows of [columns] each and wrap each row in an Expanded.
-  List<Widget> _rowsFrom(List<ChannelMacro> items, {required bool showChannelBar}) {
+  List<Widget> _rowsFrom(
+    List<ChannelMacro> items, {
+    required bool showChannelBar,
+  }) {
     final rows = <Widget>[];
     for (var i = 0; i < items.length; i += columns) {
       final slice = items.sublist(i, min(i + columns, items.length));
-      rows.add(Expanded(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 40),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (var col = 0; col < columns; col++)
-              Expanded(
-                child: col < slice.length
-                    ? _MacroButton(
-                        cm: slice[col],
-                        showChannelBar: showChannelBar,
-                        onTap: () => onMacro(slice[col]),
-                      )
-                    : const _EmptyCell(),
-              ),
-          ],
-          ),  // Row
-        ),    // ConstrainedBox
-      ));
+      rows.add(
+        Expanded(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 40),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var col = 0; col < columns; col++)
+                  Expanded(
+                    child: col < slice.length
+                        ? _MacroButton(
+                            cm: slice[col],
+                            showChannelBar: showChannelBar,
+                            onTap: () => onMacro(slice[col]),
+                          )
+                        : const _EmptyCell(),
+                  ),
+              ],
+            ), // Row
+          ), // ConstrainedBox
+        ),
+      );
     }
     return rows;
   }
@@ -213,9 +218,7 @@ class _EmptyCell extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: PatchTheme.border, width: 1),
-        ),
+        border: Border(bottom: BorderSide(color: PatchTheme.border, width: 1)),
       ),
     );
   }

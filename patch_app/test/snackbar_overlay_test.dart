@@ -25,7 +25,9 @@ Widget _host({required VoidCallback onFooterTap}) {
             builder: (context) => Center(
               child: ElevatedButton(
                 onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Critical message not delivered')),
+                  const SnackBar(
+                    content: Text('Critical message not delivered'),
+                  ),
                 ),
                 child: const Text('Trigger alert'),
               ),
@@ -54,8 +56,9 @@ Widget _host({required VoidCallback onFooterTap}) {
 }
 
 void main() {
-  testWidgets('footer control stays tappable while a SnackBar is showing',
-      (tester) async {
+  testWidgets('footer control stays tappable while a SnackBar is showing', (
+    tester,
+  ) async {
     var tapped = false;
     await tester.pumpWidget(_host(onFooterTap: () => tapped = true));
 
@@ -68,12 +71,17 @@ void main() {
     await tester.tap(find.text('Send'));
     await tester.pump();
 
-    expect(tapped, isTrue,
-        reason: 'the footer control must remain tappable under a floating SnackBar');
+    expect(
+      tapped,
+      isTrue,
+      reason:
+          'the footer control must remain tappable under a floating SnackBar',
+    );
   });
 
-  testWidgets('SnackBar renders clear of the footer, not overlapping it',
-      (tester) async {
+  testWidgets('SnackBar renders clear of the footer, not overlapping it', (
+    tester,
+  ) async {
     await tester.pumpWidget(_host(onFooterTap: () {}));
 
     await tester.tap(find.text('Trigger alert'));
@@ -83,8 +91,9 @@ void main() {
     // SnackBar's own render box includes its (invisible) margin, so its bottom
     // edge always sits at the screen edge regardless of margin — measure the
     // visible text content instead, which is tightly bound by the margin.
-    final snackBarTextBottom =
-        tester.getBottomLeft(find.text('Critical message not delivered')).dy;
+    final snackBarTextBottom = tester
+        .getBottomLeft(find.text('Critical message not delivered'))
+        .dy;
     final footerTop = tester.getTopLeft(find.byKey(_footerKey)).dy;
 
     expect(snackBarTextBottom, lessThanOrEqualTo(footerTop));

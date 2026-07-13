@@ -7,7 +7,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:patch/models/delivery_tracker.dart';
 import 'package:patch/models/message.dart';
 
-const _inProgress = MessageDeliveryStatus(delivered: 1, total: 2, failed: false);
+const _inProgress = MessageDeliveryStatus(
+  delivered: 1,
+  total: 2,
+  failed: false,
+);
 const _complete = MessageDeliveryStatus(delivered: 2, total: 2, failed: false);
 
 void main() {

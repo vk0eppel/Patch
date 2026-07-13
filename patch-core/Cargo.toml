@@ -6,6 +6,9 @@ name = "patch_core"
 version = "0.1.0"
 edition = "2021"
 description = "PATCH core engine — OSC transport, discovery, reliability."
+license = "GPL-3.0-only"
+repository = "https://github.com/vk0eppel/Patch"
+homepage = "https://github.com/vk0eppel/Patch"
 
 [lib]
 name = "patch_core"

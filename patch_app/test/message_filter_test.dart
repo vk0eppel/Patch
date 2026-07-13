@@ -9,16 +9,15 @@ PatchMessage _m({
   String sender = 'Sam',
   String payload = 'hello',
   int priority = 1,
-}) =>
-    PatchMessage(
-      messageId: '$sender-$payload-$priority',
-      senderId: 's',
-      senderName: sender,
-      channelId: 'rf',
-      timestamp: DateTime(2026, 6, 17),
-      priority: priority,
-      payload: payload,
-    );
+}) => PatchMessage(
+  messageId: '$sender-$payload-$priority',
+  senderId: 's',
+  senderName: sender,
+  channelId: 'rf',
+  timestamp: DateTime(2026, 6, 17),
+  priority: priority,
+  payload: payload,
+);
 
 void main() {
   group('messageCategory', () {

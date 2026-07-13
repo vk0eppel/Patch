@@ -37,16 +37,15 @@ class FlashState {
     Set<String>? openDms,
     Set<String>? unreadDms,
     int? dmPulseNotify,
-  }) =>
-      FlashState._(
-        flashCounts: flashCounts ?? this.flashCounts,
-        flashNotify: flashNotify ?? this.flashNotify,
-        flashColor: flashColor ?? this.flashColor,
-        flashPulseCount: flashPulseCount ?? this.flashPulseCount,
-        openDms: openDms ?? this.openDms,
-        unreadDms: unreadDms ?? this.unreadDms,
-        dmPulseNotify: dmPulseNotify ?? this.dmPulseNotify,
-      );
+  }) => FlashState._(
+    flashCounts: flashCounts ?? this.flashCounts,
+    flashNotify: flashNotify ?? this.flashNotify,
+    flashColor: flashColor ?? this.flashColor,
+    flashPulseCount: flashPulseCount ?? this.flashPulseCount,
+    openDms: openDms ?? this.openDms,
+    unreadDms: unreadDms ?? this.unreadDms,
+    dmPulseNotify: dmPulseNotify ?? this.dmPulseNotify,
+  );
 }
 
 class FlashSettings {
@@ -79,15 +78,14 @@ class FlashSettings {
     bool? showPeers,
     bool? audibleAlert,
     bool? flashWholeScreen,
-  }) =>
-      FlashSettings(
-        flashCount: flashCount ?? this.flashCount,
-        flashOnCritical: flashOnCritical ?? this.flashOnCritical,
-        flashOnMessage: flashOnMessage ?? this.flashOnMessage,
-        broadcastColor: broadcastColor ?? this.broadcastColor,
-        dmColor: dmColor ?? this.dmColor,
-        showPeers: showPeers ?? this.showPeers,
-        audibleAlert: audibleAlert ?? this.audibleAlert,
-        flashWholeScreen: flashWholeScreen ?? this.flashWholeScreen,
-      );
+  }) => FlashSettings(
+    flashCount: flashCount ?? this.flashCount,
+    flashOnCritical: flashOnCritical ?? this.flashOnCritical,
+    flashOnMessage: flashOnMessage ?? this.flashOnMessage,
+    broadcastColor: broadcastColor ?? this.broadcastColor,
+    dmColor: dmColor ?? this.dmColor,
+    showPeers: showPeers ?? this.showPeers,
+    audibleAlert: audibleAlert ?? this.audibleAlert,
+    flashWholeScreen: flashWholeScreen ?? this.flashWholeScreen,
+  );
 }

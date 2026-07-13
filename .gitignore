@@ -7,7 +7,11 @@ patch_app/.dart_tool/
 patch_app/build/
 build/
 patch_app/.flutter-plugins-dependencies
-patch_app/.packages
+
+# Release artifacts written to the repo root by release.yml's packaging steps
+# (also produced by local release testing).
+Patch-*.dmg
+Patch-*.exe
 
 # macOS
 .DS_Store

@@ -34,22 +34,21 @@ void main() {
     Widget host({
       required void Function(String) onSaveName,
       void Function(String)? onSaveRole,
-    }) =>
-        MaterialApp(
-          home: Scaffold(
-            body: Builder(
-              builder: (context) => ElevatedButton(
-                onPressed: () => showNamePrompt(
-                  context,
-                  currentName: 'vincent',
-                  onSaveName: onSaveName,
-                  onSaveRole: onSaveRole ?? (_) {},
-                ),
-                child: const Text('open'),
-              ),
+    }) => MaterialApp(
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => ElevatedButton(
+            onPressed: () => showNamePrompt(
+              context,
+              currentName: 'vincent',
+              onSaveName: onSaveName,
+              onSaveRole: onSaveRole ?? (_) {},
             ),
+            child: const Text('open'),
           ),
-        );
+        ),
+      ),
+    );
 
     testWidgets('pre-fills the current name', (tester) async {
       await tester.pumpWidget(host(onSaveName: (_) {}));
@@ -71,13 +70,17 @@ void main() {
       expect(find.text('Set your identity'), findsNothing);
     });
 
-    testWidgets('saving with name-only (empty role) is allowed', (tester) async {
+    testWidgets('saving with name-only (empty role) is allowed', (
+      tester,
+    ) async {
       String? savedName;
       String? savedRole;
-      await tester.pumpWidget(host(
-        onSaveName: (n) => savedName = n,
-        onSaveRole: (r) => savedRole = r,
-      ));
+      await tester.pumpWidget(
+        host(
+          onSaveName: (n) => savedName = n,
+          onSaveRole: (r) => savedRole = r,
+        ),
+      );
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField).first, 'Sam');
@@ -88,8 +91,9 @@ void main() {
       expect(find.text('Set your identity'), findsNothing);
     });
 
-    testWidgets('tapping a role suggestion populates the role field',
-        (tester) async {
+    testWidgets('tapping a role suggestion populates the role field', (
+      tester,
+    ) async {
       await tester.pumpWidget(host(onSaveName: (_) {}));
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();

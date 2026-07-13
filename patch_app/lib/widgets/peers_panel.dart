@@ -111,7 +111,9 @@ class _PeersPanelState extends State<PeersPanel> {
                     itemBuilder: (ctx, i) => _PeerTile(
                       peer: widget.peers[i],
                       onDm: widget.onDm,
-                      isUnread: widget.unreadPeerIds.contains(widget.peers[i].peerId),
+                      isUnread: widget.unreadPeerIds.contains(
+                        widget.peers[i].peerId,
+                      ),
                     ),
                   ),
           ),
@@ -142,7 +144,6 @@ class _PeersPanelState extends State<PeersPanel> {
   }
 }
 
-
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 class _PeersEmptyState extends StatelessWidget {
@@ -168,7 +169,11 @@ class _PeersEmptyState extends StatelessWidget {
           const SizedBox(height: 6),
           const Text(
             'Make sure Patch is running on other devices on the same network.',
-            style: TextStyle(color: PatchTheme.textMuted, fontSize: 11, height: 1.4),
+            style: TextStyle(
+              color: PatchTheme.textMuted,
+              fontSize: 11,
+              height: 1.4,
+            ),
           ),
           const SizedBox(height: 10),
           Wrap(
@@ -176,7 +181,11 @@ class _PeersEmptyState extends StatelessWidget {
             runSpacing: 4,
             children: [
               GestureDetector(
-                onTap: () => openHelp(context, assetPath: 'assets/docs/networking.md', title: 'Networking'),
+                onTap: () => openHelp(
+                  context,
+                  assetPath: 'assets/docs/networking.md',
+                  title: 'Networking',
+                ),
                 child: const Text(
                   'Networking guide',
                   style: TextStyle(
@@ -220,17 +229,13 @@ class _PeerTile extends StatelessWidget {
   final ValueChanged<String>? onDm;
   final bool isUnread;
 
-  const _PeerTile({
-    required this.peer,
-    this.onDm,
-    this.isUnread = false,
-  });
+  const _PeerTile({required this.peer, this.onDm, this.isUnread = false});
 
   Color get _dotColor => switch (peer.status) {
-        PeerStatus.online => PatchTheme.success,
-        PeerStatus.stale => PatchTheme.warning,
-        PeerStatus.offline => PatchTheme.textMuted,
-      };
+    PeerStatus.online => PatchTheme.success,
+    PeerStatus.stale => PatchTheme.warning,
+    PeerStatus.offline => PatchTheme.textMuted,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -296,10 +301,7 @@ class _PeerTile extends StatelessWidget {
           if (peer.address.isNotEmpty)
             Text(
               '${peer.address}:${peer.oscPort}',
-              style: const TextStyle(
-                color: PatchTheme.textMuted,
-                fontSize: 9,
-              ),
+              style: const TextStyle(color: PatchTheme.textMuted, fontSize: 9),
               overflow: TextOverflow.ellipsis,
             ),
         ],

@@ -1,15 +1,16 @@
 /// Signature of the one behavior-settings command (#179): any subset of the
 /// scalar behavior fields, applied and persisted by the engine in a single
 /// `ConfigPatch`. Null fields are left untouched.
-typedef BehaviorPatchFn = Future<void> Function({
-  bool? flashOnMessage,
-  bool? flashOnCritical,
-  bool? audibleAlert,
-  bool? flashWholeScreen,
-  bool? hideKeyboard,
-  int? flashCount,
-  int? macrosColumns,
-});
+typedef BehaviorPatchFn =
+    Future<void> Function({
+      bool? flashOnMessage,
+      bool? flashOnCritical,
+      bool? audibleAlert,
+      bool? flashWholeScreen,
+      bool? hideKeyboard,
+      int? flashCount,
+      int? macrosColumns,
+    });
 
 /// Owns the Behavior section's save→refetch loops (#141): flash toggles,
 /// audible alert, flash pulse count, macros-panel columns, keyboard hiding,

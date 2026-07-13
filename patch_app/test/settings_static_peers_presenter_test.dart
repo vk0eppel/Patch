@@ -27,8 +27,11 @@ void main() {
 
     test('a valid add saves then refetches config and peers', () async {
       expect(await p.add(' 10.0.0.9 ', 9000, 'QLab'), isA<SaveOk>());
-      expect(calls,
-          ['add:10.0.0.9:9000:QLab', 'refreshConfig', 'refreshPeers']);
+      expect(calls, [
+        'add:10.0.0.9:9000:QLab',
+        'refreshConfig',
+        'refreshPeers',
+      ]);
     });
 
     test('remove refetches config and peers', () async {

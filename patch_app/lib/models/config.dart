@@ -10,17 +10,10 @@ class StaticPeerInfo {
   final int port;
   final String? label;
 
-  const StaticPeerInfo({
-    required this.address,
-    required this.port,
-    this.label,
-  });
+  const StaticPeerInfo({required this.address, required this.port, this.label});
 
-  factory StaticPeerInfo.fromRust(rust_config.StaticPeer s) => StaticPeerInfo(
-        address: s.address,
-        port: s.port,
-        label: s.label,
-      );
+  factory StaticPeerInfo.fromRust(rust_config.StaticPeer s) =>
+      StaticPeerInfo(address: s.address, port: s.port, label: s.label);
 }
 
 /// Typed view of the engine's runtime-mutable config (Rust `ConfigSnapshot`,
@@ -65,20 +58,20 @@ class AppConfig {
   });
 
   factory AppConfig.fromRust(rust.ConfigSnapshot cfg) => AppConfig(
-        clientName: cfg.clientName,
-        role: cfg.role,
-        oscPort: cfg.oscPort,
-        networkInterface: cfg.networkInterface,
-        staticPeers: cfg.staticPeers.map(StaticPeerInfo.fromRust).toList(),
-        flashOnCritical: cfg.flashOnCritical,
-        flashOnMessage: cfg.flashOnMessage,
-        flashCount: cfg.flashCount,
-        macrosColumns: cfg.macrosColumns,
-        hideKeyboard: cfg.hideKeyboard,
-        audibleAlert: cfg.audibleAlert,
-        flashWholeScreen: cfg.flashWholeScreen,
-        globalMacros: cfg.globalMacros.map(MacroMessage.fromRust).toList(),
-        heartbeatIntervalSecs: cfg.heartbeatIntervalSecs,
-        nameIsDefault: cfg.nameIsDefault,
-      );
+    clientName: cfg.clientName,
+    role: cfg.role,
+    oscPort: cfg.oscPort,
+    networkInterface: cfg.networkInterface,
+    staticPeers: cfg.staticPeers.map(StaticPeerInfo.fromRust).toList(),
+    flashOnCritical: cfg.flashOnCritical,
+    flashOnMessage: cfg.flashOnMessage,
+    flashCount: cfg.flashCount,
+    macrosColumns: cfg.macrosColumns,
+    hideKeyboard: cfg.hideKeyboard,
+    audibleAlert: cfg.audibleAlert,
+    flashWholeScreen: cfg.flashWholeScreen,
+    globalMacros: cfg.globalMacros.map(MacroMessage.fromRust).toList(),
+    heartbeatIntervalSecs: cfg.heartbeatIntervalSecs,
+    nameIsDefault: cfg.nameIsDefault,
+  );
 }

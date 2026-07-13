@@ -12,19 +12,24 @@ Widget host(PeerPickerDialog dialog) =>
     MaterialApp(home: Scaffold(body: dialog));
 
 void main() {
-  testWidgets('lists only peers with a known address and port; tap picks',
-      (tester) async {
+  testWidgets('lists only peers with a known address and port; tap picks', (
+    tester,
+  ) async {
     final picked = <String>[];
-    await tester.pumpWidget(host(PeerPickerDialog(
-      title: 'Import channels from…',
-      blurb: 'Pick a peer.',
-      peers: [
-        peer('FOH'),
-        peer('NoAddress', address: ''),
-        peer('NoPort', port: 0),
-      ],
-      onPick: (id, name) => picked.add('$id:$name'),
-    )));
+    await tester.pumpWidget(
+      host(
+        PeerPickerDialog(
+          title: 'Import channels from…',
+          blurb: 'Pick a peer.',
+          peers: [
+            peer('FOH'),
+            peer('NoAddress', address: ''),
+            peer('NoPort', port: 0),
+          ],
+          onPick: (id, name) => picked.add('$id:$name'),
+        ),
+      ),
+    );
 
     expect(find.text('FOH'), findsOneWidget);
     expect(find.text('NoAddress'), findsNothing);
@@ -35,15 +40,23 @@ void main() {
     expect(picked, ['id-FOH:FOH']);
   });
 
-  testWidgets('no eligible peers shows the wait-for-a-peer empty state',
-      (tester) async {
-    await tester.pumpWidget(host(PeerPickerDialog(
-      title: 'Import macros from…',
-      blurb: 'Pick a peer.',
-      peers: [peer('Ghost', address: '')],
-      onPick: (_, _) => fail('nothing to pick'),
-    )));
+  testWidgets('no eligible peers shows the wait-for-a-peer empty state', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      host(
+        PeerPickerDialog(
+          title: 'Import macros from…',
+          blurb: 'Pick a peer.',
+          peers: [peer('Ghost', address: '')],
+          onPick: (_, _) => fail('nothing to pick'),
+        ),
+      ),
+    );
 
-    expect(find.textContaining('No peers with a known address'), findsOneWidget);
+    expect(
+      find.textContaining('No peers with a known address'),
+      findsOneWidget,
+    );
   });
 }

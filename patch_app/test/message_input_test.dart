@@ -7,27 +7,31 @@ void main() {
   // (gated to mobile in #78) always resolves to `false` here — exercising the
   // desktop branch directly, with no platform faking needed.
   Widget host({required ValueChanged<String> onSend}) => MaterialApp(
-        home: Scaffold(
-          body: MessageInput(onSend: onSend, hideKeyboard: false),
-        ),
-      );
+    home: Scaffold(body: MessageInput(onSend: onSend, hideKeyboard: false)),
+  );
 
-  testWidgets('autofocuses on initial view when hideKeyboard is false',
-      (tester) async {
+  testWidgets('autofocuses on initial view when hideKeyboard is false', (
+    tester,
+  ) async {
     await tester.pumpWidget(host(onSend: (_) {}));
-    final focusNode = tester.widget<TextField>(find.byType(TextField)).focusNode!;
+    final focusNode = tester
+        .widget<TextField>(find.byType(TextField))
+        .focusNode!;
     expect(focusNode.hasFocus, isTrue);
   });
 
-  testWidgets('field regains focus immediately after a send (send button)',
-      (tester) async {
+  testWidgets('field regains focus immediately after a send (send button)', (
+    tester,
+  ) async {
     String? sent;
     await tester.pumpWidget(host(onSend: (text) => sent = text));
 
     await tester.enterText(find.byType(TextField), 'standby');
     // Drop focus first (e.g. as a channel switch would) so the assertion
     // below actually proves the post-send refocus, not just autofocus.
-    final focusNode = tester.widget<TextField>(find.byType(TextField)).focusNode!;
+    final focusNode = tester
+        .widget<TextField>(find.byType(TextField))
+        .focusNode!;
     focusNode.unfocus();
     await tester.pump();
     expect(focusNode.hasFocus, isFalse);
@@ -39,8 +43,9 @@ void main() {
     expect(focusNode.hasFocus, isTrue);
   });
 
-  testWidgets('field regains focus immediately after a send (Enter key)',
-      (tester) async {
+  testWidgets('field regains focus immediately after a send (Enter key)', (
+    tester,
+  ) async {
     String? sent;
     await tester.pumpWidget(host(onSend: (text) => sent = text));
 
@@ -49,7 +54,9 @@ void main() {
     await tester.pump();
 
     expect(sent, 'go standby');
-    final focusNode = tester.widget<TextField>(find.byType(TextField)).focusNode!;
+    final focusNode = tester
+        .widget<TextField>(find.byType(TextField))
+        .focusNode!;
     expect(focusNode.hasFocus, isTrue);
   });
 }

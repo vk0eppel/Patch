@@ -35,37 +35,47 @@ void main() {
 
     test('a Global Macro save carries no channel id', () async {
       final result = await p.saveMacro(
-          macro: const MacroMessage(label: 'Standby', payload: 'standby'));
+        macro: const MacroMessage(label: 'Standby', payload: 'standby'),
+      );
       expect(result, isA<SaveOk>());
       expect(calls, ['upsertMacro:<global>:Standby']);
     });
 
-    test('an invalid OSC target rejects before any bridge call — both homes',
-        () async {
-      const badOsc = MacroOsc(
-        address: 'not-an-ip',
-        port: 53000,
-        path: '/cue/1/start',
-        argType: MacroOscArgType.string,
-      );
-      expect(
-        await p.saveMacro(
+    test(
+      'an invalid OSC target rejects before any bridge call — both homes',
+      () async {
+        const badOsc = MacroOsc(
+          address: 'not-an-ip',
+          port: 53000,
+          path: '/cue/1/start',
+          argType: MacroOscArgType.string,
+        );
+        expect(
+          await p.saveMacro(
             channelId: 'rf',
-            macro: const MacroMessage(label: 'GO', payload: 'go', osc: badOsc)),
-        isA<SaveError>(),
-      );
-      expect(
-        await p.saveMacro(
-            macro:
-                const MacroMessage(label: 'Standby', payload: 's', osc: badOsc)),
-        isA<SaveError>(),
-      );
-      expect(calls, isEmpty);
-    });
+            macro: const MacroMessage(label: 'GO', payload: 'go', osc: badOsc),
+          ),
+          isA<SaveError>(),
+        );
+        expect(
+          await p.saveMacro(
+            macro: const MacroMessage(
+              label: 'Standby',
+              payload: 's',
+              osc: badOsc,
+            ),
+          ),
+          isA<SaveError>(),
+        );
+        expect(calls, isEmpty);
+      },
+    );
 
     test('no OSC target skips the guard', () async {
       final result = await p.saveMacro(
-          channelId: 'rf', macro: const MacroMessage(label: 'GO', payload: 'go'));
+        channelId: 'rf',
+        macro: const MacroMessage(label: 'GO', payload: 'go'),
+      );
       expect(result, isA<SaveOk>());
       expect(calls, ['upsertMacro:rf:GO']);
     });

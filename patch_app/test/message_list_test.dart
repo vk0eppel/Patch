@@ -8,27 +8,28 @@ import 'package:patch/theme/patch_theme.dart';
 import 'package:patch/widgets/message_list.dart';
 
 PatchMessage _msg(String payload, {int priority = 1}) => PatchMessage(
-      messageId: payload,
-      senderId: 's',
-      senderName: 'FOH',
-      channelId: 'rf',
-      timestamp: DateTime(2026, 6, 4, 9, 30),
-      priority: priority,
-      payload: payload,
-    );
+  messageId: payload,
+  senderId: 's',
+  senderName: 'FOH',
+  channelId: 'rf',
+  timestamp: DateTime(2026, 6, 4, 9, 30),
+  priority: priority,
+  payload: payload,
+);
 
 Widget _host(
   List<PatchMessage> messages, {
   Map<String, MessageDeliveryStatus>? delivery,
-}) =>
-    MaterialApp(
-      home: Scaffold(
-        body: MessageList(messages: messages, delivery: delivery),
-      ),
-    );
+}) => MaterialApp(
+  home: Scaffold(
+    body: MessageList(messages: messages, delivery: delivery),
+  ),
+);
 
 void main() {
-  testWidgets('shows the empty-state hint when there are no messages', (tester) async {
+  testWidgets('shows the empty-state hint when there are no messages', (
+    tester,
+  ) async {
     await tester.pumpWidget(_host(const []));
     expect(find.text('No messages yet'), findsOneWidget);
   });
@@ -41,18 +42,38 @@ void main() {
     expect(find.text('No messages yet'), findsNothing);
   });
 
-  testWidgets('delivery badge: in-progress shows N/M, complete shows a check', (tester) async {
+  testWidgets('delivery badge: in-progress shows N/M, complete shows a check', (
+    tester,
+  ) async {
     final m = _msg('HOLD', priority: 3);
-    await tester.pumpWidget(_host([m], delivery: {
-      m.messageId: const MessageDeliveryStatus(delivered: 1, total: 3, failed: false),
-    }));
+    await tester.pumpWidget(
+      _host(
+        [m],
+        delivery: {
+          m.messageId: const MessageDeliveryStatus(
+            delivered: 1,
+            total: 3,
+            failed: false,
+          ),
+        },
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('1/3'), findsOneWidget);
     expect(find.byIcon(Icons.done_all), findsNothing);
 
-    await tester.pumpWidget(_host([m], delivery: {
-      m.messageId: const MessageDeliveryStatus(delivered: 3, total: 3, failed: false),
-    }));
+    await tester.pumpWidget(
+      _host(
+        [m],
+        delivery: {
+          m.messageId: const MessageDeliveryStatus(
+            delivered: 3,
+            total: 3,
+            failed: false,
+          ),
+        },
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('3/3'), findsNothing);
     expect(find.byIcon(Icons.done_all), findsOneWidget); // delivered to all
@@ -60,26 +81,35 @@ void main() {
 
   testWidgets('delivery badge: failure shows the alert icon', (tester) async {
     final m = _msg('HOLD', priority: 3);
-    await tester.pumpWidget(_host([m], delivery: {
-      m.messageId: const MessageDeliveryStatus(
-        delivered: 1,
-        total: 2,
-        failed: true,
-        failedPeers: ['RF Tech'],
+    await tester.pumpWidget(
+      _host(
+        [m],
+        delivery: {
+          m.messageId: const MessageDeliveryStatus(
+            delivered: 1,
+            total: 2,
+            failed: true,
+            failedPeers: ['RF Tech'],
+          ),
+        },
       ),
-    }));
+    );
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.error_outline), findsOneWidget);
   });
 
-  testWidgets('no delivery badge when the message has no status', (tester) async {
+  testWidgets('no delivery badge when the message has no status', (
+    tester,
+  ) async {
     await tester.pumpWidget(_host([_msg('Channel clear', priority: 1)]));
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.done_all), findsNothing);
     expect(find.byIcon(Icons.error_outline), findsNothing);
   });
 
-  testWidgets('broadcast (__all__) messages show the 📢 marker', (tester) async {
+  testWidgets('broadcast (__all__) messages show the 📢 marker', (
+    tester,
+  ) async {
     final broadcast = PatchMessage(
       messageId: 'b1',
       senderId: 's',
@@ -96,7 +126,9 @@ void main() {
     expect(find.text('LUNCH BREAK'), findsOneWidget);
   });
 
-  testWidgets('flash entry with role renders "Name (Role) flashed"', (tester) async {
+  testWidgets('flash entry with role renders "Name (Role) flashed"', (
+    tester,
+  ) async {
     final flash = PatchMessage(
       messageId: 'f1',
       senderId: 's',
@@ -114,23 +146,26 @@ void main() {
     expect(find.text('James (FOH Audio) flashed'), findsOneWidget);
   });
 
-  testWidgets('flash entry without role renders "Name flashed" — no parenthetical', (tester) async {
-    final flash = PatchMessage(
-      messageId: 'f2',
-      senderId: 's',
-      senderName: 'James',
-      channelId: 'rf',
-      timestamp: DateTime(2026, 6, 4, 9, 30),
-      priority: 1,
-      payload: '',
-      isFlash: true,
-      flashSenderName: 'James',
-    );
-    await tester.pumpWidget(_host([flash]));
-    await tester.pumpAndSettle();
-    expect(find.text('James flashed'), findsOneWidget);
-    expect(find.textContaining('('), findsNothing);
-  });
+  testWidgets(
+    'flash entry without role renders "Name flashed" — no parenthetical',
+    (tester) async {
+      final flash = PatchMessage(
+        messageId: 'f2',
+        senderId: 's',
+        senderName: 'James',
+        channelId: 'rf',
+        timestamp: DateTime(2026, 6, 4, 9, 30),
+        priority: 1,
+        payload: '',
+        isFlash: true,
+        flashSenderName: 'James',
+      );
+      await tester.pumpWidget(_host([flash]));
+      await tester.pumpAndSettle();
+      expect(find.text('James flashed'), findsOneWidget);
+      expect(find.textContaining('('), findsNothing);
+    },
+  );
 
   testWidgets('flash row shows a timestamp', (tester) async {
     final flash = PatchMessage(
@@ -151,8 +186,9 @@ void main() {
     expect(find.textContaining(':'), findsWidgets);
   });
 
-  testWidgets('flash row timestamp column aligns with message rows',
-      (tester) async {
+  testWidgets('flash row timestamp column aligns with message rows', (
+    tester,
+  ) async {
     final flash = PatchMessage(
       messageId: 'f-align',
       senderId: 's',
@@ -173,13 +209,13 @@ void main() {
       (w) => w is Text && w.style?.fontFamily == 'monospace',
     );
     expect(timeTexts, findsNWidgets(2));
-    final xs = tester
-        .getTopLeft(timeTexts.first)
-        .dx;
+    final xs = tester.getTopLeft(timeTexts.first).dx;
     expect(tester.getTopLeft(timeTexts.last).dx, xs);
   });
 
-  testWidgets('flash row has no priority badge or sender-name chrome', (tester) async {
+  testWidgets('flash row has no priority badge or sender-name chrome', (
+    tester,
+  ) async {
     final flash = PatchMessage(
       messageId: 'f4',
       senderId: 's',
@@ -209,7 +245,9 @@ void main() {
     }
   });
 
-  testWidgets('regular messages are unaffected by flash fields', (tester) async {
+  testWidgets('regular messages are unaffected by flash fields', (
+    tester,
+  ) async {
     await tester.pumpWidget(_host([_msg('Channel clear', priority: 1)]));
     await tester.pumpAndSettle();
     expect(find.text('Channel clear'), findsOneWidget);

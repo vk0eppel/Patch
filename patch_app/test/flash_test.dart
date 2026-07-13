@@ -8,10 +8,7 @@ import 'package:patch/models/channel.dart';
 import 'package:patch/models/flash_model.dart';
 import 'package:patch/models/message.dart';
 
-PatchMessage _msg({
-  required String channelId,
-  int priority = 1,
-}) =>
+PatchMessage _msg({required String channelId, int priority = 1}) =>
     PatchMessage(
       messageId: 'm1',
       senderId: 's1',
@@ -60,13 +57,15 @@ void main() {
     });
 
     test('critical message flashes when global flashOnCritical is set', () {
-      final event = decideMessageFlash(
-        msg: _msg(channelId: 'rf', priority: 3),
-        channels: const [channel],
-        globalOnCritical: true,
-        globalOnMessage: false,
-        globalPulseCount: 4,
-      ) as ChannelFlashEvent;
+      final event =
+          decideMessageFlash(
+                msg: _msg(channelId: 'rf', priority: 3),
+                channels: const [channel],
+                globalOnCritical: true,
+                globalOnMessage: false,
+                globalPulseCount: 4,
+              )
+              as ChannelFlashEvent;
       expect(event.channelId, 'rf');
       expect(event.color, Colors.red);
     });
@@ -79,13 +78,15 @@ void main() {
         flashOnMessage: true,
         flashCount: 7,
       );
-      final event = decideMessageFlash(
-        msg: _msg(channelId: 'rf'),
-        channels: const [ch],
-        globalOnCritical: false,
-        globalOnMessage: true,
-        globalPulseCount: 4,
-      ) as ChannelFlashEvent;
+      final event =
+          decideMessageFlash(
+                msg: _msg(channelId: 'rf'),
+                channels: const [ch],
+                globalOnCritical: false,
+                globalOnMessage: true,
+                globalPulseCount: 4,
+              )
+              as ChannelFlashEvent;
       expect(event.pulseCount, 7);
     });
 
@@ -103,13 +104,15 @@ void main() {
 
   group('broadcast (__all__) messages', () {
     test('flashes on globalOnMessage regardless of priority', () {
-      final event = decideMessageFlash(
-        msg: _msg(channelId: kAllChannelId),
-        channels: const [],
-        globalOnCritical: false,
-        globalOnMessage: true,
-        globalPulseCount: 5,
-      ) as BroadcastFlashEvent;
+      final event =
+          decideMessageFlash(
+                msg: _msg(channelId: kAllChannelId),
+                channels: const [],
+                globalOnCritical: false,
+                globalOnMessage: true,
+                globalPulseCount: 5,
+              )
+              as BroadcastFlashEvent;
       expect(event.pulseCount, 5);
     });
 
@@ -127,13 +130,15 @@ void main() {
 
   group('direct messages', () {
     test('critical DM flashes', () {
-      final event = decideMessageFlash(
-        msg: _msg(channelId: 'dm:p1', priority: 3),
-        channels: const [],
-        globalOnCritical: true,
-        globalOnMessage: false,
-        globalPulseCount: 4,
-      ) as DmFlashEvent;
+      final event =
+          decideMessageFlash(
+                msg: _msg(channelId: 'dm:p1', priority: 3),
+                channels: const [],
+                globalOnCritical: true,
+                globalOnMessage: false,
+                globalPulseCount: 4,
+              )
+              as DmFlashEvent;
       expect(event.peerId, 'p1');
     });
 
@@ -145,7 +150,10 @@ void main() {
         globalOnMessage: true,
         globalPulseCount: 4,
       );
-      expect(event, isNull); // caller marks it unread instead — not a flash decision
+      expect(
+        event,
+        isNull,
+      ); // caller marks it unread instead — not a flash decision
     });
   });
 }

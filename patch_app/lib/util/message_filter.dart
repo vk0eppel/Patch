@@ -16,7 +16,8 @@ String messageCategory(int priority) {
 bool messageMatchesQuery(PatchMessage m, String query) {
   final q = query.trim().toLowerCase();
   if (q.isEmpty) return true;
-  return m.senderName.toLowerCase().contains(q) || m.payload.toLowerCase().contains(q);
+  return m.senderName.toLowerCase().contains(q) ||
+      m.payload.toLowerCase().contains(q);
 }
 
 /// Matches when the message's category is one of [categories]. An empty set
@@ -30,7 +31,10 @@ List<PatchMessage> filterMessages(
   List<PatchMessage> messages, {
   String query = '',
   Set<String> categories = const {},
-}) =>
-    messages
-        .where((m) => messageMatchesQuery(m, query) && messageMatchesPriority(m, categories))
-        .toList();
+}) => messages
+    .where(
+      (m) =>
+          messageMatchesQuery(m, query) &&
+          messageMatchesPriority(m, categories),
+    )
+    .toList();

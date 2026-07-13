@@ -18,15 +18,15 @@ void main() {
   final ts = DateTime.utc(2026, 6, 21, 12, 0, 0);
 
   rust_osc.PatchMessage msg() => rust_osc.PatchMessage(
-        messageId: msgId,
-        senderId: senderId,
-        senderName: 'FOH',
-        channelId: 'rf',
-        timestamp: ts,
-        priority: rust_osc.Priority.critical,
-        payload: 'standby',
-        isFlash: false,
-      );
+    messageId: msgId,
+    senderId: senderId,
+    senderName: 'FOH',
+    channelId: 'rf',
+    timestamp: ts,
+    priority: rust_osc.Priority.critical,
+    payload: 'standby',
+    isFlash: false,
+  );
 
   group('data-carrying variants', () {
     test('Message → MessageReceived with converted fields', () {
@@ -42,31 +42,38 @@ void main() {
       expect(m.timestamp, ts);
     });
 
-    test('MessageDelivery → DeliveryUpdated carrying a MessageDeliveryStatus', () {
-      final ev = patchEventFromRust(rust.PatchAppEvent.messageDelivery(
-        messageId: 'abc',
-        delivered: 2,
-        total: 3,
-        failed: false,
-        failedPeers: const ['Lighting'],
-      ));
-      expect(ev, isA<DeliveryUpdated>());
-      final d = ev as DeliveryUpdated;
-      expect(d.messageId, 'abc');
-      expect(d.status.delivered, 2);
-      expect(d.status.total, 3);
-      expect(d.status.failed, isFalse);
-      expect(d.status.failedPeers, const ['Lighting']);
-    });
+    test(
+      'MessageDelivery → DeliveryUpdated carrying a MessageDeliveryStatus',
+      () {
+        final ev = patchEventFromRust(
+          rust.PatchAppEvent.messageDelivery(
+            messageId: 'abc',
+            delivered: 2,
+            total: 3,
+            failed: false,
+            failedPeers: const ['Lighting'],
+          ),
+        );
+        expect(ev, isA<DeliveryUpdated>());
+        final d = ev as DeliveryUpdated;
+        expect(d.messageId, 'abc');
+        expect(d.status.delivered, 2);
+        expect(d.status.total, 3);
+        expect(d.status.failed, isFalse);
+        expect(d.status.failedPeers, const ['Lighting']);
+      },
+    );
 
     test('ChannelFlash → Flashed with senderId stringified', () {
-      final ev = patchEventFromRust(rust.PatchAppEvent.channelFlash(
-        rust_osc.ChannelFlash(
-          channelId: 'rf',
-          senderId: senderId,
-          senderName: 'FOH',
+      final ev = patchEventFromRust(
+        rust.PatchAppEvent.channelFlash(
+          rust_osc.ChannelFlash(
+            channelId: 'rf',
+            senderId: senderId,
+            senderName: 'FOH',
+          ),
         ),
-      ));
+      );
       expect(ev, isA<Flashed>());
       final f = ev as Flashed;
       expect(f.channelId, 'rf');
@@ -80,49 +87,56 @@ void main() {
     });
 
     test('PeerExpired → PeerExpired carrying the peer id', () {
-      final ev =
-          patchEventFromRust(rust.PatchAppEvent.peerExpired(peerId: 'peer-9'));
+      final ev = patchEventFromRust(
+        rust.PatchAppEvent.peerExpired(peerId: 'peer-9'),
+      );
       expect(ev, isA<PeerExpired>());
       expect((ev as PeerExpired).peerId, 'peer-9');
     });
 
     test('ChannelsOffered → ChannelsOffered with converted channels', () {
-      final ev = patchEventFromRust(rust.PatchAppEvent.channelsOffered(
-        fromPeerId: 'peer-1',
-        fromName: 'Booth',
-        channels: [
-          const rust_channel.Channel(
-            id: 'rf',
-            displayName: 'RF',
-            color: '#1E88E5',
-            macros: [],
-            flashOnCritical: true,
-            flashOnMessage: false,
-          ),
-        ],
-      ));
+      final ev = patchEventFromRust(
+        rust.PatchAppEvent.channelsOffered(
+          fromPeerId: 'peer-1',
+          fromName: 'Booth',
+          channels: [
+            const rust_channel.Channel(
+              id: 'rf',
+              displayName: 'RF',
+              color: '#1E88E5',
+              macros: [],
+              flashOnCritical: true,
+              flashOnMessage: false,
+            ),
+          ],
+        ),
+      );
       expect(ev, isA<ChannelsOffered>());
       final o = ev as ChannelsOffered;
       expect(o.fromPeerId, 'peer-1');
       expect(o.fromName, 'Booth');
       expect(o.channels, hasLength(1));
       expect(o.channels.single.id, 'rf');
-      expect(o.channels.single.displayName, 'RF'); // hex colour parsed by converter
+      expect(
+        o.channels.single.displayName,
+        'RF',
+      ); // hex colour parsed by converter
     });
 
-    test('GlobalMacrosOffered → GlobalMacrosOffered with converted macros',
-        () {
-      final ev = patchEventFromRust(rust.PatchAppEvent.globalMacrosOffered(
-        fromPeerId: 'peer-1',
-        fromName: 'Booth',
-        globalMacros: [
-          const rust_channel.MacroMessage(
-            label: 'GO',
-            payload: 'Go',
-            priority: 1,
-          ),
-        ],
-      ));
+    test('GlobalMacrosOffered → GlobalMacrosOffered with converted macros', () {
+      final ev = patchEventFromRust(
+        rust.PatchAppEvent.globalMacrosOffered(
+          fromPeerId: 'peer-1',
+          fromName: 'Booth',
+          globalMacros: [
+            const rust_channel.MacroMessage(
+              label: 'GO',
+              payload: 'Go',
+              priority: 1,
+            ),
+          ],
+        ),
+      );
       expect(ev, isA<GlobalMacrosOffered>());
       final o = ev as GlobalMacrosOffered;
       expect(o.fromPeerId, 'peer-1');
@@ -133,28 +147,32 @@ void main() {
 
     test('ClientNameChanged → ClientNameChanged', () {
       final ev = patchEventFromRust(
-          rust.PatchAppEvent.clientNameChanged(name: 'Stage Manager'));
+        rust.PatchAppEvent.clientNameChanged(name: 'Stage Manager'),
+      );
       expect((ev as ClientNameChanged).name, 'Stage Manager');
     });
 
     test('PermissionDenied → PermissionDenied', () {
       final ev = patchEventFromRust(
-          rust.PatchAppEvent.permissionDenied(context: 'Local Network blocked'));
+        rust.PatchAppEvent.permissionDenied(context: 'Local Network blocked'),
+      );
       expect((ev as PermissionDenied).context, 'Local Network blocked');
     });
   });
 
   group('refetch signals (payload-free)', () {
     test('PeerUpdated → PeersChanged, dropping the presence payload', () {
-      final ev = patchEventFromRust(rust.PatchAppEvent.peerUpdated(
-        rust_osc.PeerPresence(
-          peerId: senderId,
-          peerName: 'someone',
-          channels: const [],
-          role: null,
-          timestamp: ts,
+      final ev = patchEventFromRust(
+        rust.PatchAppEvent.peerUpdated(
+          rust_osc.PeerPresence(
+            peerId: senderId,
+            peerName: 'someone',
+            channels: const [],
+            role: null,
+            timestamp: ts,
+          ),
         ),
-      ));
+      );
       expect(ev, isA<PeersChanged>());
     });
 
@@ -167,7 +185,8 @@ void main() {
   group('intentional drops', () {
     test('MessageAcked is not surfaced (maps to null)', () {
       final ev = patchEventFromRust(
-          rust.PatchAppEvent.messageAcked(messageId: 'x', peerId: 'y'));
+        rust.PatchAppEvent.messageAcked(messageId: 'x', peerId: 'y'),
+      );
       expect(ev, isNull);
     });
   });

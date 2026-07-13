@@ -99,10 +99,12 @@ void main() async {
     await windowManager.focus();
   }
 
-  runApp(PatchApp(
-    workspaceStore: workspaceStore,
-    initialWorkspace: initialWorkspace,
-  ));
+  runApp(
+    PatchApp(
+      workspaceStore: workspaceStore,
+      initialWorkspace: initialWorkspace,
+    ),
+  );
 }
 
 class PatchApp extends StatefulWidget {
@@ -197,7 +199,11 @@ class _PatchAppState extends State<PatchApp> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
+                const Icon(
+                  Icons.error_outline,
+                  size: 48,
+                  color: Colors.redAccent,
+                ),
                 const SizedBox(height: 16),
                 const Text(
                   'Could not start the PATCH engine',

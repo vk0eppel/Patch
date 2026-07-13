@@ -14,10 +14,10 @@ enum MacroOscArgType {
   float;
 
   factory MacroOscArgType.fromRust(rust_osc.OscArgKind kind) => switch (kind) {
-        rust_osc.OscArgKind.string => MacroOscArgType.string,
-        rust_osc.OscArgKind.int => MacroOscArgType.int,
-        rust_osc.OscArgKind.float => MacroOscArgType.float,
-      };
+    rust_osc.OscArgKind.string => MacroOscArgType.string,
+    rust_osc.OscArgKind.int => MacroOscArgType.int,
+    rust_osc.OscArgKind.float => MacroOscArgType.float,
+  };
 }
 
 /// An outbound OSC target attached to a macro — fired alongside the Patch message
@@ -38,12 +38,12 @@ class MacroOsc {
   });
 
   factory MacroOsc.fromRust(rust_channel.OscTarget o) => MacroOsc(
-        address: o.address,
-        port: o.port,
-        path: o.path,
-        arg: o.arg,
-        argType: MacroOscArgType.fromRust(o.argType),
-      );
+    address: o.address,
+    port: o.port,
+    path: o.path,
+    arg: o.arg,
+    argType: MacroOscArgType.fromRust(o.argType),
+  );
 }
 
 class MacroMessage {
@@ -72,14 +72,14 @@ class MacroMessage {
   });
 
   factory MacroMessage.fromRust(rust_channel.MacroMessage s) => MacroMessage(
-        label: s.label,
-        payload: s.payload,
-        keyBinding: s.keyBinding,
-        priority: s.priority,
-        midiNote: s.midiNote,
-        midiCc: s.midiCc,
-        osc: s.osc == null ? null : MacroOsc.fromRust(s.osc!),
-      );
+    label: s.label,
+    payload: s.payload,
+    keyBinding: s.keyBinding,
+    priority: s.priority,
+    midiNote: s.midiNote,
+    midiCc: s.midiCc,
+    osc: s.osc == null ? null : MacroOsc.fromRust(s.osc!),
+  );
 }
 
 class PatchChannel {
@@ -89,6 +89,7 @@ class PatchChannel {
   final List<MacroMessage> macros;
   final bool flashOnCritical;
   final bool flashOnMessage;
+
   /// Per-channel pulse count override. null = use global setting.
   final int? flashCount;
 
@@ -103,14 +104,14 @@ class PatchChannel {
   });
 
   factory PatchChannel.fromRust(rust_channel.Channel c) => PatchChannel(
-        id: c.id,
-        displayName: c.displayName,
-        color: _parseHexColor(c.color),
-        macros: c.macros.map(MacroMessage.fromRust).toList(),
-        flashOnCritical: c.flashOnCritical,
-        flashOnMessage: c.flashOnMessage,
-        flashCount: c.flashCount,
-      );
+    id: c.id,
+    displayName: c.displayName,
+    color: _parseHexColor(c.color),
+    macros: c.macros.map(MacroMessage.fromRust).toList(),
+    flashOnCritical: c.flashOnCritical,
+    flashOnMessage: c.flashOnMessage,
+    flashCount: c.flashCount,
+  );
 }
 
 /// Outcome of considering one offered Macro for import from a Peer's global
@@ -125,8 +126,9 @@ sealed class MacroImportOutcome {
       switch (o) {
         rust_channel.MacroImportOutcome_AlreadyHave(:final label) =>
           MacroAlreadyHave(label),
-        rust_channel.MacroImportOutcome_Added(:final msg) =>
-          MacroAdded(MacroMessage.fromRust(msg)),
+        rust_channel.MacroImportOutcome_Added(:final msg) => MacroAdded(
+          MacroMessage.fromRust(msg),
+        ),
         rust_channel.MacroImportOutcome_AddedBindingDropped(
           :final msg,
           :final reason,

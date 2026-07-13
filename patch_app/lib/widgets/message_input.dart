@@ -74,13 +74,17 @@ class _MessageInputState extends State<MessageInput> {
               textAlignVertical: TextAlignVertical.center,
               decoration: InputDecoration(
                 isDense: true,
-                hintText: widget.hint ??
+                hintText:
+                    widget.hint ??
                     (widget.hideKeyboard ? 'Tap to type…' : 'Type a message…'),
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,
                 filled: false,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 6,
+                ),
               ),
               maxLines: 1,
               textInputAction: TextInputAction.send,

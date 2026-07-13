@@ -15,31 +15,38 @@ const _ifaces = [
   {'name': 'en1', 'ip': '10.0.0.2'},
 ];
 
-Widget _host({required List<Map<String, String>> interfaces, String? selected}) =>
-    MaterialApp(
-      home: Scaffold(
-        body: InterfacePicker(
-          interfaces: interfaces,
-          selected: selected,
-          applied: false,
-          onSelect: (_) {},
-        ),
-      ),
-    );
+Widget _host({
+  required List<Map<String, String>> interfaces,
+  String? selected,
+}) => MaterialApp(
+  home: Scaffold(
+    body: InterfacePicker(
+      interfaces: interfaces,
+      selected: selected,
+      applied: false,
+      onSelect: (_) {},
+    ),
+  ),
+);
 
 void main() {
-  testWidgets('never renders an Auto option (mandatory pinning)', (tester) async {
+  testWidgets('never renders an Auto option (mandatory pinning)', (
+    tester,
+  ) async {
     await tester.pumpWidget(_host(interfaces: _ifaces, selected: null));
     expect(tester.takeException(), isNull);
     expect(find.textContaining('Auto'), findsNothing);
   });
 
-  testWidgets('shows a distinct placeholder when nothing has ever been resolved', (tester) async {
-    await tester.pumpWidget(_host(interfaces: _ifaces, selected: null));
-    expect(tester.takeException(), isNull);
-    expect(find.text('Select a network…'), findsOneWidget);
-    expect(find.textContaining('not connected'), findsNothing);
-  });
+  testWidgets(
+    'shows a distinct placeholder when nothing has ever been resolved',
+    (tester) async {
+      await tester.pumpWidget(_host(interfaces: _ifaces, selected: null));
+      expect(tester.takeException(), isNull);
+      expect(find.text('Select a network…'), findsOneWidget);
+      expect(find.textContaining('not connected'), findsNothing);
+    },
+  );
 
   testWidgets('renders with an enumerated interface selected', (tester) async {
     await tester.pumpWidget(_host(interfaces: _ifaces, selected: 'en0'));
@@ -47,16 +54,21 @@ void main() {
     expect(find.textContaining('en0'), findsWidgets);
   });
 
-  testWidgets('does not crash when the saved interface is missing from the list', (tester) async {
-    // The reported bug: selected 'en10' is not among the enumerated interfaces.
-    await tester.pumpWidget(_host(interfaces: _ifaces, selected: 'en10'));
-    expect(tester.takeException(), isNull); // no DropdownButton assertion
-    // The stale selection is surfaced so it stays visible/editable.
-    expect(find.textContaining('en10'), findsOneWidget);
-    expect(find.textContaining('not connected'), findsOneWidget);
-  });
+  testWidgets(
+    'does not crash when the saved interface is missing from the list',
+    (tester) async {
+      // The reported bug: selected 'en10' is not among the enumerated interfaces.
+      await tester.pumpWidget(_host(interfaces: _ifaces, selected: 'en10'));
+      expect(tester.takeException(), isNull); // no DropdownButton assertion
+      // The stale selection is surfaced so it stays visible/editable.
+      expect(find.textContaining('en10'), findsOneWidget);
+      expect(find.textContaining('not connected'), findsOneWidget);
+    },
+  );
 
-  testWidgets('does not crash when the interface list is empty', (tester) async {
+  testWidgets('does not crash when the interface list is empty', (
+    tester,
+  ) async {
     await tester.pumpWidget(_host(interfaces: const [], selected: 'en10'));
     expect(tester.takeException(), isNull);
     expect(find.textContaining('en10'), findsOneWidget);

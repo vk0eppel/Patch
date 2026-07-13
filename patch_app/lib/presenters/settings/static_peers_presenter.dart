@@ -13,7 +13,7 @@ class StaticPeersPresenter {
   });
 
   final Future<void> Function(String address, int port, String? label)
-      addStaticPeer;
+  addStaticPeer;
   final Future<void> Function(String address, int port) removeStaticPeer;
   final Future<void> Function() refreshConfig;
   final Future<void> Function() refreshPeers;

@@ -19,7 +19,11 @@ class ShowFilesDialog extends StatefulWidget {
   /// ADR-0004).
   final VoidCallback? onShowFileLoaded;
 
-  const ShowFilesDialog({super.key, required this.bridge, this.onShowFileLoaded});
+  const ShowFilesDialog({
+    super.key,
+    required this.bridge,
+    this.onShowFileLoaded,
+  });
 
   @override
   State<ShowFilesDialog> createState() => _ShowFilesDialogState();
@@ -52,7 +56,11 @@ class _ShowFilesDialogState extends State<ShowFilesDialog> {
       allowedExtensions: ['toml'],
       dialogTitle: 'Import Patch Show File',
     );
-    if (result == null || result.files.isEmpty || result.files.first.path == null) return;
+    if (result == null ||
+        result.files.isEmpty ||
+        result.files.first.path == null) {
+      return;
+    }
     final path = result.files.first.path!;
     if (!mounted) return;
     await runGuarded(context, () async {
@@ -63,21 +71,33 @@ class _ShowFilesDialogState extends State<ShowFilesDialog> {
   }
 
   Future<void> _saveToFile() async {
-    final name = await _askName(context, title: 'Export Show File', hint: 'Show file name');
+    final name = await _askName(
+      context,
+      title: 'Export Show File',
+      hint: 'Show file name',
+    );
     if (name == null || !mounted) return;
 
     final path = await FilePicker.platform.saveFile(
       dialogTitle: 'Export Patch Show File',
-      fileName: '${name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_')}.toml',
+      fileName:
+          '${name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_')}.toml',
       allowedExtensions: ['toml'],
       type: FileType.custom,
     );
     if (path == null || !mounted) return;
-    await runGuarded(context, () => widget.bridge.exportLayout(path: path, name: name));
+    await runGuarded(
+      context,
+      () => widget.bridge.exportLayout(path: path, name: name),
+    );
   }
 
   Future<void> _saveNew() async {
-    final name = await _askName(context, title: 'Save Show File', hint: 'Show file name (e.g. "Festival Day 1")');
+    final name = await _askName(
+      context,
+      title: 'Save Show File',
+      hint: 'Show file name (e.g. "Festival Day 1")',
+    );
     if (name == null || !mounted) return;
     await runGuarded(context, () async {
       await widget.bridge.saveShowFile(name);
@@ -96,7 +116,11 @@ class _ShowFilesDialogState extends State<ShowFilesDialog> {
         side: const BorderSide(color: PatchTheme.border),
       ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 340, maxWidth: 420, maxHeight: 540),
+        constraints: const BoxConstraints(
+          minWidth: 340,
+          maxWidth: 420,
+          maxHeight: 540,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -117,10 +141,17 @@ class _ShowFilesDialogState extends State<ShowFilesDialog> {
                   ),
                   const Spacer(),
                   IconButton(
-                    icon: const Icon(Icons.close, size: 18, color: PatchTheme.textMuted),
+                    icon: const Icon(
+                      Icons.close,
+                      size: 18,
+                      color: PatchTheme.textMuted,
+                    ),
                     onPressed: () => Navigator.of(context).pop(),
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
                   ),
                 ],
               ),
@@ -173,12 +204,18 @@ class _ShowFilesDialogState extends State<ShowFilesDialog> {
                       child: Text(
                         'No saved show files yet.\nTap "+ Save current layout" to create one.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: PatchTheme.textMuted, fontSize: PatchTheme.fontSizeSmall),
+                        style: TextStyle(
+                          color: PatchTheme.textMuted,
+                          fontSize: PatchTheme.fontSizeSmall,
+                        ),
                       ),
                     )
                   : ListView.builder(
                       shrinkWrap: true,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                       itemCount: _showFiles.length,
                       itemBuilder: (_, i) => _ShowFileRow(
                         onShowFileLoaded: widget.onShowFileLoaded,
@@ -236,7 +273,11 @@ class _ShowFileRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.folder_outlined, size: 15, color: PatchTheme.textMuted),
+          const Icon(
+            Icons.folder_outlined,
+            size: 15,
+            color: PatchTheme.textMuted,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -252,7 +293,10 @@ class _ShowFileRow extends StatelessWidget {
                 ),
                 Text(
                   '${showFile.channelCount} ch · ${_fmtDate(showFile.createdAt)}',
-                  style: const TextStyle(color: PatchTheme.textMuted, fontSize: 11),
+                  style: const TextStyle(
+                    color: PatchTheme.textMuted,
+                    fontSize: 11,
+                  ),
                 ),
               ],
             ),
@@ -269,7 +313,11 @@ class _ShowFileRow extends StatelessWidget {
             child: const Text('Load'),
           ),
           IconButton(
-            icon: const Icon(Icons.delete_outline, size: 15, color: PatchTheme.textMuted),
+            icon: const Icon(
+              Icons.delete_outline,
+              size: 15,
+              color: PatchTheme.textMuted,
+            ),
             tooltip: 'Delete',
             onPressed: () => _confirmDelete(context),
             padding: EdgeInsets.zero,
@@ -298,9 +346,14 @@ class _ShowFileRow extends StatelessWidget {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: PatchTheme.critical),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: PatchTheme.critical,
+            ),
             onPressed: () {
-              runGuarded(context, () => bridge.deleteShowFile(slug: showFile.slug));
+              runGuarded(
+                context,
+                () => bridge.deleteShowFile(slug: showFile.slug),
+              );
               Navigator.pop(context);
             },
             child: const Text('Delete', style: TextStyle(color: Colors.white)),

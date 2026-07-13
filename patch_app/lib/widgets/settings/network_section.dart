@@ -56,24 +56,30 @@ class _NetworkSectionState extends State<NetworkSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(children: [
-          const Expanded(child: SettingsSectionHeader('Network')),
-          IconButton(
-            icon: const Icon(Icons.help_outline, size: 16),
-            color: PatchTheme.textMuted,
-            tooltip: 'Networking guide',
-            onPressed: () => openHelp(context,
-                assetPath: 'assets/docs/networking.md', title: 'Networking'),
-          ),
-        ]),
+        Row(
+          children: [
+            const Expanded(child: SettingsSectionHeader('Network')),
+            IconButton(
+              icon: const Icon(Icons.help_outline, size: 16),
+              color: PatchTheme.textMuted,
+              tooltip: 'Networking guide',
+              onPressed: () => openHelp(
+                context,
+                assetPath: 'assets/docs/networking.md',
+                title: 'Networking',
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 4),
         const Text(
           'Confines Patch to this network — peers on other networks are '
           'ignored unless added as static peers. Applies within a few '
           'seconds — no restart.',
           style: TextStyle(
-              color: PatchTheme.textSecondary,
-              fontSize: PatchTheme.fontSizeSmall),
+            color: PatchTheme.textSecondary,
+            fontSize: PatchTheme.fontSizeSmall,
+          ),
         ),
         const SizedBox(height: 12),
         InterfacePicker(
@@ -99,8 +105,10 @@ class _NetworkSectionState extends State<NetworkSection> {
                   Text(
                     'How often (seconds) Patch announces itself. Lower = faster peer '
                     'detection but more traffic. Applies live, 1–60.',
-                    style:
-                        TextStyle(color: PatchTheme.textSecondary, fontSize: 11),
+                    style: TextStyle(
+                      color: PatchTheme.textSecondary,
+                      fontSize: 11,
+                    ),
                   ),
                 ],
               ),
@@ -114,7 +122,9 @@ class _NetworkSectionState extends State<NetworkSection> {
               max: NetworkPresenter.heartbeatMax,
               suffix: 's',
               onSubmit: (secs) => runGuarded(
-                  context, () => widget.presenter.saveHeartbeatInterval(secs)),
+                context,
+                () => widget.presenter.saveHeartbeatInterval(secs),
+              ),
             ),
           ],
         ),
@@ -135,8 +145,10 @@ class _NetworkSectionState extends State<NetworkSection> {
                   Text(
                     'UDP port for OSC discovery + messaging. All peers must share '
                     'it. Applies live (socket rebinds), 1024–65535.',
-                    style:
-                        TextStyle(color: PatchTheme.textSecondary, fontSize: 11),
+                    style: TextStyle(
+                      color: PatchTheme.textSecondary,
+                      fontSize: 11,
+                    ),
                   ),
                 ],
               ),
@@ -154,9 +166,11 @@ class _NetworkSectionState extends State<NetworkSection> {
               icon: const Icon(Icons.help_outline, size: 16),
               color: PatchTheme.textMuted,
               tooltip: 'OSC integration guide',
-              onPressed: () => openHelp(context,
-                  assetPath: 'assets/docs/osc-integration.md',
-                  title: 'OSC Integration'),
+              onPressed: () => openHelp(
+                context,
+                assetPath: 'assets/docs/osc-integration.md',
+                title: 'OSC Integration',
+              ),
             ),
           ],
         ),

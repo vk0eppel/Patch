@@ -33,22 +33,22 @@ class WorkspaceState {
       WorkspaceState(showMacros: hasMacros);
 
   factory WorkspaceState.fromJson(Map<String, dynamic> json) => WorkspaceState(
-        showPeers: json['showPeers'] as bool? ?? true,
-        showMacros: json['showMacros'] as bool?,
-        windowX: (json['windowX'] as num?)?.toDouble(),
-        windowY: (json['windowY'] as num?)?.toDouble(),
-        windowWidth: (json['windowWidth'] as num?)?.toDouble(),
-        windowHeight: (json['windowHeight'] as num?)?.toDouble(),
-      );
+    showPeers: json['showPeers'] as bool? ?? true,
+    showMacros: json['showMacros'] as bool?,
+    windowX: (json['windowX'] as num?)?.toDouble(),
+    windowY: (json['windowY'] as num?)?.toDouble(),
+    windowWidth: (json['windowWidth'] as num?)?.toDouble(),
+    windowHeight: (json['windowHeight'] as num?)?.toDouble(),
+  );
 
   Map<String, dynamic> toJson() => {
-        'showPeers': showPeers,
-        if (showMacros != null) 'showMacros': showMacros,
-        if (windowX != null) 'windowX': windowX,
-        if (windowY != null) 'windowY': windowY,
-        if (windowWidth != null) 'windowWidth': windowWidth,
-        if (windowHeight != null) 'windowHeight': windowHeight,
-      };
+    'showPeers': showPeers,
+    if (showMacros != null) 'showMacros': showMacros,
+    if (windowX != null) 'windowX': windowX,
+    if (windowY != null) 'windowY': windowY,
+    if (windowWidth != null) 'windowWidth': windowWidth,
+    if (windowHeight != null) 'windowHeight': windowHeight,
+  };
 
   WorkspaceState copyWith({
     bool? showPeers,
@@ -57,15 +57,14 @@ class WorkspaceState {
     double? windowY,
     double? windowWidth,
     double? windowHeight,
-  }) =>
-      WorkspaceState(
-        showPeers: showPeers ?? this.showPeers,
-        showMacros: showMacros ?? this.showMacros,
-        windowX: windowX ?? this.windowX,
-        windowY: windowY ?? this.windowY,
-        windowWidth: windowWidth ?? this.windowWidth,
-        windowHeight: windowHeight ?? this.windowHeight,
-      );
+  }) => WorkspaceState(
+    showPeers: showPeers ?? this.showPeers,
+    showMacros: showMacros ?? this.showMacros,
+    windowX: windowX ?? this.windowX,
+    windowY: windowY ?? this.windowY,
+    windowWidth: windowWidth ?? this.windowWidth,
+    windowHeight: windowHeight ?? this.windowHeight,
+  );
 }
 
 /// Mirrors the Rust `config::data_dir()` computation so both sides resolve to
@@ -92,7 +91,8 @@ String computeDataDir() {
 class WorkspaceStore {
   final String _path;
 
-  WorkspaceStore(String dataDir) : _path = '$dataDir${Platform.isWindows ? '\\' : '/'}workspace.json';
+  WorkspaceStore(String dataDir)
+    : _path = '$dataDir${Platform.isWindows ? '\\' : '/'}workspace.json';
 
   Future<WorkspaceState> load() async {
     try {

@@ -17,17 +17,19 @@ void main() {
       expect(calls, isEmpty);
     });
 
-    test('calls save then refetch and returns SaveOk when validate passes',
-        () async {
-      final calls = <String>[];
-      final result = await validateThenSave(
-        validate: () => null,
-        save: () async => calls.add('save'),
-        refetch: () async => calls.add('refetch'),
-      );
+    test(
+      'calls save then refetch and returns SaveOk when validate passes',
+      () async {
+        final calls = <String>[];
+        final result = await validateThenSave(
+          validate: () => null,
+          save: () async => calls.add('save'),
+          refetch: () async => calls.add('refetch'),
+        );
 
-      expect(result, isA<SaveOk>());
-      expect(calls, ['save', 'refetch']);
-    });
+        expect(result, isA<SaveOk>());
+        expect(calls, ['save', 'refetch']);
+      },
+    );
   });
 }

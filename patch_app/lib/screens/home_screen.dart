@@ -84,15 +84,15 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
 
   // ── F-key map ───────────────────────────────────────────────────────────────
   static final _fKeyLabels = <LogicalKeyboardKey, String>{
-    LogicalKeyboardKey.f1:  'F1',
-    LogicalKeyboardKey.f2:  'F2',
-    LogicalKeyboardKey.f3:  'F3',
-    LogicalKeyboardKey.f4:  'F4',
-    LogicalKeyboardKey.f5:  'F5',
-    LogicalKeyboardKey.f6:  'F6',
-    LogicalKeyboardKey.f7:  'F7',
-    LogicalKeyboardKey.f8:  'F8',
-    LogicalKeyboardKey.f9:  'F9',
+    LogicalKeyboardKey.f1: 'F1',
+    LogicalKeyboardKey.f2: 'F2',
+    LogicalKeyboardKey.f3: 'F3',
+    LogicalKeyboardKey.f4: 'F4',
+    LogicalKeyboardKey.f5: 'F5',
+    LogicalKeyboardKey.f6: 'F6',
+    LogicalKeyboardKey.f7: 'F7',
+    LogicalKeyboardKey.f8: 'F8',
+    LogicalKeyboardKey.f9: 'F9',
     LogicalKeyboardKey.f10: 'F10',
     LogicalKeyboardKey.f11: 'F11',
     LogicalKeyboardKey.f12: 'F12',
@@ -106,7 +106,11 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   List<PeerInfo> get _peers => AppStoreScope.of(context).peers;
   bool _showPeersValue = false;
   bool get _showPeers => _showPeersValue;
-  set _showPeers(bool v) { _showPeersValue = v; _presenter.showPeers = v; }
+  set _showPeers(bool v) {
+    _showPeersValue = v;
+    _presenter.showPeers = v;
+  }
+
   late bool _showMacros;
   // Full workspace state — panel flags + geometry kept together so a panel
   // toggle never clobbers previously-saved window geometry.
@@ -114,12 +118,14 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   // Debounce timer for window move/resize saves.
   Timer? _windowSaveDebounce;
   int get _macrosColumns => _config?.macrosColumns ?? 1;
+
   /// `hideKeyboard` is a mobile-only concept (keeping the software keyboard
   /// hidden until tapped) — gate its effect to iOS/Android so desktop always
   /// keeps the typing bar focused through sends and channel switches,
   /// regardless of the underlying config value (#78).
   bool get _hideKeyboard =>
       (Platform.isIOS || Platform.isAndroid) && (_config?.hideKeyboard ?? true);
+
   /// Plays the bundled alert sound. A single reusable player; the source is
   /// preloaded in initState (ReleaseMode.stop) so even the first alert is instant.
   final AudioPlayer _alertPlayer = AudioPlayer();
@@ -137,10 +143,10 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   // ── Derived state ───────────────────────────────────────────────────────────
 
   List<PatchChannel> get _selectedChannels => switch (_selection) {
-        ChannelSelection(ids: final ids) =>
-          _channels.where((c) => ids.contains(c.id)).toList(),
-        _ => const [],
-      };
+    ChannelSelection(ids: final ids) =>
+      _channels.where((c) => ids.contains(c.id)).toList(),
+    _ => const [],
+  };
 
   bool get _isMultiChannel => _selection.isMultiChannel;
 
@@ -188,20 +194,21 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
   /// Global macros wrapped for the panel. The empty `channelId` sentinel marks
   /// them as global so `_fireMacro` routes them to the selected channel(s).
   List<ChannelMacro> get _aggregatedGlobalMacros => [
-        for (final gm in _globalMacros)
-          ChannelMacro(channelId: '', channelColor: PatchTheme.accent, macro: gm),
-      ];
+    for (final gm in _globalMacros)
+      ChannelMacro(channelId: '', channelColor: PatchTheme.accent, macro: gm),
+  ];
 
   /// Fire a macro. The UI only expresses intent — routing (DM-open precedence,
   /// own-channel vs selection, OSC dual-action once) is engine-owned via
   /// `fire_macro` (ADR-0009).
   void _fireMacro(ChannelMacro cm) {
     runGuarded(
-        context,
-        () => widget.bridge.fireMacro(
-              channelId: cm.channelId.isEmpty ? null : cm.channelId,
-              label: cm.macro.label,
-            ));
+      context,
+      () => widget.bridge.fireMacro(
+        channelId: cm.channelId.isEmpty ? null : cm.channelId,
+        label: cm.macro.label,
+      ),
+    );
     // Screen-local reaction (ADR-0005): warn when firing into a dead DM.
     if (_selection.isDmMode) _warnIfDmPeerOffline();
   }
@@ -221,9 +228,13 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     // Use the playback audio category so the alert sounds on iOS even with the
     // ring/silent switch on (an operational alert must not be muted by silent).
-    unawaited(AudioPlayer.global.setAudioContext(AudioContext(
-      iOS: AudioContextIOS(category: AVAudioSessionCategory.playback),
-    )));
+    unawaited(
+      AudioPlayer.global.setAudioContext(
+        AudioContext(
+          iOS: AudioContextIOS(category: AVAudioSessionCategory.playback),
+        ),
+      ),
+    );
     // Preload the alert so the *first* play after launch isn't delayed by asset
     // extraction + native prepare. ReleaseMode.stop keeps the source loaded
     // between plays, so `_emitAlert` just seeks to the start and resumes.
@@ -276,7 +287,8 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
       peers: _store?.peers ?? const [],
       channelIds: (_store?.channels ?? const []).map((c) => c.id).toList(),
       macrosPanelPreferenceSet: _workspace.showMacros != null,
-      anyMacrosConfigured: (cfg?.globalMacros.isNotEmpty ?? false) ||
+      anyMacrosConfigured:
+          (cfg?.globalMacros.isNotEmpty ?? false) ||
           (_store?.channels.any((c) => c.macros.isNotEmpty) ?? false),
     );
     if (fx.showNamePrompt && cfg != null) {
@@ -355,7 +367,8 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
     if (event is! KeyDownEvent) return false;
     final label = _fKeyLabels[event.logicalKey];
     if (label == null) return false;
-    final bound = _aggregatedMacros.any((cs) => cs.macro.keyBinding == label) ||
+    final bound =
+        _aggregatedMacros.any((cs) => cs.macro.keyBinding == label) ||
         _globalMacros.any((gm) => gm.keyBinding == label);
     if (!bound) return false;
     runGuarded(context, () => widget.bridge.fireKeyBinding(label: label));
@@ -376,8 +389,8 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
         currentName: currentName,
         // setClientName is push-driven (ClientNameChanged → store); setRole has
         // no push, so refetch config via the store after it (#56).
-        onSaveName: (name) => runGuarded(
-            context, () => widget.bridge.setClientName(name: name)),
+        onSaveName: (name) =>
+            runGuarded(context, () => widget.bridge.setClientName(name: name)),
         onSaveRole: (role) {
           final store = AppStoreScope.read(context);
           runGuarded(context, () async {
@@ -405,9 +418,11 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
       case ShowPermissionDenied(:final context):
         ScaffoldMessenger.of(this.context).showSnackBar(
           SnackBar(
-            content: Text(context.isEmpty
-                ? 'Network access denied — check Local Network permission in System Settings'
-                : context),
+            content: Text(
+              context.isEmpty
+                  ? 'Network access denied — check Local Network permission in System Settings'
+                  : context,
+            ),
             backgroundColor: PatchTheme.critical,
             duration: const Duration(seconds: 8),
           ),
@@ -473,119 +488,124 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
       // The custom headers (channel strip / message area / peers / macros)
       // are plain Containers, not a real AppBar, so nothing insets them from
       // the iOS status bar/notch or the bottom home indicator without this.
-      body: SafeArea(child: Row(
-        children: [
-          _ChannelStrip(
-            channels: _channels,
-            selectedIds: _selection.tabIds,
-            flashCounts: _presenter.flashCounts,
-            globalFlashCount: _globalFlashCount,
-            onTap: _toggleChannel,
-            bridge: widget.bridge,
-            clientName: _clientName,
-            clientRole: _clientRole,
-          ),
-          // Peers sit on the LEFT, beside the channel list — grouping "who/where"
-          // context together (channels + peers), leaving macros on the right.
-          // A left border separates it from the same-coloured channel strip.
-          if (_showPeers)
-            SizedBox(
-              width: _kPeersPanelWidth,
-              child: Container(
-                decoration: const BoxDecoration(
-                  border: Border(left: BorderSide(color: PatchTheme.border)),
-                ),
-                child: PeersPanel(
-                  peers: _peers,
-                  onClearStale: () =>
-                      runGuarded(context, () => widget.bridge.clearStalePeers()),
-                  onClose: () {
-                    setState(() => _showPeers = false);
-                    _savePanels();
-                  },
-                  onDm: _openDm,
-                  unreadPeerIds: {
-                    for (final k in _presenter.unreadDms)
-                      if (DmThread.tryParse(k) case final DmThread dm)
-                        dm.peerId,
-                  },
-                  onRefresh: () => AppStoreScope.read(context).refreshPeers(),
-                  onOpenSettings: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => SettingsScreen(bridge: widget.bridge),
+      body: SafeArea(
+        child: Row(
+          children: [
+            _ChannelStrip(
+              channels: _channels,
+              selectedIds: _selection.tabIds,
+              flashCounts: _presenter.flashCounts,
+              globalFlashCount: _globalFlashCount,
+              onTap: _toggleChannel,
+              bridge: widget.bridge,
+              clientName: _clientName,
+              clientRole: _clientRole,
+            ),
+            // Peers sit on the LEFT, beside the channel list — grouping "who/where"
+            // context together (channels + peers), leaving macros on the right.
+            // A left border separates it from the same-coloured channel strip.
+            if (_showPeers)
+              SizedBox(
+                width: _kPeersPanelWidth,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    border: Border(left: BorderSide(color: PatchTheme.border)),
+                  ),
+                  child: PeersPanel(
+                    peers: _peers,
+                    onClearStale: () => runGuarded(
+                      context,
+                      () => widget.bridge.clearStalePeers(),
+                    ),
+                    onClose: () {
+                      setState(() => _showPeers = false);
+                      _savePanels();
+                    },
+                    onDm: _openDm,
+                    unreadPeerIds: {
+                      for (final k in _presenter.unreadDms)
+                        if (DmThread.tryParse(k) case final DmThread dm)
+                          dm.peerId,
+                    },
+                    onRefresh: () => AppStoreScope.read(context).refreshPeers(),
+                    onOpenSettings: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => SettingsScreen(bridge: widget.bridge),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          Expanded(
-            // Same left border as the peers panel — so there's always a
-            // separator against the channel strip (peers hidden) or against
-            // the peers panel (peers shown), keeping the footer dividers
-            // (identity chip / clear inactive / typing bar) visually
-            // consistent across the whole bottom row either way.
-            child: Container(
-              decoration: const BoxDecoration(
-                border: Border(left: BorderSide(color: PatchTheme.border)),
-              ),
-              child: _channels.isEmpty
-                  ? const Center(child: Text('No channels'))
-                  : _ChannelView(
-                      selection: _selection,
-                      channels: _channels,
-                      dmPeerName:
-                          _dmPeerId == null ? null : _presenter.dmPeerName(_dmPeerId!),
-                      onDmSent: _warnIfDmPeerOffline,
-                      onMessagesCleared: _onMessagesCleared,
-                      messages: _combinedMessages,
-                      channelColors: _channelColors,
-                      delivery: AppStoreScope.of(context).delivery,
-                      aggregatedMacros: _aggregatedMacros,
-                      bridge: widget.bridge,
-                      showPeers: _showPeers,
-                      onTogglePeers: () {
-                        setState(() => _showPeers = !_showPeers);
-                        _savePanels();
-                      },
-                      hasUnreadDms: _presenter.unreadDms.isNotEmpty,
-                      dmPulseNotify: _presenter.dmPulseNotify,
-                      showMacros: _showMacros,
-                      onToggleMacros: () {
-                        setState(() => _showMacros = !_showMacros);
-                        _savePanels();
-                      },
-                      flashNotify: _presenter.flashNotify,
-                      flashColor: _presenter.flashColor,
-                      flashPulseCount: _presenter.flashPulseCount,
-                      hideKeyboard: _hideKeyboard,
-                      onOneShotSent: _snapBackFromAll,
-                    ),
-            ),
-          ),
-          if (_showMacros)
-            SizedBox(
-              width: _kMacroColumnWidth * _macrosColumns,
-              // Same left border as the peers panel / message area — keeps
-              // the separator consistent across every column boundary.
+            Expanded(
+              // Same left border as the peers panel — so there's always a
+              // separator against the channel strip (peers hidden) or against
+              // the peers panel (peers shown), keeping the footer dividers
+              // (identity chip / clear inactive / typing bar) visually
+              // consistent across the whole bottom row either way.
               child: Container(
                 decoration: const BoxDecoration(
                   border: Border(left: BorderSide(color: PatchTheme.border)),
                 ),
-                child: MacrosPanel(
-                  macros: _aggregatedMacros,
-                  globalMacros: _aggregatedGlobalMacros,
-                  isMulti: _isMultiChannel,
-                  columns: _macrosColumns,
-                  onMacro: _fireMacro,
-                  onClose: () {
-                    setState(() => _showMacros = false);
-                    _savePanels();
-                  },
-                ),
+                child: _channels.isEmpty
+                    ? const Center(child: Text('No channels'))
+                    : _ChannelView(
+                        selection: _selection,
+                        channels: _channels,
+                        dmPeerName: _dmPeerId == null
+                            ? null
+                            : _presenter.dmPeerName(_dmPeerId!),
+                        onDmSent: _warnIfDmPeerOffline,
+                        onMessagesCleared: _onMessagesCleared,
+                        messages: _combinedMessages,
+                        channelColors: _channelColors,
+                        delivery: AppStoreScope.of(context).delivery,
+                        aggregatedMacros: _aggregatedMacros,
+                        bridge: widget.bridge,
+                        showPeers: _showPeers,
+                        onTogglePeers: () {
+                          setState(() => _showPeers = !_showPeers);
+                          _savePanels();
+                        },
+                        hasUnreadDms: _presenter.unreadDms.isNotEmpty,
+                        dmPulseNotify: _presenter.dmPulseNotify,
+                        showMacros: _showMacros,
+                        onToggleMacros: () {
+                          setState(() => _showMacros = !_showMacros);
+                          _savePanels();
+                        },
+                        flashNotify: _presenter.flashNotify,
+                        flashColor: _presenter.flashColor,
+                        flashPulseCount: _presenter.flashPulseCount,
+                        hideKeyboard: _hideKeyboard,
+                        onOneShotSent: _snapBackFromAll,
+                      ),
               ),
             ),
-        ],
-      )),
+            if (_showMacros)
+              SizedBox(
+                width: _kMacroColumnWidth * _macrosColumns,
+                // Same left border as the peers panel / message area — keeps
+                // the separator consistent across every column boundary.
+                child: Container(
+                  decoration: const BoxDecoration(
+                    border: Border(left: BorderSide(color: PatchTheme.border)),
+                  ),
+                  child: MacrosPanel(
+                    macros: _aggregatedMacros,
+                    globalMacros: _aggregatedGlobalMacros,
+                    isMulti: _isMultiChannel,
+                    columns: _macrosColumns,
+                    onMacro: _fireMacro,
+                    onClose: () {
+                      setState(() => _showMacros = false);
+                      _savePanels();
+                    },
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -637,8 +657,10 @@ class _ChannelStrip extends StatelessWidget {
                   height: 36,
                   child: IconButton(
                     padding: EdgeInsets.zero,
-                    icon: const Icon(Icons.folder_outlined,
-                        color: PatchTheme.textMuted),
+                    icon: const Icon(
+                      Icons.folder_outlined,
+                      color: PatchTheme.textMuted,
+                    ),
                     tooltip: 'Show Files',
                     onPressed: () => showDialog(
                       context: context,
@@ -658,14 +680,18 @@ class _ChannelStrip extends StatelessWidget {
                   height: 36,
                   child: IconButton(
                     padding: EdgeInsets.zero,
-                    icon: const Icon(Icons.settings_outlined,
-                        color: PatchTheme.textMuted),
+                    icon: const Icon(
+                      Icons.settings_outlined,
+                      color: PatchTheme.textMuted,
+                    ),
                     tooltip: 'Settings',
                     // No post-return refresh needed: settings mutates the
                     // shared AppStore directly, so home already reflects it (#56).
-                    onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                          builder: (_) => SettingsScreen(bridge: bridge),
-                        )),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => SettingsScreen(bridge: bridge),
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -691,7 +717,12 @@ class _ChannelStrip extends StatelessWidget {
               onTap: () => onTap(kAllChannelId),
             ),
           ),
-          const Divider(color: PatchTheme.border, height: 1, indent: 12, endIndent: 12),
+          const Divider(
+            color: PatchTheme.border,
+            height: 1,
+            indent: 12,
+            endIndent: 12,
+          ),
           Expanded(
             child: ListView(
               children: [
@@ -710,9 +741,9 @@ class _ChannelStrip extends StatelessWidget {
           _IdentityChip(
             name: clientName,
             role: clientRole,
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => SettingsScreen(bridge: bridge),
-                )),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => SettingsScreen(bridge: bridge)),
+            ),
           ),
         ],
       ),
@@ -795,10 +826,10 @@ class _ChannelView extends StatefulWidget {
   String? get dmPeerId => selection.dmPeerId;
 
   List<PatchChannel> get selectedChannels => switch (selection) {
-        ChannelSelection(ids: final ids) =>
-          channels.where((c) => ids.contains(c.id)).toList(),
-        _ => const [],
-      };
+    ChannelSelection(ids: final ids) =>
+      channels.where((c) => ids.contains(c.id)).toList(),
+    _ => const [],
+  };
 
   @override
   State<_ChannelView> createState() => _ChannelViewState();
@@ -814,7 +845,8 @@ class _ChannelViewState extends State<_ChannelView> {
   final _inputFocusNode = FocusNode();
 
   bool get _isMulti => widget.selectedChannels.length > 1;
-  bool get _filterActive => _query.trim().isNotEmpty || _priorityFilter.isNotEmpty;
+  bool get _filterActive =>
+      _query.trim().isNotEmpty || _priorityFilter.isNotEmpty;
 
   @override
   void dispose() {
@@ -834,8 +866,9 @@ class _ChannelViewState extends State<_ChannelView> {
     // On desktop, keep the typing bar focused through channel/DM switches so
     // the operator never needs to click back in before the next send.
     if (!widget.hideKeyboard && widget.selection != old.selection) {
-      WidgetsBinding.instance
-          .addPostFrameCallback((_) => _inputFocusNode.requestFocus());
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _inputFocusNode.requestFocus(),
+      );
     }
   }
 
@@ -857,25 +890,43 @@ class _ChannelViewState extends State<_ChannelView> {
   /// send/flash/clear/export below consumes this typed target instead of
   /// re-branching on DM/ALL/channel state itself.
   SendTarget get _target => SendTarget.of(
-        widget.selection,
-        selectedChannels: widget.selectedChannels,
-        dmPeerName: widget.dmPeerName,
-      );
+    widget.selection,
+    selectedChannels: widget.selectedChannels,
+    dmPeerName: widget.dmPeerName,
+  );
 
   void _sendMessage(String text) {
     switch (_target) {
       case DmTarget(:final peerId):
-        runGuarded(context,
-            () => widget.bridge.sendDirectMessage(peerId: peerId, payload: text, priority: 1));
+        runGuarded(
+          context,
+          () => widget.bridge.sendDirectMessage(
+            peerId: peerId,
+            payload: text,
+            priority: 1,
+          ),
+        );
         widget.onDmSent();
       case AllTarget():
-        runGuarded(context,
-            () => widget.bridge.sendMessage(channelId: kAllChannelId, payload: text, priority: 1));
+        runGuarded(
+          context,
+          () => widget.bridge.sendMessage(
+            channelId: kAllChannelId,
+            payload: text,
+            priority: 1,
+          ),
+        );
         widget.onOneShotSent?.call();
       case ChannelsTarget(:final channels):
         for (final ch in channels) {
-          runGuarded(context,
-              () => widget.bridge.sendMessage(channelId: ch.id, payload: text, priority: 1));
+          runGuarded(
+            context,
+            () => widget.bridge.sendMessage(
+              channelId: ch.id,
+              payload: text,
+              priority: 1,
+            ),
+          );
         }
     }
   }
@@ -886,7 +937,10 @@ class _ChannelViewState extends State<_ChannelView> {
         runGuarded(context, () => widget.bridge.sendDmFlash(peerId: peerId));
         widget.onDmSent();
       case AllTarget():
-        runGuarded(context, () => widget.bridge.sendFlash(channelId: kAllChannelId));
+        runGuarded(
+          context,
+          () => widget.bridge.sendFlash(channelId: kAllChannelId),
+        );
         widget.onOneShotSent?.call();
       case ChannelsTarget(:final channels):
         for (final ch in channels) {
@@ -911,8 +965,11 @@ class _ChannelViewState extends State<_ChannelView> {
       type: FileType.custom,
     );
     if (path == null || !mounted) return;
-    runGuarded(context,
-        () => widget.bridge.exportMessages(channelId: target.exportKey, path: path));
+    runGuarded(
+      context,
+      () =>
+          widget.bridge.exportMessages(channelId: target.exportKey, path: path),
+    );
   }
 
   void _confirmClear(BuildContext context) {
@@ -936,7 +993,9 @@ class _ChannelViewState extends State<_ChannelView> {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: PatchTheme.critical),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: PatchTheme.critical,
+            ),
             onPressed: () {
               for (final key in target.clearKeys) {
                 _clear(key);
@@ -1011,7 +1070,9 @@ class _ChannelViewState extends State<_ChannelView> {
                   ),
                 ),
               ] else if (_isMulti) ...[
-                Expanded(child: _MultiChannelLabel(channels: widget.selectedChannels)),
+                Expanded(
+                  child: _MultiChannelLabel(channels: widget.selectedChannels),
+                ),
               ] else ...[
                 Container(
                   width: 10,
@@ -1040,7 +1101,11 @@ class _ChannelViewState extends State<_ChannelView> {
               if (!widget.showMacros) ...[
                 const SizedBox(width: 8),
                 IconButton(
-                  icon: const Icon(Icons.keyboard_outlined, color: PatchTheme.textMuted, size: 20),
+                  icon: const Icon(
+                    Icons.keyboard_outlined,
+                    color: PatchTheme.textMuted,
+                    size: 20,
+                  ),
                   tooltip: 'Show macros',
                   onPressed: widget.onToggleMacros,
                 ),
@@ -1069,8 +1134,9 @@ class _ChannelViewState extends State<_ChannelView> {
                   children: [
                     MessageList(
                       messages: filtered,
-                      channelColors:
-                          (_isMulti || widget.isAllMode) ? widget.channelColors : null,
+                      channelColors: (_isMulti || widget.isAllMode)
+                          ? widget.channelColors
+                          : null,
                       delivery: widget.delivery,
                     ),
                     // Search toggle. Tinted accent while a filter is active so the
@@ -1080,7 +1146,9 @@ class _ChannelViewState extends State<_ChannelView> {
                       right: 76,
                       child: IconButton(
                         icon: const Icon(Icons.search, size: 18),
-                        color: _filterActive ? PatchTheme.accent : PatchTheme.textMuted,
+                        color: _filterActive
+                            ? PatchTheme.accent
+                            : PatchTheme.textMuted,
                         tooltip: 'Search messages',
                         onPressed: () =>
                             setState(() => _searchExpanded = !_searchExpanded),
@@ -1122,20 +1190,22 @@ class _ChannelViewState extends State<_ChannelView> {
           hint: widget.isDmMode
               ? '💬 Message ${widget.dmPeerName ?? ''}…'
               : widget.isAllMode
-                  ? '📢 Broadcast to ALL channels…'
-                  : null,
+              ? '📢 Broadcast to ALL channels…'
+              : null,
         ),
       ],
     );
 
-    return Stack(children: [
-      content,
-      _FlashLayer(
-        flashNotify: widget.flashNotify,
-        flashColor: widget.flashColor,
-        pulseCount: widget.flashPulseCount,
-      ),
-    ]);
+    return Stack(
+      children: [
+        content,
+        _FlashLayer(
+          flashNotify: widget.flashNotify,
+          flashColor: widget.flashColor,
+          pulseCount: widget.flashPulseCount,
+        ),
+      ],
+    );
   }
 }
 
@@ -1292,7 +1362,9 @@ class _FlashLayerState extends State<_FlashLayer> {
       await Future.delayed(const Duration(milliseconds: 200));
       if (!mounted || gen != _pulseGen) return;
       setState(() => _lit = false);
-      if (i < count - 1) await Future.delayed(const Duration(milliseconds: 150));
+      if (i < count - 1) {
+        await Future.delayed(const Duration(milliseconds: 150));
+      }
     }
   }
 

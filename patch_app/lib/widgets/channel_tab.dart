@@ -80,12 +80,19 @@ class _ChannelTabState extends State<ChannelTab>
     return GestureDetector(
       onTap: widget.onTap,
       onLongPress: widget.onLongPress,
-      child: AnimatedBuilder(
-        animation: _ctrl,
-        builder: (_, child) {
-          return AnimatedContainer(
+      // Opaque so the full tab slot is tappable, not just wherever the
+      // AnimatedContainer's decoration paints — a bare Padding (which is
+      // what `margin` becomes below) never self-hit-tests, so deferToChild
+      // (the GestureDetector default) would leave the margin band a dead
+      // zone indistinguishable from the clickable area.
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: AnimatedBuilder(
+          animation: _ctrl,
+          builder: (_, child) {
+            return AnimatedContainer(
               duration: const Duration(milliseconds: 120),
-              margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               padding: const EdgeInsets.symmetric(vertical: 10),
               decoration: BoxDecoration(
                 // Blend normal selected colour with the flash glow
@@ -110,44 +117,46 @@ class _ChannelTabState extends State<ChannelTab>
                 boxShadow: _glow.value > 0
                     ? [
                         BoxShadow(
-                          color: widget.channel.color
-                              .withAlpha((180 * _glow.value).toInt()),
+                          color: widget.channel.color.withAlpha(
+                            (180 * _glow.value).toInt(),
+                          ),
                           blurRadius: 12 * _glow.value,
                           spreadRadius: 2 * _glow.value,
-                        )
+                        ),
                       ]
                     : null,
               ),
               child: child,
             );
-        },
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: widget.channel.color,
-                shape: BoxShape.circle,
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: widget.channel.color,
+                  shape: BoxShape.circle,
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              widget.channel.displayName,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: widget.isSelected
-                    ? PatchTheme.textPrimary
-                    : PatchTheme.textSecondary,
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.5,
+              const SizedBox(height: 4),
+              Text(
+                widget.channel.displayName,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: widget.isSelected
+                      ? PatchTheme.textPrimary
+                      : PatchTheme.textSecondary,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

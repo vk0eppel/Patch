@@ -14,7 +14,11 @@ class FlashCountPicker extends StatelessWidget {
   /// Called with the new value, or null to clear a per-channel override.
   final void Function(int? val) onChanged;
 
-  const FlashCountPicker({super.key, required this.value, required this.onChanged});
+  const FlashCountPicker({
+    super.key,
+    required this.value,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -51,8 +55,7 @@ class FlashCountPicker extends StatelessWidget {
               style: TextStyle(
                 color: selected ? Colors.white : PatchTheme.textSecondary,
                 fontSize: 12,
-                fontWeight:
-                    selected ? FontWeight.w700 : FontWeight.w400,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
               ),
             ),
           ),
