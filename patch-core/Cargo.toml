@@ -19,7 +19,7 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
 # Platform-correct data directory (config + show_files live here when bundled).
-dirs = "5"
+dirs = "6"
 
 # Flutter ↔ Rust FFI bridge. Pinned to match the Dart-side `flutter_rust_bridge`
 # package version in patch_app/pubspec.yaml — codegen produces glue that
