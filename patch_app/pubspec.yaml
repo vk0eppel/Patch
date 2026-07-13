@@ -38,11 +38,11 @@ dependencies:
   cupertino_icons: ^1.0.8
   file_picker: ^8.0.0
   # Plays the short alert sound asset (SystemSound.alert is a no-op on macOS/iOS).
-  audioplayers: ^6.0.0
+  audioplayers: ^6.8.1
   flutter_rust_bridge: ^2.12.0
   freezed_annotation: ^3.1.0
   uuid: ^4.5.3
-  flutter_markdown_plus: ^1.0.7
+  flutter_markdown_plus: ^1.0.12
   # Reads the bundle's own CFBundleShortVersionString/build number at runtime,
   # so the Settings footer can't drift from whatever Info.plist actually has
   # baked in — same source the OS-native About panel reads.
@@ -52,7 +52,7 @@ dependencies:
   # See patch_app/rust_builder/.
   patch_core:
     path: rust_builder
-  window_manager: ^0.5.1
+  window_manager: ^0.5.2
 
 dev_dependencies:
   flutter_test:
@@ -65,7 +65,7 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
   freezed: ^3.2.5
-  build_runner: ^2.15.0
+  build_runner: ^2.15.1
 
   # App-icon generator. Reads assets/icon/icon_master.png and writes platform-
   # specific PNGs/ICOs into the appiconset folders and Windows resources.
