@@ -119,3 +119,45 @@ jobs:
       - name: Build macOS (debug, no codesign)
         working-directory: patch_app
         run: flutter build macos --debug
+
+  # Linux counterpart of build-macos: compiles patch_core as a cdylib and links
+  # it into the GTK app the same way a release build does, so Linux-specific
+  # link/plugin regressions fail the PR instead of first surfacing at
+  # release-tag time. Also the only CI job that compiles patch_core's Linux
+  # `cfg(target_os = "linux")` paths (ALSA/midir). Keep the apt deps in step
+  # with release.yml's "Install Linux build deps".
+  build-linux:
+    name: Linux — native build smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config \
+            libgtk-3-dev libasound2-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+
+      # cargokit invokes cargo during `flutter build`, so the same pinned Rust
+      # as the `rust` job must be present.
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@1.95.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Flutter 3.44.1
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.1
+          channel: stable
+          cache: true
+
+      - name: Pub get
+        working-directory: patch_app
+        run: flutter pub get
+
+      # Debug build: we only need compile-and-link to succeed, not an artifact.
+      - name: Build Linux (debug)
+        working-directory: patch_app
+        run: flutter build linux --debug

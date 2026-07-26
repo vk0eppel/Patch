@@ -11,7 +11,8 @@ name: Release
 # (CODE_SIGN_IDENTITY = "-"), so first launch after opening the DMG shows a
 # Gatekeeper warning (right-click → Open, or
 # `xattr -dr com.apple.quarantine Patch.app`); Windows is unsigned, so the
-# installer trips SmartScreen ("More info → Run anyway"). Real codesigning/
+# installer trips SmartScreen ("More info → Run anyway"); Linux ships a
+# portable AppImage (`chmod +x` then run — no install step). Real codesigning/
 # notarization would need certs added as repo secrets — out of scope here.
 #
 # NB the release name comes from the tag. Keep the tag aligned with
@@ -40,9 +41,23 @@ jobs:
             platform: macos
           - os: windows-latest
             platform: windows
+          - os: ubuntu-latest
+            platform: linux
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+
+      # Flutter Linux desktop needs GTK + the CMake/Ninja toolchain; patch-core
+      # links ALSA (midir) and audioplayers_linux links GStreamer. macOS/Windows
+      # get their MIDI/audio backends from the OS (CoreMIDI/WinMM), so this is
+      # Linux-only. Keep in step with ci.yml's build-linux job.
+      - name: Install Linux build deps
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config \
+            libgtk-3-dev libasound2-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
 
       # cargokit compiles patch-core (cdylib/staticlib) during `flutter build`,
       # so the Rust toolchain must be present. macOS links CoreMIDI, Windows
@@ -125,6 +140,48 @@ jobs:
             /DMyOutputDir="${{ github.workspace }}" `
             patch_app\windows\installer\patch.iss
 
+      # ── Linux ────────────────────────────────────────────────────────────
+      - name: Build Linux
+        if: matrix.platform == 'linux'
+        working-directory: patch_app
+        run: flutter build linux --release
+
+      - name: Package Linux (AppImage)
+        if: matrix.platform == 'linux'
+        working-directory: patch_app
+        # A portable AppImage (single executable, no install) mirrors the
+        # "download & run" UX of the macOS .dmg / Windows .exe. appimagetool is
+        # itself an AppImage; APPIMAGE_EXTRACT_AND_RUN avoids needing FUSE on the
+        # runner.
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: |
+          BUNDLE=build/linux/x64/release/bundle
+          APPDIR=AppDir
+          rm -rf "$APPDIR"
+          mkdir -p "$APPDIR/usr/bin"
+          cp -r "$BUNDLE"/. "$APPDIR/usr/bin/"
+          cp assets/icon/icon_master.png "$APPDIR/patch.png"
+          cat > "$APPDIR/patch.desktop" <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Patch
+          Exec=patch_app
+          Icon=patch
+          Categories=AudioVideo;Network;Utility;
+          Terminal=false
+          EOF
+          cat > "$APPDIR/AppRun" <<'EOF'
+          #!/bin/bash
+          HERE="$(dirname "$(readlink -f "$0")")"
+          exec "$HERE/usr/bin/patch_app" "$@"
+          EOF
+          chmod +x "$APPDIR/AppRun"
+          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage "$APPDIR" \
+            "$GITHUB_WORKSPACE/Patch-${{ steps.version.outputs.version }}-linux-x86_64.AppImage"
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -132,6 +189,7 @@ jobs:
           path: |
             Patch-*.dmg
             Patch-*.exe
+            Patch-*.AppImage
           if-no-files-found: error
 
   release:
@@ -152,5 +210,6 @@ jobs:
           files: |
             artifacts/*.dmg
             artifacts/*.exe
+            artifacts/*.AppImage
           generate_release_notes: true
           draft: true
