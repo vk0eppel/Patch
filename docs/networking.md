@@ -59,6 +59,7 @@ Many venue Wi-Fi systems use **AP isolation** (also called "client isolation") �
 
 - **macOS**: System Settings → Network → select your interface → IP address shown
 - **Windows**: `ipconfig` in Terminal → look for your show NIC
+- **Linux**: `ip addr` (or `hostname -I`) → look for your show NIC
 - **iOS/iPad**: Settings → Wi-Fi → tap your network → IP Address
 - **Patch Settings**: the static peer dialog shows a "This device" IP hint at the bottom
 
