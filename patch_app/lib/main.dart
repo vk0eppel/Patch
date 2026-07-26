@@ -52,6 +52,18 @@ bool _positionOnScreen(Offset pos, Size windowSize) {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // TEMP DEADZONE PROBE — prints every pointer-down that reaches Flutter's
+  // engine, with window-local coords. If clicking the Audio tab's dead centre
+  // prints nothing, the event is swallowed natively before Flutter. Remove.
+  WidgetsBinding.instance.pointerRouter.addGlobalRoute((event) {
+    if (event is PointerDownEvent) {
+      debugPrint(
+        'PROBE pointerDown  x=${event.position.dx.toStringAsFixed(1)} '
+        'y=${event.position.dy.toStringAsFixed(1)}',
+      );
+    }
+  });
+
   // Lock to landscape on iPad — the fixed-width multi-panel layout is unusable
   // in portrait. Done before runApp so it's in effect for the first frame. No-op
   // on desktop and iPhone (see shouldLockLandscape).

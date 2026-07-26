@@ -87,10 +87,11 @@ flutter run -d macos
 # iOS / iPad (device or simulator)
 flutter run -d <device-id>
 
-# Windows / Linux — generate the platform folder first if missing
-flutter create --platforms=windows .   # or linux
+# Windows / Linux (platform folders are committed, like macOS/iOS)
 flutter run -d windows                 # or linux
 ```
+
+Prebuilt downloads for tagged releases are attached to the [GitHub Releases](https://github.com/vk0eppel/Patch/releases) page: a `.dmg` (macOS), an installer `.exe` (Windows), and a portable `.AppImage` (Linux — `chmod +x` then run, no install step). All are unsigned; see the notes in `.github/workflows/release.yml`.
 
 The first build is slow because Cargokit cross-compiles the Rust engine for the target. Subsequent runs are fast.
 
