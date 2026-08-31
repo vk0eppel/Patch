@@ -45,7 +45,7 @@ jobs:
             platform: linux
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Flutter Linux desktop needs GTK + the CMake/Ninja toolchain; patch-core
       # links ALSA (midir) and audioplayers_linux links GStreamer. macOS/Windows
@@ -63,7 +63,7 @@ jobs:
       # so the Rust toolchain must be present. macOS links CoreMIDI, Windows
       # WinMM — neither needs an extra system package (ALSA is Linux-only).
       - name: Install Rust 1.95.0
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.100.0
 
       - uses: Swatinem/rust-cache@v2
 
@@ -183,7 +183,7 @@ jobs:
             "$GITHUB_WORKSPACE/Patch-${{ steps.version.outputs.version }}-linux-x86_64.AppImage"
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: patch-${{ matrix.platform }}
           path: |
@@ -199,7 +199,7 @@ jobs:
     permissions:
       contents: write # create the release + upload assets
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true

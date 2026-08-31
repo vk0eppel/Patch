@@ -20,7 +20,7 @@ jobs:
     name: Rust engine — fmt · clippy · test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # midir (MIDI input) links ALSA on Linux — its -sys crate needs the dev
       # headers to build. macOS/Windows use CoreMIDI/WinMM (no extra packages).
@@ -31,7 +31,7 @@ jobs:
       # is reproducible (a newer rustfmt/clippy can reformat or add lints and
       # turn `--check` / `-D warnings` red on unrelated changes).
       - name: Install Rust 1.95.0
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: rustfmt, clippy
 
@@ -50,7 +50,7 @@ jobs:
     name: Flutter — analyze
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Pinned to the local version: pubspec requires Dart ^3.12, and the UI
       # uses Dart 3.12 features (e.g. `(_, _)` wildcard params).
@@ -92,14 +92,14 @@ jobs:
     name: macOS — native build smoke test
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # cargokit invokes cargo during `flutter build`, so the same pinned Rust
       # as the `rust` job must be present. No `rustup target add` needed: a
       # host-arch debug build is enough to catch link/framework breakage (the
       # release job handles the universal arm64+x86_64 build).
       - name: Install Rust 1.95.0
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.100.0
 
       - uses: Swatinem/rust-cache@v2
 
@@ -130,7 +130,7 @@ jobs:
     name: Linux — native build smoke test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Linux build deps
         run: |
@@ -142,7 +142,7 @@ jobs:
       # cargokit invokes cargo during `flutter build`, so the same pinned Rust
       # as the `rust` job must be present.
       - name: Install Rust 1.95.0
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.100.0
 
       - uses: Swatinem/rust-cache@v2
 
